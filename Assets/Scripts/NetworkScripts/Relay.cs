@@ -8,9 +8,10 @@ using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using UnityEngine;
 
-public class TestRelay : MonoBehaviour
+public class Relay : MonoBehaviour
 {
-    public static TestRelay Instance { get; private set; }
+    
+    public static Relay Instance { get; private set; }
 
     public int MaxPlayers = 3;
     private void Awake()
