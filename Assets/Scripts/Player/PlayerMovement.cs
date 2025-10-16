@@ -24,6 +24,15 @@ public class PlayerMovement : NetworkBehaviour
     [Tooltip("Optional. If null, will use Camera.main.")]
     [SerializeField] private Transform cameraTransform;
 
+    // NEW: Arms reference (optional) and penalties
+    [Header("Arm Reach/Load Penalty")]
+    [Tooltip("Optional. If present, movement will be penalized when arms are extended or when holding weight.")]
+    [SerializeField] private PlayerArms arms;
+    [Tooltip("At max penalty, movement speed is multiplied by this.")]
+    [Range(0.2f, 1f)] [SerializeField] private float speedMultiplierAtMaxPenalty = 0.55f;
+    [Tooltip("At max penalty, rotateLerp is multiplied by this (lower = harder to turn).")]
+    [Range(0.1f, 1f)] [SerializeField] private float rotateLerpMultiplierAtMaxPenalty = 0.4f;
+
     public NetworkVariable<float> Stamina { get; private set; }
         = new NetworkVariable<float>(100f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
@@ -43,6 +52,7 @@ public class PlayerMovement : NetworkBehaviour
     private void Awake()
     {
         _controller = GetComponent<CharacterController>();
+        if (arms == null) arms = GetComponent<PlayerArms>();
     }
 
     public override void OnNetworkSpawn()
@@ -124,6 +134,13 @@ public class PlayerMovement : NetworkBehaviour
         bool wantsSprint = (_sprintAction != null && _sprintAction.IsPressed()) && hasMove && Stamina.Value > 0.01f;
         float speed = wantsSprint ? runSpeed : walkSpeed;
 
+        // APPLY ARMS PENALTY (speed and turning)
+        float penalty01 = arms != null ? arms.ControlPenalty01 : 0f;
+        float speedMult = Mathf.Lerp(1f, speedMultiplierAtMaxPenalty, penalty01);
+        float rotateMult = Mathf.Lerp(1f, rotateLerpMultiplierAtMaxPenalty, penalty01);
+        speed *= speedMult;
+        float rotateLerpCurrent = rotateLerp * rotateMult;
+
         // Camera-relative planar movement
         Vector3 forward = transform.forward;
         if (cameraTransform != null)
@@ -141,7 +158,7 @@ public class PlayerMovement : NetworkBehaviour
         if (rotateToMove && hasMove && horizontal.sqrMagnitude > 0.0001f)
         {
             Quaternion targetRot = Quaternion.LookRotation(moveDir, Vector3.up);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, rotateLerp * dt);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, rotateLerpCurrent * dt);
         }
 
         // Jump
@@ -218,6 +235,9 @@ public class PlayerMovement : NetworkBehaviour
         regenDelay = Mathf.Max(0f, regenDelay);
         jumpHeight = Mathf.Max(0.1f, jumpHeight);
         gravity = Mathf.Min(-0.1f, gravity); // keep negative
+
+        speedMultiplierAtMaxPenalty = Mathf.Clamp(speedMultiplierAtMaxPenalty, 0.2f, 1f);
+        rotateLerpMultiplierAtMaxPenalty = Mathf.Clamp(rotateLerpMultiplierAtMaxPenalty, 0.1f, 1f);
     }
 #endif
 }
