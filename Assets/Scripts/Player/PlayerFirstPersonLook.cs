@@ -3,7 +3,7 @@ using Unity.Netcode;
 using UnityEngine.InputSystem;
 using Unity.Cinemachine;
 
-[DisallowMultipleComponent]
+
 public class PlayerFirstPersonLook : NetworkBehaviour
 {
     [Header("References")]
@@ -86,7 +86,7 @@ public class PlayerFirstPersonLook : NetworkBehaviour
 
             CacheExternalRefsAndDefaults();
 
-            SetCursorLocked(lockCursor);
+            ApplyCursorLockForOwner();
         }
         else
         {
@@ -104,7 +104,7 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         InitInputIfNeeded();
         EnableInput();
         CacheExternalRefsAndDefaults();
-        SetCursorLocked(lockCursor);
+        ApplyCursorLockForOwner();
     }
 
     public override void OnLostOwnership()
@@ -337,6 +337,14 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         float x = eulerX;
         if (x > 180f) x -= 360f;
         return x;
+    }
+
+    private void ApplyCursorLockForOwner()
+    {
+        // Only lock if gameplay is active (menu should keep cursor free)
+        bool gameplayActive = GameManager.Instance != null && GameManager.Instance.IsGameplayActive;
+        bool wantLock = lockCursor && gameplayActive;
+        SetCursorLocked(wantLock);
     }
 
     private static void SetCursorLocked(bool locked)

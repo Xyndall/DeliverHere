@@ -662,7 +662,7 @@ MonoBehaviour:
   regenPerSecond: 15
   regenDelay: 0.75
   cameraTransform: {fileID: 0}
-  arms: {fileID: 0}
+  playerHold: {fileID: 0}
   speedMultiplierAtMaxPenalty: 0.55
   rotateLerpMultiplierAtMaxPenalty: 0.4
 --- !u!54 &5082883330226292188
@@ -861,6 +861,10 @@ MonoBehaviour:
   pickupCastRadius: 0.12
   pickupRange: 3
   massForMaxSlowdown: 10
+  holdAsKinematic: 0
+  disableGravityWhileHeld: 1
+  followPositionSpeed: 20
+  followRotationSpeedDeg: 720
 --- !u!114 &276092387163634943
 MonoBehaviour:
   m_ObjectHideFlags: 0

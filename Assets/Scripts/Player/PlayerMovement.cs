@@ -26,8 +26,8 @@ public class PlayerMovement : NetworkBehaviour
 
     // NEW: Arms reference (optional) and penalties
     [Header("Arm Reach/Load Penalty")]
-    [Tooltip("Optional. If present, movement will be penalized when arms are extended or when holding weight.")]
-    [SerializeField] private PlayerArms arms;
+    [Tooltip("Optional. If present, movement will be penalized when playerHold are extended or when holding weight.")]
+    [SerializeField] private PlayerHold playerHold;
     [Tooltip("At max penalty, movement speed is multiplied by this.")]
     [Range(0.2f, 1f)] [SerializeField] private float speedMultiplierAtMaxPenalty = 0.55f;
     [Tooltip("At max penalty, rotateLerp is multiplied by this (lower = harder to turn).")]
@@ -52,7 +52,7 @@ public class PlayerMovement : NetworkBehaviour
     private void Awake()
     {
         _controller = GetComponent<CharacterController>();
-        if (arms == null) arms = GetComponent<PlayerArms>();
+        if (playerHold == null) playerHold = GetComponent<PlayerHold>();
     }
 
     public override void OnNetworkSpawn()
@@ -135,7 +135,7 @@ public class PlayerMovement : NetworkBehaviour
         float speed = wantsSprint ? runSpeed : walkSpeed;
 
         // APPLY ARMS PENALTY (speed and turning)
-        float penalty01 = arms != null ? arms.ControlPenalty01 : 0f;
+        float penalty01 = playerHold != null ? playerHold.ControlPenalty01 : 0f;
         float speedMult = Mathf.Lerp(1f, speedMultiplierAtMaxPenalty, penalty01);
         float rotateMult = Mathf.Lerp(1f, rotateLerpMultiplierAtMaxPenalty, penalty01);
         speed *= speedMult;
@@ -154,10 +154,26 @@ public class PlayerMovement : NetworkBehaviour
         Vector3 moveDir = (forward * move.y + right * move.x).normalized;
         Vector3 horizontal = moveDir * speed;
 
+        // Prevent walking the held item into walls: clamp forward component along the hold direction
+        if (playerHold != null && playerHold.IsHolding)
+        {
+            Vector3 holdFwd = playerHold.HoldForwardFlat;
+            Vector3 sideDir = Vector3.Cross(Vector3.up, holdFwd);
+
+            float forwardComp = Vector3.Dot(horizontal, holdFwd);
+            float sideComp = Vector3.Dot(horizontal, sideDir);
+
+            float desiredForwardDelta = forwardComp * dt;
+            float clampedForwardDelta = playerHold.ClampForwardMovement(desiredForwardDelta);
+
+            float clampedForwardComp = (dt > 0f) ? (clampedForwardDelta / dt) : forwardComp;
+            horizontal = holdFwd * clampedForwardComp + sideDir * sideComp;
+        }
+
         // Rotate character towards movement direction (optional)
         if (rotateToMove && hasMove && horizontal.sqrMagnitude > 0.0001f)
         {
-            Quaternion targetRot = Quaternion.LookRotation(moveDir, Vector3.up);
+            Quaternion targetRot = Quaternion.LookRotation(horizontal.normalized, Vector3.up);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, rotateLerpCurrent * dt);
         }
 

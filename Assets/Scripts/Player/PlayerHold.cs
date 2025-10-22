@@ -3,7 +3,7 @@ using UnityEngine.InputSystem;
 using Unity.Netcode;
 
 [DisallowMultipleComponent]
-public class PlayerArms : NetworkBehaviour
+public class PlayerHold : NetworkBehaviour
 {
     [Header("Camera (used only for aiming pickup)")]
     [Tooltip("Optional. If null, will use Camera.main.")]
@@ -37,6 +37,24 @@ public class PlayerArms : NetworkBehaviour
     [Tooltip("Mass (kg) that maps to max slowdown. Heavier will clamp at max.")]
     [SerializeField] private float massForMaxSlowdown = 10f;
 
+    [Header("Hold Mode")]
+    [Tooltip("Disable gravity while held (dynamic follow).")]
+    [SerializeField] private bool disableGravityWhileHeld = true;
+    [Tooltip("Position follow speed (m/s).")]
+    [SerializeField] private float followPositionSpeed = 20f;
+    [Tooltip("Rotation follow speed (deg/s).")]
+    [SerializeField] private float followRotationSpeedDeg = 720f;
+
+    [Header("Obstacle Interaction")]
+    [Tooltip("Layers considered obstacles for the held item.")]
+    [SerializeField] private LayerMask obstacleMask = ~0;
+    [Tooltip("Approx radius of the held item for obstacle checks.")]
+    [SerializeField] private float holdCollisionRadius = 0.25f;
+    [Tooltip("Small padding to keep the held item off walls.")]
+    [SerializeField] private float holdSkin = 0.03f;
+    [Tooltip("Clamp hold distance against obstacles so the item doesn't clip.")]
+    [SerializeField] private bool clampHoldAgainstObstacles = true;
+
     // Input wrapper (same pattern as PlayerMovement)
     private InputSystem_Actions _input;
     private InputAction _interactAction; // Player.Interact (Button)
@@ -53,18 +71,24 @@ public class PlayerArms : NetworkBehaviour
         }
     }
 
+    // Provide the yaw-forward used by holding so movement can align/clamp
+    public Vector3 HoldForwardFlat => GetYawRotation() * Vector3.forward;
+
     // Internal state
     private Transform _holdPoint;        // Follows yaw basis
     private float _holdDistance;         // Current distance forward from handsRoot
     private Rigidbody _heldBody;
 
-    // Restore info
+    // Restore info (no longer restores isKinematic; it stays off)
     private struct HeldRestore
     {
         public Transform Parent;
-        public bool WasKinematic;
+        public bool UseGravity;
+        public float Drag;
+        public float AngularDrag;
         public RigidbodyInterpolation Interp;
         public CollisionDetectionMode CollisionMode;
+        public bool ParentedToHold;
     }
     private HeldRestore _restore;
 
@@ -168,18 +192,34 @@ public class PlayerArms : NetworkBehaviour
         if (_holdPoint != null && handsRoot != null)
         {
             Quaternion yawRot = GetYawRotation();
-            Vector3 local = new Vector3(localHoldOffset.x, localHoldOffset.y, _holdDistance);
 
+            // Optionally clamp desired hold distance against obstacles so we don't clip
+            if (clampHoldAgainstObstacles)
+            {
+                _holdDistance = Mathf.Min(_holdDistance, GetMaxClearHoldDistance(yawRot, _holdDistance));
+            }
+
+            Vector3 local = new Vector3(localHoldOffset.x, localHoldOffset.y, _holdDistance);
             _holdPoint.position = handsRoot.position + yawRot * local;
             _holdPoint.rotation = yawRot;
         }
 
-        // Keep held item snapped to hold point when kinematic
-        if (IsHolding && _holdPoint != null)
-        {
-            _heldBody.transform.position = _holdPoint.position;
-            _heldBody.transform.rotation = _holdPoint.rotation;
-        }
+        // No kinematic snapping; we always use dynamic follow in FixedUpdate.
+    }
+
+    private void FixedUpdate()
+    {
+        // Dynamic follow only
+        if (!IsOwner || !IsHolding || _holdPoint == null) return;
+
+        Vector3 targetPos = _holdPoint.position;
+        Quaternion targetRot = _holdPoint.rotation;
+
+        Vector3 nextPos = Vector3.MoveTowards(_heldBody.position, targetPos, followPositionSpeed * Time.fixedDeltaTime);
+        Quaternion nextRot = Quaternion.RotateTowards(_heldBody.rotation, targetRot, followRotationSpeedDeg * Time.fixedDeltaTime);
+
+        _heldBody.MovePosition(nextPos);
+        _heldBody.MoveRotation(nextRot);
     }
 
     // Compute a yaw-only rotation from either camera or handsRoot
@@ -197,6 +237,60 @@ public class PlayerArms : NetworkBehaviour
         if (yawFwd.sqrMagnitude < 1e-6f) yawFwd = Vector3.forward; // final fallback
         yawFwd.Normalize();
         return Quaternion.LookRotation(yawFwd, Vector3.up);
+    }
+
+    // Compute how far forward we can place the held item before an obstacle
+    private float GetMaxClearHoldDistance(Quaternion yawRot, float desired)
+    {
+        if (handsRoot == null) return desired;
+
+        Vector3 anchor = handsRoot.position + yawRot * new Vector3(localHoldOffset.x, localHoldOffset.y, 0f);
+        Vector3 dir = yawRot * Vector3.forward;
+
+        float castDist = Mathf.Max(0f, desired);
+        if (castDist <= 0f) return desired;
+
+        var hits = Physics.SphereCastAll(anchor, holdCollisionRadius, dir, castDist, obstacleMask, QueryTriggerInteraction.Ignore);
+        float minHit = float.PositiveInfinity;
+        for (int i = 0; i < hits.Length; ++i)
+        {
+            var h = hits[i];
+            if (!h.collider) continue;
+            // Ignore our own held rigidbody (and any colliders attached to it)
+            if (_heldBody != null && h.rigidbody == _heldBody) continue;
+            if (h.distance < minHit) minHit = h.distance;
+        }
+
+        if (float.IsInfinity(minHit)) return desired;
+        return Mathf.Max(0f, minHit - holdSkin);
+    }
+
+    // Clamp forward movement along hold direction so the held item won't penetrate obstacles
+    public float ClampForwardMovement(float desiredForwardDelta)
+    {
+        if (!IsHolding || desiredForwardDelta <= 0f || handsRoot == null) return desiredForwardDelta;
+
+        Quaternion yawRot = GetYawRotation();
+        Vector3 anchor = handsRoot.position + yawRot * new Vector3(localHoldOffset.x, localHoldOffset.y, 0f);
+        Vector3 dir = yawRot * Vector3.forward;
+
+        float castDist = Mathf.Max(0f, _holdDistance + desiredForwardDelta + holdSkin);
+        if (castDist <= 0f) return desiredForwardDelta;
+
+        var hits = Physics.SphereCastAll(anchor, holdCollisionRadius, dir, castDist, obstacleMask, QueryTriggerInteraction.Ignore);
+        float minHit = float.PositiveInfinity;
+        for (int i = 0; i < hits.Length; ++i)
+        {
+            var h = hits[i];
+            if (!h.collider) continue;
+            if (_heldBody != null && h.rigidbody == _heldBody) continue;
+            if (h.distance < minHit) minHit = h.distance;
+        }
+
+        if (float.IsInfinity(minHit)) return desiredForwardDelta;
+
+        float maxAllowedAdvance = Mathf.Max(0f, minHit - _holdDistance - holdSkin);
+        return Mathf.Min(desiredForwardDelta, maxAllowedAdvance);
     }
 
     private void TryPickup()
@@ -221,21 +315,17 @@ public class PlayerArms : NetworkBehaviour
         var rb = hit.rigidbody;
         if (rb == null) return;
 
-        // Cache previous state
+        // Cache previous state (no longer restoring isKinematic)
         _restore = new HeldRestore
         {
             Parent = rb.transform.parent,
-            WasKinematic = rb.isKinematic,
+            UseGravity = rb.useGravity,
+            Drag = rb.linearDamping,
+            AngularDrag = rb.angularDamping,
             Interp = rb.interpolation,
-            CollisionMode = rb.collisionDetectionMode
+            CollisionMode = rb.collisionDetectionMode,
+            ParentedToHold = false
         };
-
-        // Make it kinematic and parent to hold point
-        rb.isKinematic = true;
-        rb.linearVelocity = Vector3.zero;            // fixed: use 'velocity'
-        rb.angularVelocity = Vector3.zero;
-        rb.interpolation = RigidbodyInterpolation.Interpolate;
-        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
 
         if (_holdPoint == null)
         {
@@ -244,9 +334,11 @@ public class PlayerArms : NetworkBehaviour
             _holdPoint.SetParent(transform, false);
         }
 
-        rb.transform.SetParent(_holdPoint, worldPositionStays: false);
-        rb.transform.localPosition = Vector3.zero;
-        rb.transform.localRotation = Quaternion.identity;
+        // Always dynamic follow; never make kinematic; no parenting.
+        rb.isKinematic = false;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        if (disableGravityWhileHeld) rb.useGravity = false;
 
         _heldBody = rb;
     }
@@ -255,9 +347,11 @@ public class PlayerArms : NetworkBehaviour
     {
         if (_heldBody == null) return;
 
-        // Unparent and restore state
-        _heldBody.transform.SetParent(_restore.Parent, worldPositionStays: true);
-        _heldBody.isKinematic = _restore.WasKinematic;
+        // No unparenting (we never parented). Restore relevant physics state except isKinematic.
+        _heldBody.isKinematic = false; // keep it off, as requested
+        _heldBody.useGravity = _restore.UseGravity;
+        _heldBody.linearDamping = _restore.Drag;
+        _heldBody.angularDamping = _restore.AngularDrag;
         _heldBody.interpolation = _restore.Interp;
         _heldBody.collisionDetectionMode = _restore.CollisionMode;
 
@@ -296,6 +390,12 @@ public class PlayerArms : NetworkBehaviour
         pickupCastRadius = Mathf.Max(0.01f, pickupCastRadius);
         pickupRange = Mathf.Max(0.2f, pickupRange);
         massForMaxSlowdown = Mathf.Max(0.01f, massForMaxSlowdown);
+
+        followPositionSpeed = Mathf.Max(0.01f, followPositionSpeed);
+        followRotationSpeedDeg = Mathf.Max(1f, followRotationSpeedDeg);
+
+        holdCollisionRadius = Mathf.Max(0.01f, holdCollisionRadius);
+        holdSkin = Mathf.Clamp(holdSkin, 0.001f, 0.1f);
     }
 #endif
 }
