@@ -14,11 +14,12 @@ GameObject:
   - component: {fileID: 5754050862341631209}
   - component: {fileID: 2364863683543904165}
   - component: {fileID: 822830306338218541}
-  - component: {fileID: 902116734350258311}
-  - component: {fileID: 496713635629294900}
-  - component: {fileID: 2279648488782573282}
+  - component: {fileID: -122704528989098008}
+  - component: {fileID: 6799413146419209583}
+  - component: {fileID: 3430845716624476526}
+  - component: {fileID: 6220255637439932627}
   m_Layer: 6
-  m_Name: Light_Pak
+  m_Name: Package
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -72,7 +73,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 6f665c338f3218d49a8ab8e6ad124df7, type: 2}
+  - {fileID: 2100000, guid: 421ddb1aaafbd7f43a9597a96b289110, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -155,7 +156,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7a9a03abf52c1d1438ac496bd501459e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Holdable
---- !u!114 &902116734350258311
+--- !u!114 &-122704528989098008
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -167,7 +168,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3861001042
+  GlobalObjectIdHash: 1396588585
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -180,7 +181,7 @@ MonoBehaviour:
   AutoObjectParentSync: 1
   SyncOwnerTransformWhenParented: 1
   AllowOwnerToParent: 0
---- !u!114 &496713635629294900
+--- !u!114 &6799413146419209583
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -226,7 +227,7 @@ MonoBehaviour:
   SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 0
---- !u!114 &2279648488782573282
+--- !u!114 &3430845716624476526
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -243,3 +244,43 @@ MonoBehaviour:
   UseRigidBodyForMotion: 0
   AutoUpdateKinematicState: 0
   AutoSetKinematicOnDespawn: 0
+--- !u!114 &6220255637439932627
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2581277190305902517}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 19cab3e185a5def4d89b4c6d97254829, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Items.PackageProperties
+  ShowTopMostFoldoutHeaderGroup: 1
+  autoRandomizeOnSpawn: 1
+  minWeightKg: 1
+  maxWeightKg: 25
+  minValue: 100
+  maxValue: 500
+  minFragility: 0
+  maxFragility: 1
+  useSizeBasedWeight: 1
+  smallWeightKgRange: {x: 1, y: 6}
+  mediumWeightKgRange: {x: 6, y: 15}
+  largeWeightKgRange: {x: 15, y: 25}
+  allowedSizes: 000102
+  colorPalette:
+  - {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  - {r: 1, g: 0, b: 0, a: 1}
+  - {r: 0, g: 0, b: 1, a: 1}
+  - {r: 0, g: 1, b: 0, a: 1}
+  - {r: 0, g: 1, b: 1, a: 1}
+  targetRenderer: {fileID: 3160900035877206250}
+  smallScale: {x: 0.7, y: 0.7, z: 0.7}
+  mediumScale: {x: 1, y: 1, z: 1}
+  largeScale: {x: 1.4, y: 1.4, z: 1.4}
+  randomizeScale: 1
+  smallScaleMultiplierRange: {x: 0.7, y: 0.9}
+  mediumScaleMultiplierRange: {x: 0.9, y: 1.2}
+  largeScaleMultiplierRange: {x: 1.2, y: 1.4}
+  body: {fileID: 2364863683543904165}

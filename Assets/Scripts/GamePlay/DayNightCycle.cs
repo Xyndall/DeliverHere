@@ -1,4 +1,5 @@
 using UnityEngine;
+using Unity.Netcode;
 
 public class DayNightCycle : MonoBehaviour
 {
@@ -63,6 +64,9 @@ public class DayNightCycle : MonoBehaviour
     public bool AwaitingNextDay => awaitingNextDay;
     public bool WasSuccessAtDayEnd => lastDaySuccess;
 
+    private bool IsServerOrStandalone =>
+        NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
+
     private void Awake()
     {
         gm = GameManager.Instance; // May be null if not yet initialized; we handle later in EnsureRefs()
@@ -78,16 +82,13 @@ public class DayNightCycle : MonoBehaviour
             money.OnDayAdvanced += HandleDayAdvanced;
         }
 
-        // If no day started yet, kick off Day 1 (optional)
-        if (money != null && autoStartFirstDay && money.CurrentDay <= 0)
+        // If no day started yet, kick off Day 1 (server-only when networked)
+        if (money != null && autoStartFirstDay && money.CurrentDay <= 0 && IsServerOrStandalone)
         {
-            // Advance to day 1 and start timer
             money.AdvanceDay();
-            // HandleDayAdvanced will start our timer/lighting
         }
-        else if (money != null && money.CurrentDay > 0)
+        else if (money != null && money.CurrentDay > 0 && IsServerOrStandalone)
         {
-            // If already mid-run when this is enabled, (re)start timer if not running
             if (!running && !awaitingNextDay)
             {
                 StartNewDayTimer();
@@ -116,7 +117,6 @@ public class DayNightCycle : MonoBehaviour
 
         if (directionalLight == null && autoFindDirectionalLight)
         {
-            // First enabled directional light in scene
             foreach (var l in FindObjectsByType<Light>(FindObjectsSortMode.None))
             {
                 if (l != null && l.type == LightType.Directional && l.enabled)
@@ -135,7 +135,7 @@ public class DayNightCycle : MonoBehaviour
 
     private void HandleDayAdvanced(int newDayIndex)
     {
-        // Starting a new day resets timer and lighting
+        if (!IsServerOrStandalone) return;
         StartNewDayTimer();
     }
 
@@ -160,21 +160,21 @@ public class DayNightCycle : MonoBehaviour
         dayRotation = directionalLight.transform.rotation;
         if (rotateSun)
         {
-            // Rotate around the sun's local right axis to pitch it below the horizon
             var axis = directionalLight.transform.right;
             nightRotation = Quaternion.AngleAxis(nightPitchDeltaDegrees, axis) * dayRotation;
         }
         else
         {
-            nightRotation = dayRotation; // keep orientation fixed, only change intensity/temperature
+            nightRotation = dayRotation;
         }
     }
 
     private void Update()
     {
+        // Server-only ticking; clients get slider updates via NetworkGameState
+        if (!IsServerOrStandalone) return;
         if (!running) return;
 
-        // If gameplay is toggled off, we can pause the countdown
         if (gm != null && !gm.IsGameplayActive)
             return;
 
@@ -203,14 +203,10 @@ public class DayNightCycle : MonoBehaviour
     {
         if (directionalLight == null) return;
 
-        // Temperature
         float kelvin = Mathf.Lerp(dayKelvin, nightKelvin, t01);
         directionalLight.colorTemperature = Mathf.Clamp(kelvin, 1500f, 20000f);
-
-        // Intensity
         directionalLight.intensity = Mathf.Lerp(dayIntensity, nightIntensity, t01);
 
-        // Rotation
         if (rotateSun)
         {
             directionalLight.transform.rotation = Quaternion.Slerp(dayRotation, nightRotation, t01);
@@ -233,7 +229,6 @@ public class DayNightCycle : MonoBehaviour
 
         if (!success)
         {
-            // Lose: end the run via GameManager
             if (gm != null)
             {
                 Debug.Log("[DayNightCycle] Time up. Target NOT reached. Ending game.");
@@ -254,10 +249,15 @@ public class DayNightCycle : MonoBehaviour
         }
     }
 
-    // Call this from a UI button when the player is ready to start the next day.
+    // Server-only advances day; in a networked session, only host should invoke.
     public void ConfirmStartNextDay()
     {
         if (!awaitingNextDay) return;
+        if (!IsServerOrStandalone)
+        {
+            Debug.LogWarning("[DayNightCycle] ConfirmStartNextDay ignored on client; server is authoritative.");
+            return;
+        }
 
         awaitingNextDay = false;
         if (money != null)

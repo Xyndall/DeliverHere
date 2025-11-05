@@ -817,7 +817,6 @@ MonoBehaviour:
   minPitch: -89
   maxPitch: 89
   invertY: 0
-  lockCursor: 1
   enableHeadBob: 1
   walkBobAmplitude: 0.1
   walkBobFrequency: 2
@@ -850,7 +849,7 @@ MonoBehaviour:
   cameraTransform: {fileID: 0}
   useCameraForPickupRay: 1
   handsRoot: {fileID: 10752118041953218}
-  useCameraYawForHold: 1
+  useCameraYawForHold: 0
   localHoldOffset: {x: 0, y: 0, z: 0}
   minHoldDistance: 0.8
   maxHoldDistance: 0.8
@@ -861,10 +860,21 @@ MonoBehaviour:
   pickupCastRadius: 0.12
   pickupRange: 3
   massForMaxSlowdown: 10
-  holdAsKinematic: 0
   disableGravityWhileHeld: 1
   followPositionSpeed: 20
   followRotationSpeedDeg: 720
+  holdPosFrequency: 10
+  holdPosDamping: 2
+  maxLinearAcceleration: 80
+  holdRotFrequency: 8
+  holdRotDamping: 1
+  maxAngularAccelerationDeg: 800
+  obstacleMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  holdCollisionRadius: 0.25
+  holdSkin: 0.03
+  clampHoldAgainstObstacles: 0
 --- !u!114 &276092387163634943
 MonoBehaviour:
   m_ObjectHideFlags: 0

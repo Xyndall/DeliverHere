@@ -18,7 +18,6 @@ public class PlayerFirstPersonLook : NetworkBehaviour
     [SerializeField] private float minPitch = -89f;
     [SerializeField] private float maxPitch = 89f;
     [SerializeField] private bool invertY = false;
-    [SerializeField] private bool lockCursor = true;
 
     [Header("Camera Effects")]
     [SerializeField] private bool enableHeadBob = true;
@@ -46,6 +45,16 @@ public class PlayerFirstPersonLook : NetworkBehaviour
     [SerializeField] private float rollMaxSpeed = 8f;
     [Tooltip("Overall smoothing for sway response and return.")]
     [SerializeField] private float swayLerp = 14f;
+
+    [Header("Hold Load Effects")]
+    [Tooltip("Optional. If present, look sensitivity and head bob scale down with held mass.")]
+    [SerializeField] private PlayerHold playerHold;
+    [Tooltip("At max penalty (heavy object), camera sensitivity is multiplied by this.")]
+    [Range(0.1f, 1f)] [SerializeField] private float lookSensitivityMultiplierAtMaxPenalty = 0.6f;
+    [Tooltip("At max penalty, head bob amplitude is multiplied by this.")]
+    [Range(0f, 1f)] [SerializeField] private float bobAmplitudeMultiplierAtMaxPenalty = 0.5f;
+    [Tooltip("At max penalty, head bob frequency is multiplied by this.")]
+    [Range(0.2f, 1f)] [SerializeField] private float bobFrequencyMultiplierAtMaxPenalty = 0.9f;
 
     private float _yaw;
     private float _pitch;
@@ -85,8 +94,6 @@ public class PlayerFirstPersonLook : NetworkBehaviour
             _pitch = NormalizePitch((pitchPivot != null ? pitchPivot.localEulerAngles.x : 0f));
 
             CacheExternalRefsAndDefaults();
-
-            ApplyCursorLockForOwner();
         }
         else
         {
@@ -104,7 +111,6 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         InitInputIfNeeded();
         EnableInput();
         CacheExternalRefsAndDefaults();
-        ApplyCursorLockForOwner();
     }
 
     public override void OnLostOwnership()
@@ -112,7 +118,6 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         base.OnLostOwnership();
         DisableInput();
         enabled = false;
-        SetCursorLocked(false);
     }
 
     private void OnEnable()
@@ -130,7 +135,6 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         if (IsOwner)
         {
             DisableInput();
-            SetCursorLocked(false);
         }
     }
 
@@ -156,15 +160,19 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         InputDevice device = _lookAction?.activeControl != null ? _lookAction.activeControl.device : null;
         bool isMouse = device is Mouse;
 
+        // Penalty from held mass (0..1)
+        float penalty01 = playerHold != null ? playerHold.ControlPenalty01 : 0f;
+        float sensMult = Mathf.Lerp(1f, lookSensitivityMultiplierAtMaxPenalty, penalty01);
+
         if (isMouse)
         {
-            dx = look.x * mouseSensitivity;
-            dy = look.y * mouseSensitivity * (invertY ? 1f : -1f);
+            dx = look.x * mouseSensitivity * sensMult;
+            dy = look.y * mouseSensitivity * sensMult * (invertY ? 1f : -1f);
         }
         else
         {
-            dx = look.x * stickSensitivity * Time.unscaledDeltaTime;
-            dy = look.y * stickSensitivity * Time.unscaledDeltaTime * (invertY ? 1f : -1f);
+            dx = look.x * stickSensitivity * sensMult * Time.unscaledDeltaTime;
+            dy = look.y * stickSensitivity * sensMult * Time.unscaledDeltaTime * (invertY ? 1f : -1f);
         }
 
         _yaw += dx;
@@ -202,11 +210,19 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         bool isMoving = planarSpeed > 0.05f;
         bool isSprinting = _movement != null && _movement.IsSprinting;
 
+        // Weight-based bob scaling
+        float penalty01 = playerHold != null ? playerHold.ControlPenalty01 : 0f;
+        float ampMult = Mathf.Lerp(1f, bobAmplitudeMultiplierAtMaxPenalty, penalty01);
+        float freqMult = Mathf.Lerp(1f, bobFrequencyMultiplierAtMaxPenalty, penalty01);
+
         // Head bob
         if (enableHeadBob && grounded && isMoving)
         {
-            float freq = isSprinting ? runBobFrequency : walkBobFrequency;
-            float amp  = isSprinting ? runBobAmplitude  : walkBobAmplitude;
+            float baseFreq = isSprinting ? runBobFrequency : walkBobFrequency;
+            float baseAmp  = isSprinting ? runBobAmplitude  : walkBobAmplitude;
+
+            float freq = baseFreq * freqMult;
+            float amp  = baseAmp  * ampMult;
 
             // Advance phase in radians
             _bobPhase += (freq * 2f * Mathf.PI) * Time.deltaTime;
@@ -302,6 +318,7 @@ public class PlayerFirstPersonLook : NetworkBehaviour
     {
         _movement = _movement ?? GetComponentInParent<PlayerMovement>();
         _cc = _cc ?? GetComponentInParent<CharacterController>();
+        playerHold = playerHold ?? GetComponentInParent<PlayerHold>();
 
         if (playerCamera != null)
         {
@@ -339,20 +356,6 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         return x;
     }
 
-    private void ApplyCursorLockForOwner()
-    {
-        // Only lock if gameplay is active (menu should keep cursor free)
-        bool gameplayActive = GameManager.Instance != null && GameManager.Instance.IsGameplayActive;
-        bool wantLock = lockCursor && gameplayActive;
-        SetCursorLocked(wantLock);
-    }
-
-    private static void SetCursorLocked(bool locked)
-    {
-        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
-        Cursor.visible = !locked;
-    }
-
 #if UNITY_EDITOR
     private void OnValidate()
     {
@@ -379,6 +382,11 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         moveRollAmount   = Mathf.Max(0f, moveRollAmount);
         rollMaxSpeed     = Mathf.Max(0.01f, rollMaxSpeed);
         swayLerp         = Mathf.Max(0.01f, swayLerp);
+
+        // Hold load effect clamps
+        lookSensitivityMultiplierAtMaxPenalty = Mathf.Clamp(lookSensitivityMultiplierAtMaxPenalty, 0.1f, 1f);
+        bobAmplitudeMultiplierAtMaxPenalty    = Mathf.Clamp(bobAmplitudeMultiplierAtMaxPenalty, 0f, 1f);
+        bobFrequencyMultiplierAtMaxPenalty    = Mathf.Clamp(bobFrequencyMultiplierAtMaxPenalty, 0.2f, 1f);
     }
 #endif
 }

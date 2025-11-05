@@ -37,23 +37,20 @@ public class PlayerHold : NetworkBehaviour
     [Tooltip("Mass (kg) that maps to max slowdown. Heavier will clamp at max.")]
     [SerializeField] private float massForMaxSlowdown = 10f;
 
-    [Header("Hold Mode")]
-    [Tooltip("Disable gravity while held (dynamic follow).")]
-    [SerializeField] private bool disableGravityWhileHeld = true;
-    [Tooltip("Position follow speed (m/s).")]
-    [SerializeField] private float followPositionSpeed = 20f;
-    [Tooltip("Rotation follow speed (deg/s).")]
-    [SerializeField] private float followRotationSpeedDeg = 720f;
+    [Header("PD Spring Tuning")]
+    [Tooltip("Natural frequency (Hz) of the linear spring. Higher = snappier.")]
+    [SerializeField] private float holdPosFrequency = 8f;
+    [Tooltip("Damping ratio for the linear spring. 1 = critically damped.")]
+    [Range(0f, 2f), SerializeField] private float holdPosDamping = 1.0f;
+    [Tooltip("Clamp for linear acceleration (m/s^2).")]
+    [SerializeField] private float maxLinearAcceleration = 80f;
 
-    [Header("Obstacle Interaction")]
-    [Tooltip("Layers considered obstacles for the held item.")]
-    [SerializeField] private LayerMask obstacleMask = ~0;
-    [Tooltip("Approx radius of the held item for obstacle checks.")]
-    [SerializeField] private float holdCollisionRadius = 0.25f;
-    [Tooltip("Small padding to keep the held item off walls.")]
-    [SerializeField] private float holdSkin = 0.03f;
-    [Tooltip("Clamp hold distance against obstacles so the item doesn't clip.")]
-    [SerializeField] private bool clampHoldAgainstObstacles = true;
+    [Tooltip("Natural frequency (Hz) of the angular spring. Higher = snappier.")]
+    [SerializeField] private float holdRotFrequency = 8f;
+    [Tooltip("Damping ratio for the angular spring. 1 = critically damped.")]
+    [Range(0f, 2f), SerializeField] private float holdRotDamping = 1.0f;
+    [Tooltip("Clamp for angular acceleration (deg/s^2).")]
+    [SerializeField] private float maxAngularAccelerationDeg = 800f;
 
     // Input wrapper (same pattern as PlayerMovement)
     private InputSystem_Actions _input;
@@ -75,20 +72,22 @@ public class PlayerHold : NetworkBehaviour
     public Vector3 HoldForwardFlat => GetYawRotation() * Vector3.forward;
 
     // Internal state
-    private Transform _holdPoint;        // Follows yaw basis
     private float _holdDistance;         // Current distance forward from handsRoot
     private Rigidbody _heldBody;
+
+    // PD target history (for damping with moving targets)
+    private Vector3 _prevTargetPos;
+    private Quaternion _prevTargetRot = Quaternion.identity;
+    private bool _havePrevTarget;
 
     // Restore info (no longer restores isKinematic; it stays off)
     private struct HeldRestore
     {
-        public Transform Parent;
         public bool UseGravity;
         public float Drag;
         public float AngularDrag;
         public RigidbodyInterpolation Interp;
         public CollisionDetectionMode CollisionMode;
-        public bool ParentedToHold;
     }
     private HeldRestore _restore;
 
@@ -101,13 +100,6 @@ public class PlayerHold : NetworkBehaviour
 
         _holdDistance = Mathf.Clamp((_holdDistance <= 0f ? (minHoldDistance + maxHoldDistance) * 0.5f : _holdDistance),
                                     minHoldDistance, maxHoldDistance);
-
-        if (_holdPoint == null)
-        {
-            var go = new GameObject("HoldPoint");
-            _holdPoint = go.transform;
-            _holdPoint.SetParent(transform, false);
-        }
     }
 
     public override void OnNetworkSpawn()
@@ -187,42 +179,86 @@ public class PlayerHold : NetworkBehaviour
             if (IsHolding) DropHeld();
             else TryPickup();
         }
-
-        // Drive hold point using yaw-only basis (forward is horizontal)
-        if (_holdPoint != null && handsRoot != null)
-        {
-            Quaternion yawRot = GetYawRotation();
-
-            // Optionally clamp desired hold distance against obstacles so we don't clip
-            if (clampHoldAgainstObstacles)
-            {
-                _holdDistance = Mathf.Min(_holdDistance, GetMaxClearHoldDistance(yawRot, _holdDistance));
-            }
-
-            Vector3 local = new Vector3(localHoldOffset.x, localHoldOffset.y, _holdDistance);
-            _holdPoint.position = handsRoot.position + yawRot * local;
-            _holdPoint.rotation = yawRot;
-        }
-
-        // No kinematic snapping; we always use dynamic follow in FixedUpdate.
     }
 
     private void FixedUpdate()
     {
-        // Dynamic follow only
-        if (!IsOwner || !IsHolding || _holdPoint == null) return;
+        if (!IsOwner || !IsHolding || handsRoot == null) return;
 
-        Vector3 targetPos = _holdPoint.position;
-        Quaternion targetRot = _holdPoint.rotation;
+        // Compute target pose in physics step
+        Quaternion yawRot = GetYawRotation();
+        Vector3 local = new Vector3(localHoldOffset.x, localHoldOffset.y, _holdDistance);
+        Vector3 targetPos = handsRoot.position + yawRot * local;
+        Quaternion targetRot = yawRot;
 
-        Vector3 nextPos = Vector3.MoveTowards(_heldBody.position, targetPos, followPositionSpeed * Time.fixedDeltaTime);
-        Quaternion nextRot = Quaternion.RotateTowards(_heldBody.rotation, targetRot, followRotationSpeedDeg * Time.fixedDeltaTime);
+        float dt = Time.fixedDeltaTime;
+        if (dt <= 0f) return;
 
-        _heldBody.MovePosition(nextPos);
-        _heldBody.MoveRotation(nextRot);
+        // Initialize previous target snapshot on first frame / after pickup
+        if (!_havePrevTarget)
+        {
+            _prevTargetPos = targetPos;
+            _prevTargetRot = targetRot;
+            _havePrevTarget = true;
+        }
+
+        // Estimate target linear and angular velocity (for damping with moving target)
+        Vector3 targetVel = (targetPos - _prevTargetPos) / dt;
+
+        Quaternion qTgtDelta = targetRot * Quaternion.Inverse(_prevTargetRot);
+        qTgtDelta.ToAngleAxis(out float tgtAngleDeg, out Vector3 tgtAxis);
+        if (float.IsNaN(tgtAxis.x) || tgtAxis.sqrMagnitude < 1e-8f) tgtAxis = Vector3.up;
+        float tgtAngleRad = Mathf.Deg2Rad * tgtAngleDeg;
+        Vector3 targetOmega = tgtAxis * (tgtAngleRad / dt);
+
+        // Linear PD (AddForce with Acceleration -> mass independent)
+        Vector3 posError = (targetPos - _heldBody.position);
+        Vector3 velError = (targetVel - _heldBody.linearVelocity);
+
+        float wPos = Mathf.Max(0f, holdPosFrequency) * 2f * Mathf.PI;
+        float cPos = 2f * Mathf.Clamp01(holdPosDamping) * wPos;
+        Vector3 accelCmd = (wPos * wPos) * posError + cPos * velError;
+
+        // Clamp linear acceleration
+        float maxAcc = Mathf.Max(0f, maxLinearAcceleration);
+        if (maxAcc > 0f && accelCmd.sqrMagnitude > maxAcc * maxAcc)
+            accelCmd = accelCmd.normalized * maxAcc;
+
+        _heldBody.AddForce(accelCmd, ForceMode.Acceleration);
+
+        // Angular PD (world space). Uses shortest-arc axis-angle error.
+        Quaternion qErr = targetRot * Quaternion.Inverse(_heldBody.rotation);
+        if (qErr.w < 0f) { qErr.x = -qErr.x; qErr.y = -qErr.y; qErr.z = -qErr.z; qErr.w = -qErr.w; } // shortest path
+        qErr.ToAngleAxis(out float errAngleDeg, out Vector3 errAxis);
+        if (float.IsNaN(errAxis.x) || errAxis.sqrMagnitude < 1e-8f)
+        {
+            errAxis = Vector3.right;
+            errAngleDeg = 0f;
+        }
+        float errAngleRad = Mathf.Deg2Rad * errAngleDeg;
+        errAxis.Normalize();
+
+        float wRot = Mathf.Max(0f, holdRotFrequency) * 2f * Mathf.PI;
+        float cRot = 2f * Mathf.Clamp01(holdRotDamping) * wRot;
+
+        float omegaAlong = Vector3.Dot(_heldBody.angularVelocity, errAxis);
+        float omegaTgtAlong = Vector3.Dot(targetOmega, errAxis);
+
+        float alphaAlong = (wRot * wRot) * errAngleRad + cRot * (omegaTgtAlong - omegaAlong);
+        Vector3 alphaCmd = errAxis * alphaAlong;
+
+        float maxAlphaRad = Mathf.Deg2Rad * Mathf.Max(0f, maxAngularAccelerationDeg);
+        if (maxAlphaRad > 0f && alphaCmd.sqrMagnitude > maxAlphaRad * maxAlphaRad)
+            alphaCmd = alphaCmd.normalized * maxAlphaRad;
+
+        _heldBody.AddTorque(alphaCmd, ForceMode.Acceleration);
+
+        // Update target history
+        _prevTargetPos = targetPos;
+        _prevTargetRot = targetRot;
     }
 
-    // Compute a yaw-only rotation from either camera or handsRoot
+    // Yaw-only rotation from either camera or handsRoot
     private Quaternion GetYawRotation()
     {
         Vector3 srcFwd;
@@ -231,67 +267,15 @@ public class PlayerHold : NetworkBehaviour
         else
             srcFwd = handsRoot != null ? handsRoot.forward : transform.forward;
 
-        // Project to XZ to strip pitch
         Vector3 yawFwd = Vector3.ProjectOnPlane(srcFwd, Vector3.up);
         if (yawFwd.sqrMagnitude < 1e-6f) yawFwd = new Vector3(srcFwd.x, 0f, srcFwd.z);
-        if (yawFwd.sqrMagnitude < 1e-6f) yawFwd = Vector3.forward; // final fallback
+        if (yawFwd.sqrMagnitude < 1e-6f) yawFwd = Vector3.forward;
         yawFwd.Normalize();
         return Quaternion.LookRotation(yawFwd, Vector3.up);
     }
 
-    // Compute how far forward we can place the held item before an obstacle
-    private float GetMaxClearHoldDistance(Quaternion yawRot, float desired)
-    {
-        if (handsRoot == null) return desired;
-
-        Vector3 anchor = handsRoot.position + yawRot * new Vector3(localHoldOffset.x, localHoldOffset.y, 0f);
-        Vector3 dir = yawRot * Vector3.forward;
-
-        float castDist = Mathf.Max(0f, desired);
-        if (castDist <= 0f) return desired;
-
-        var hits = Physics.SphereCastAll(anchor, holdCollisionRadius, dir, castDist, obstacleMask, QueryTriggerInteraction.Ignore);
-        float minHit = float.PositiveInfinity;
-        for (int i = 0; i < hits.Length; ++i)
-        {
-            var h = hits[i];
-            if (!h.collider) continue;
-            // Ignore our own held rigidbody (and any colliders attached to it)
-            if (_heldBody != null && h.rigidbody == _heldBody) continue;
-            if (h.distance < minHit) minHit = h.distance;
-        }
-
-        if (float.IsInfinity(minHit)) return desired;
-        return Mathf.Max(0f, minHit - holdSkin);
-    }
-
-    // Clamp forward movement along hold direction so the held item won't penetrate obstacles
-    public float ClampForwardMovement(float desiredForwardDelta)
-    {
-        if (!IsHolding || desiredForwardDelta <= 0f || handsRoot == null) return desiredForwardDelta;
-
-        Quaternion yawRot = GetYawRotation();
-        Vector3 anchor = handsRoot.position + yawRot * new Vector3(localHoldOffset.x, localHoldOffset.y, 0f);
-        Vector3 dir = yawRot * Vector3.forward;
-
-        float castDist = Mathf.Max(0f, _holdDistance + desiredForwardDelta + holdSkin);
-        if (castDist <= 0f) return desiredForwardDelta;
-
-        var hits = Physics.SphereCastAll(anchor, holdCollisionRadius, dir, castDist, obstacleMask, QueryTriggerInteraction.Ignore);
-        float minHit = float.PositiveInfinity;
-        for (int i = 0; i < hits.Length; ++i)
-        {
-            var h = hits[i];
-            if (!h.collider) continue;
-            if (_heldBody != null && h.rigidbody == _heldBody) continue;
-            if (h.distance < minHit) minHit = h.distance;
-        }
-
-        if (float.IsInfinity(minHit)) return desiredForwardDelta;
-
-        float maxAllowedAdvance = Mathf.Max(0f, minHit - _holdDistance - holdSkin);
-        return Mathf.Min(desiredForwardDelta, maxAllowedAdvance);
-    }
+    // Kept to avoid breaking callers; no longer clamps movement.
+    public float ClampForwardMovement(float desiredForwardDelta) => desiredForwardDelta;
 
     private void TryPickup()
     {
@@ -318,37 +302,34 @@ public class PlayerHold : NetworkBehaviour
         // Cache previous state (no longer restoring isKinematic)
         _restore = new HeldRestore
         {
-            Parent = rb.transform.parent,
             UseGravity = rb.useGravity,
             Drag = rb.linearDamping,
             AngularDrag = rb.angularDamping,
             Interp = rb.interpolation,
-            CollisionMode = rb.collisionDetectionMode,
-            ParentedToHold = false
+            CollisionMode = rb.collisionDetectionMode
         };
-
-        if (_holdPoint == null)
-        {
-            var go = new GameObject("HoldPoint");
-            _holdPoint = go.transform;
-            _holdPoint.SetParent(transform, false);
-        }
 
         // Always dynamic follow; never make kinematic; no parenting.
         rb.isKinematic = false;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-        if (disableGravityWhileHeld) rb.useGravity = false;
+
+
+        // Allow fast spins if needed when snapping rotation
+        rb.maxAngularVelocity = 100f;
 
         _heldBody = rb;
+
+        // Reset PD target history to avoid a large initial impulse
+        _havePrevTarget = false;
     }
 
     public void DropHeld()
     {
         if (_heldBody == null) return;
 
-        // No unparenting (we never parented). Restore relevant physics state except isKinematic.
-        _heldBody.isKinematic = false; // keep it off, as requested
+        // Restore relevant physics state except isKinematic.
+        _heldBody.isKinematic = false;
         _heldBody.useGravity = _restore.UseGravity;
         _heldBody.linearDamping = _restore.Drag;
         _heldBody.angularDamping = _restore.AngularDrag;
@@ -356,6 +337,7 @@ public class PlayerHold : NetworkBehaviour
         _heldBody.collisionDetectionMode = _restore.CollisionMode;
 
         _heldBody = null;
+        _havePrevTarget = false;
     }
 
     private void InitInputIfNeeded()
@@ -391,11 +373,13 @@ public class PlayerHold : NetworkBehaviour
         pickupRange = Mathf.Max(0.2f, pickupRange);
         massForMaxSlowdown = Mathf.Max(0.01f, massForMaxSlowdown);
 
-        followPositionSpeed = Mathf.Max(0.01f, followPositionSpeed);
-        followRotationSpeedDeg = Mathf.Max(1f, followRotationSpeedDeg);
+        holdPosFrequency = Mathf.Max(0f, holdPosFrequency);
+        holdPosDamping = Mathf.Clamp(holdPosDamping, 0f, 2f);
+        maxLinearAcceleration = Mathf.Max(0f, maxLinearAcceleration);
 
-        holdCollisionRadius = Mathf.Max(0.01f, holdCollisionRadius);
-        holdSkin = Mathf.Clamp(holdSkin, 0.001f, 0.1f);
+        holdRotFrequency = Mathf.Max(0f, holdRotFrequency);
+        holdRotDamping = Mathf.Clamp(holdRotDamping, 0f, 2f);
+        maxAngularAccelerationDeg = Mathf.Max(0f, maxAngularAccelerationDeg);
     }
 #endif
 }

@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using DeliverHere.GamePlay;
 
 public class GameManager : MonoBehaviour
 {
@@ -15,11 +19,40 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameUIController uiController;
     [SerializeField] private bool autoFindUIController = true;
 
+    [Header("Package Spawning")]
+    [Tooltip("Auto-find all PackageSpawner components in the scene each time this enables.")]
+    [SerializeField] private bool autoFindPackageSpawners = true;
+    [Tooltip("Optional explicit list of spawners. Leave empty and enable Auto Find to discover automatically.")]
+    [SerializeField] private List<PackageSpawner> packageSpawners = new List<PackageSpawner>();
+    [Tooltip("Base min package count for Day 1.")]
+    [SerializeField] private int baseMinPackages = 5;
+    [Tooltip("Base max package count for Day 1.")]
+    [SerializeField] private int baseMaxPackages = 12;
+    [Tooltip("Increase applied to min packages each day after Day 1.")]
+    [SerializeField] private int minIncreasePerDay = 1;
+    [Tooltip("Increase applied to max packages each day after Day 1.")]
+    [SerializeField] private int maxIncreasePerDay = 2;
+    [Tooltip("Hard cap for daily maximum to avoid runaway growth.")]
+    [SerializeField] private int dailyHardCap = 100;
+
+    [Header("Spawn Safety")]
+    [Tooltip("Prevents spawning more than once for the same day index.")]
+    [SerializeField] private bool preventDuplicateSpawnsPerDay = true;
+
     // Raised when the target is reached for the current day.
     public event Action OnWinCondition;
 
-    // Gameplay state drives cursor lock
+    // Gameplay state (no longer controls cursor)
     public bool IsGameplayActive { get; private set; }
+
+    // Input
+    private InputSystem_Actions _input;
+    private InputAction _pauseAction;
+
+    private int lastSpawnedDay = -1;
+
+    private bool IsServerOrStandalone =>
+        NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
 
     private void Awake()
     {
@@ -35,16 +68,30 @@ public class GameManager : MonoBehaviour
 
         EnsureMoneyTargetReference();
         EnsureUIReference();
+        EnsureSpawnerReferences();
     }
 
     private void OnEnable()
     {
+        EnsureMoneyTargetReference();
+        EnsureUIReference();
+        EnsureSpawnerReferences();
+
         SubscribeToMoneyTarget();
         SyncAllUI();
 
-        // Start in menu: gameplay inactive, ensure cursor is free and visible
+        // Start in menu: gameplay inactive
         IsGameplayActive = false;
-        ApplyGameplayCursor();
+
+        // Input setup for Pause -> toggle cursor visibility
+        if (_input == null)
+            _input = new InputSystem_Actions();
+
+        _pauseAction = _input.Player.Pause;
+        _pauseAction.performed += OnPausePerformed;
+
+        _input.Enable();
+        _pauseAction.Enable();
 
         // Ensure HUD is hidden at boot; Menu will call StartGame to show it.
         uiController?.HideHUD();
@@ -53,6 +100,14 @@ public class GameManager : MonoBehaviour
     private void OnDisable()
     {
         UnsubscribeFromMoneyTarget();
+
+        if (_pauseAction != null)
+            _pauseAction.performed -= OnPausePerformed;
+
+        _input?.Disable();
+        _input?.Dispose();
+        _input = null;
+        _pauseAction = null;
     }
 
     private void EnsureMoneyTargetReference()
@@ -69,6 +124,14 @@ public class GameManager : MonoBehaviour
         {
             uiController = FindFirstObjectByType<GameUIController>();
         }
+    }
+
+    private void EnsureSpawnerReferences()
+    {
+        if (!autoFindPackageSpawners) return;
+        var found = FindObjectsByType<PackageSpawner>(FindObjectsSortMode.None);
+        packageSpawners.Clear();
+        packageSpawners.AddRange(found);
     }
 
     private void SubscribeToMoneyTarget()
@@ -114,15 +177,21 @@ public class GameManager : MonoBehaviour
         // Ensure refs in case this is called very early
         EnsureMoneyTargetReference();
         EnsureUIReference();
+        EnsureSpawnerReferences();
 
-        // Enter gameplay; lock cursor
+        // Enter gameplay
         IsGameplayActive = true;
-        ApplyGameplayCursor();
 
-        // If the run hasn't started yet, begin Day 1 so systems tied to day state can initialize.
-        if (moneyTargetManager != null && moneyTargetManager.CurrentDay <= 0)
+        // If the run hasn't started yet, only the server begins Day 1.
+        // IMPORTANT: use else-if to avoid spawning twice on day start.
+        if (moneyTargetManager != null && moneyTargetManager.CurrentDay <= 0 &&
+            IsServerOrStandalone)
         {
-            moneyTargetManager.AdvanceDay();
+            moneyTargetManager.AdvanceDay(); // HandleDayAdvanced will spawn
+        }
+        else if (moneyTargetManager != null && moneyTargetManager.CurrentDay > 0 && IsServerOrStandalone)
+        {
+            TrySpawnPackagesForDay(moneyTargetManager.CurrentDay);
         }
 
         // Show HUD and sync UI
@@ -134,21 +203,28 @@ public class GameManager : MonoBehaviour
 
     public void EndGame()
     {
-        // Exit gameplay; unlock cursor
+        // Exit gameplay
         IsGameplayActive = false;
-        ApplyGameplayCursor();
 
-        // Reset money/state and hide HUD.
+        // Reset guard and money/state, hide HUD.
+        lastSpawnedDay = -1;
         ResetRun();
         uiController?.HideWinPanel();
         uiController?.HideDayEndSummary();
         uiController?.HideHUD();
     }
 
-    public void ApplyGameplayCursor()
+    // Toggle cursor on Pause press
+    private void OnPausePerformed(InputAction.CallbackContext ctx)
     {
-        Cursor.lockState = IsGameplayActive ? CursorLockMode.Locked : CursorLockMode.None;
-        Cursor.visible = !IsGameplayActive;
+        ToggleCursorVisibility();
+    }
+
+    public void ToggleCursorVisibility()
+    {
+        bool show = !Cursor.visible;
+        Cursor.visible = show;
+        Cursor.lockState = show ? CursorLockMode.None : CursorLockMode.Locked;
     }
 
     public void AddMoney(int amount) => moneyTargetManager?.AddMoney(amount);
@@ -207,13 +283,19 @@ public class GameManager : MonoBehaviour
     {
         uiController?.SetDay(newDayIndex);
         uiController?.SetDailyEarnings(GetCurrentMoney(), GetTargetMoney(), GetProgress());
+
+        // Server/host spawns packages at the start of each new day
+        if (IsServerOrStandalone)
+        {
+            TrySpawnPackagesForDay(newDayIndex);
+        }
     }
 
     private void HandleTargetReached()
     {
         TriggerWinCondition();
     }
-
+       
     private void TriggerWinCondition()
     {
         OnWinCondition?.Invoke();
@@ -236,4 +318,66 @@ public class GameManager : MonoBehaviour
         SubscribeToMoneyTarget();
         SyncAllUI();
     }
+
+    // ---------- Package spawn control ----------
+
+    private void TrySpawnPackagesForDay(int dayIndex)
+    {
+        if (preventDuplicateSpawnsPerDay && lastSpawnedDay == dayIndex)
+            return;
+
+        lastSpawnedDay = dayIndex;
+        SpawnPackagesForDay(dayIndex);
+    }
+
+    private void SpawnPackagesForDay(int dayIndex)
+    {
+        if (packageSpawners == null) return;
+
+        // Filter active spawners
+        var active = new List<PackageSpawner>();
+        foreach (var s in packageSpawners)
+        {
+            if (s != null && s.isActiveAndEnabled)
+                active.Add(s);
+        }
+        if (active.Count == 0) return;
+
+        // Day 1 uses base values. Day 2 adds one step, etc.
+        int dayOffset = Mathf.Max(0, dayIndex - 1);
+        int minForDay = Mathf.Max(0, baseMinPackages + minIncreasePerDay * dayOffset);
+        int maxForDay = Mathf.Max(minForDay, baseMaxPackages + maxIncreasePerDay * dayOffset);
+        maxForDay = Mathf.Min(maxForDay, Mathf.Max(0, dailyHardCap));
+
+        // Choose a single global count and distribute across spawners
+        int totalToSpawn = UnityEngine.Random.Range(minForDay, maxForDay + 1);
+
+        int baseEach = totalToSpawn / active.Count;
+        int remainder = totalToSpawn % active.Count;
+
+        int spawnedTotal = 0;
+        for (int i = 0; i < active.Count; i++)
+        {
+            int toSpawn = baseEach + (i < remainder ? 1 : 0);
+            if (toSpawn <= 0) continue;
+
+            spawnedTotal += active[i].SpawnCount(toSpawn);
+        }
+
+        if (spawnedTotal < totalToSpawn)
+        {
+            Debug.LogWarning($"[GameManager] Requested total {totalToSpawn} across {active.Count} spawners, actually spawned {spawnedTotal}.");
+        }
+    }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        baseMinPackages = Mathf.Max(0, baseMinPackages);
+        baseMaxPackages = Mathf.Max(baseMinPackages, baseMaxPackages);
+        minIncreasePerDay = Mathf.Max(0, minIncreasePerDay);
+        maxIncreasePerDay = Mathf.Max(0, maxIncreasePerDay);
+        dailyHardCap = Mathf.Max(0, dailyHardCap);
+    }
+#endif
 }
