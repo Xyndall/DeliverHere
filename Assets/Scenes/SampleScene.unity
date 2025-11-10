@@ -5363,6 +5363,7 @@ MonoBehaviour:
   minIncreasePerDay: 1
   maxIncreasePerDay: 2
   dailyHardCap: 100
+  preventDuplicateSpawnsPerDay: 1
 --- !u!114 &1657870876
 MonoBehaviour:
   m_ObjectHideFlags: 0

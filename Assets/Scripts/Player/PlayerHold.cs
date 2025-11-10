@@ -52,12 +52,18 @@ public class PlayerHold : NetworkBehaviour
     [Tooltip("Clamp for angular acceleration (deg/s^2).")]
     [SerializeField] private float maxAngularAccelerationDeg = 800f;
 
-    // Input wrapper (same pattern as PlayerMovement)
+    // Input
     private InputSystem_Actions _input;
-    private InputAction _interactAction; // Player.Interact (Button)
-    private InputAction _extendAction;   // Player.Extend (1D axis)
+    private InputAction _interactAction;
+    private InputAction _extendAction;
 
-    // Exposed to PlayerMovement
+    // Network sync of held object (server authoritative)
+    private NetworkVariable<NetworkObjectReference> _heldRef = new NetworkVariable<NetworkObjectReference>(
+        default,
+        NetworkVariableReadPermission.Everyone,
+        NetworkVariableWritePermission.Server);
+
+    // Public status
     public bool IsHolding => _heldBody != null;
     public float ControlPenalty01
     {
@@ -67,20 +73,16 @@ public class PlayerHold : NetworkBehaviour
             return Mathf.Clamp01(_heldBody.mass / massForMaxSlowdown);
         }
     }
-
-    // Provide the yaw-forward used by holding so movement can align/clamp
     public Vector3 HoldForwardFlat => GetYawRotation() * Vector3.forward;
 
     // Internal state
-    private float _holdDistance;         // Current distance forward from handsRoot
+    private float _holdDistance;
     private Rigidbody _heldBody;
 
-    // PD target history (for damping with moving targets)
     private Vector3 _prevTargetPos;
     private Quaternion _prevTargetRot = Quaternion.identity;
     private bool _havePrevTarget;
 
-    // Restore info (no longer restores isKinematic; it stays off)
     private struct HeldRestore
     {
         public bool UseGravity;
@@ -95,7 +97,6 @@ public class PlayerHold : NetworkBehaviour
     {
         if (cameraTransform == null && Camera.main != null)
             cameraTransform = Camera.main.transform;
-
         if (handsRoot == null) handsRoot = transform;
 
         _holdDistance = Mathf.Clamp((_holdDistance <= 0f ? (minHoldDistance + maxHoldDistance) * 0.5f : _holdDistance),
@@ -111,12 +112,14 @@ public class PlayerHold : NetworkBehaviour
             InitInputIfNeeded();
             EnableInput();
         }
-        else
-        {
-            DisableInput();
-        }
 
-        enabled = IsOwner;
+        // Enable component on server for ALL players so server can run physics for remote owners.
+        enabled = IsServer || IsOwner;
+
+        _heldRef.OnValueChanged += OnHeldRefChanged;
+
+        // Initialize existing value if joining late
+        OnHeldRefChanged(default, _heldRef.Value);
     }
 
     public override void OnGainedOwnership()
@@ -124,14 +127,16 @@ public class PlayerHold : NetworkBehaviour
         base.OnGainedOwnership();
         InitInputIfNeeded();
         EnableInput();
-        enabled = true;
+        // Keep enabled state: server must stay enabled regardless.
+        enabled = IsServer || IsOwner;
     }
 
     public override void OnLostOwnership()
     {
         base.OnLostOwnership();
-        DisableInput();
-        enabled = false;
+        if (!IsServer) // Server never disables (needs physics authority)
+            DisableInput();
+        enabled = IsServer || IsOwner;
     }
 
     private void OnEnable()
@@ -152,7 +157,8 @@ public class PlayerHold : NetworkBehaviour
     {
         try
         {
-            if (IsHolding) DropHeld();
+            _heldRef.OnValueChanged -= OnHeldRefChanged;
+            if (IsServer && IsHolding) ServerDropHeldInternal(); // ensure cleanup
             _input?.Dispose();
         }
         finally
@@ -165,7 +171,7 @@ public class PlayerHold : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // Update hold distance by Extend axis
+        // Adjust hold distance locally (client sends to server if changed while holding)
         float axis = _extendAction != null ? _extendAction.ReadValue<float>() : 0f;
         if (Mathf.Abs(axis) > 0.0001f)
         {
@@ -173,19 +179,37 @@ public class PlayerHold : NetworkBehaviour
             _holdDistance = Mathf.Clamp(_holdDistance + axis * delta, minHoldDistance, maxHoldDistance);
         }
 
-        // Toggle pickup/drop
         if (_interactAction != null && _interactAction.WasPressedThisFrame())
         {
-            if (IsHolding) DropHeld();
-            else TryPickup();
+            if (IsHolding)
+            {
+                RequestDropServerRpc();
+            }
+            else
+            {
+                // Compute pickup ray client-side, send to server
+                Vector3 origin, dir;
+                if (useCameraForPickupRay && cameraTransform != null)
+                {
+                    origin = cameraTransform.position;
+                    dir = cameraTransform.forward;
+                }
+                else
+                {
+                    Quaternion yawRot = GetYawRotation();
+                    origin = handsRoot.position + Vector3.up * Mathf.Max(0.1f, localHoldOffset.y);
+                    dir = yawRot * Vector3.forward;
+                }
+                RequestPickupServerRpc(origin, dir, _holdDistance);
+            }
         }
     }
 
     private void FixedUpdate()
     {
-        if (!IsOwner || !IsHolding || handsRoot == null) return;
+        // Only server applies physics; clients observe via replication.
+        if (!IsServer || !IsHolding || handsRoot == null) return;
 
-        // Compute target pose in physics step
         Quaternion yawRot = GetYawRotation();
         Vector3 local = new Vector3(localHoldOffset.x, localHoldOffset.y, _holdDistance);
         Vector3 targetPos = handsRoot.position + yawRot * local;
@@ -194,7 +218,6 @@ public class PlayerHold : NetworkBehaviour
         float dt = Time.fixedDeltaTime;
         if (dt <= 0f) return;
 
-        // Initialize previous target snapshot on first frame / after pickup
         if (!_havePrevTarget)
         {
             _prevTargetPos = targetPos;
@@ -202,7 +225,6 @@ public class PlayerHold : NetworkBehaviour
             _havePrevTarget = true;
         }
 
-        // Estimate target linear and angular velocity (for damping with moving target)
         Vector3 targetVel = (targetPos - _prevTargetPos) / dt;
 
         Quaternion qTgtDelta = targetRot * Quaternion.Inverse(_prevTargetRot);
@@ -211,7 +233,6 @@ public class PlayerHold : NetworkBehaviour
         float tgtAngleRad = Mathf.Deg2Rad * tgtAngleDeg;
         Vector3 targetOmega = tgtAxis * (tgtAngleRad / dt);
 
-        // Linear PD (AddForce with Acceleration -> mass independent)
         Vector3 posError = (targetPos - _heldBody.position);
         Vector3 velError = (targetVel - _heldBody.linearVelocity);
 
@@ -219,16 +240,14 @@ public class PlayerHold : NetworkBehaviour
         float cPos = 2f * Mathf.Clamp01(holdPosDamping) * wPos;
         Vector3 accelCmd = (wPos * wPos) * posError + cPos * velError;
 
-        // Clamp linear acceleration
         float maxAcc = Mathf.Max(0f, maxLinearAcceleration);
         if (maxAcc > 0f && accelCmd.sqrMagnitude > maxAcc * maxAcc)
             accelCmd = accelCmd.normalized * maxAcc;
 
         _heldBody.AddForce(accelCmd, ForceMode.Acceleration);
 
-        // Angular PD (world space). Uses shortest-arc axis-angle error.
         Quaternion qErr = targetRot * Quaternion.Inverse(_heldBody.rotation);
-        if (qErr.w < 0f) { qErr.x = -qErr.x; qErr.y = -qErr.y; qErr.z = -qErr.z; qErr.w = -qErr.w; } // shortest path
+        if (qErr.w < 0f) { qErr.x = -qErr.x; qErr.y = -qErr.y; qErr.z = -qErr.z; qErr.w = -qErr.w; }
         qErr.ToAngleAxis(out float errAngleDeg, out Vector3 errAxis);
         if (float.IsNaN(errAxis.x) || errAxis.sqrMagnitude < 1e-8f)
         {
@@ -253,12 +272,99 @@ public class PlayerHold : NetworkBehaviour
 
         _heldBody.AddTorque(alphaCmd, ForceMode.Acceleration);
 
-        // Update target history
         _prevTargetPos = targetPos;
         _prevTargetRot = targetRot;
     }
 
-    // Yaw-only rotation from either camera or handsRoot
+    private void OnHeldRefChanged(NetworkObjectReference previous, NetworkObjectReference current)
+    {
+        if (!current.TryGet(out NetworkObject netObj))
+        {
+            _heldBody = null;
+            _havePrevTarget = false;
+            return;
+        }
+
+        _heldBody = netObj.GetComponent<Rigidbody>();
+        _havePrevTarget = false;
+    }
+
+    // ServerRpc: client requests pickup
+    [ServerRpc]
+    private void RequestPickupServerRpc(Vector3 origin, Vector3 dir, float requestedHoldDistance)
+    {
+        if (_heldBody != null) return; // already holding
+
+        // Use client-provided hold distance (clamped)
+        _holdDistance = Mathf.Clamp(requestedHoldDistance, minHoldDistance, maxHoldDistance);
+
+        if (!Physics.SphereCast(origin, pickupCastRadius, dir, out RaycastHit hit, pickupRange, pickupMask, QueryTriggerInteraction.Ignore))
+            return;
+
+        var rb = hit.rigidbody;
+        if (rb == null) return;
+
+        // Ensure network object reference exists
+        var netObj = rb.GetComponent<NetworkObject>();
+        if (netObj == null) return;
+
+        // Optionally transfer ownership of the object to the player (so other client inputs won't conflict)
+        if (!netObj.IsOwner)
+        {
+            netObj.ChangeOwnership(OwnerClientId);
+        }
+
+        _restore = new HeldRestore
+        {
+            UseGravity = rb.useGravity,
+            Drag = rb.linearDamping,
+            AngularDrag = rb.angularDamping,
+            Interp = rb.interpolation,
+            CollisionMode = rb.collisionDetectionMode
+        };
+
+        rb.isKinematic = false;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        rb.maxAngularVelocity = 100f;
+
+        _heldBody = rb;
+        _heldRef.Value = new NetworkObjectReference(netObj);
+
+        _havePrevTarget = false;
+    }
+
+    [ServerRpc]
+    private void RequestDropServerRpc()
+    {
+        if (_heldBody == null) return;
+        ServerDropHeldInternal();
+    }
+
+    private void ServerDropHeldInternal()
+    {
+        if (_heldBody == null) return;
+
+        _heldBody.isKinematic = false;
+        _heldBody.useGravity = _restore.UseGravity;
+        _heldBody.linearDamping = _restore.Drag;
+        _heldBody.angularDamping = _restore.AngularDrag;
+        _heldBody.interpolation = _restore.Interp;
+        _heldBody.collisionDetectionMode = _restore.CollisionMode;
+
+        // Optionally revoke ownership back to server (host) if desired:
+        var netObj = _heldBody.GetComponent<NetworkObject>();
+        if (netObj != null && netObj.OwnerClientId == OwnerClientId)
+        {
+            // Uncomment to return to server ownership:
+            // netObj.ChangeOwnership(NetworkManager.ServerClientId);
+        }
+
+        _heldBody = null;
+        _heldRef.Value = default;
+        _havePrevTarget = false;
+    }
+
     private Quaternion GetYawRotation()
     {
         Vector3 srcFwd;
@@ -274,76 +380,12 @@ public class PlayerHold : NetworkBehaviour
         return Quaternion.LookRotation(yawFwd, Vector3.up);
     }
 
-    // Kept to avoid breaking callers; no longer clamps movement.
     public float ClampForwardMovement(float desiredForwardDelta) => desiredForwardDelta;
 
-    private void TryPickup()
-    {
-        // Aim ray: camera if available/allowed, else body yaw
-        Vector3 origin, dir;
-        if (useCameraForPickupRay && cameraTransform != null)
-        {
-            origin = cameraTransform.position;
-            dir = cameraTransform.forward;
-        }
-        else
-        {
-            Quaternion yawRot = GetYawRotation();
-            origin = handsRoot.position + Vector3.up * Mathf.Max(0.1f, localHoldOffset.y);
-            dir = yawRot * Vector3.forward;
-        }
-
-        if (!Physics.SphereCast(origin, pickupCastRadius, dir, out RaycastHit hit, pickupRange, pickupMask, QueryTriggerInteraction.Ignore))
-            return;
-
-        var rb = hit.rigidbody;
-        if (rb == null) return;
-
-        // Cache previous state (no longer restoring isKinematic)
-        _restore = new HeldRestore
-        {
-            UseGravity = rb.useGravity,
-            Drag = rb.linearDamping,
-            AngularDrag = rb.angularDamping,
-            Interp = rb.interpolation,
-            CollisionMode = rb.collisionDetectionMode
-        };
-
-        // Always dynamic follow; never make kinematic; no parenting.
-        rb.isKinematic = false;
-        rb.interpolation = RigidbodyInterpolation.Interpolate;
-        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-
-
-        // Allow fast spins if needed when snapping rotation
-        rb.maxAngularVelocity = 100f;
-
-        _heldBody = rb;
-
-        // Reset PD target history to avoid a large initial impulse
-        _havePrevTarget = false;
-    }
-
-    public void DropHeld()
-    {
-        if (_heldBody == null) return;
-
-        // Restore relevant physics state except isKinematic.
-        _heldBody.isKinematic = false;
-        _heldBody.useGravity = _restore.UseGravity;
-        _heldBody.linearDamping = _restore.Drag;
-        _heldBody.angularDamping = _restore.AngularDrag;
-        _heldBody.interpolation = _restore.Interp;
-        _heldBody.collisionDetectionMode = _restore.CollisionMode;
-
-        _heldBody = null;
-        _havePrevTarget = false;
-    }
-
+    // Input init
     private void InitInputIfNeeded()
     {
         if (_input != null) return;
-
         _input = new InputSystem_Actions();
         _interactAction = _input.Player.Interact;
         _extendAction = _input.Player.Extend;
