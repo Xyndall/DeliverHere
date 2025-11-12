@@ -36,6 +36,16 @@ namespace DeliverHere.Items
         [Tooltip("Weight range (kg) when size is Large.")]
         [SerializeField] private Vector2 largeWeightKgRange = new Vector2(15f, 25f);
 
+        [Header("Size-based Value (overrides global min/max for value)")]
+        [Tooltip("If enabled, value will be sampled from the ranges below based on the chosen size.")]
+        [SerializeField] private bool useSizeBasedValue = true;
+        [Tooltip("Value range ($) when size is Small.")]
+        [SerializeField] private Vector2Int smallValueRange = new Vector2Int(10, 150);
+        [Tooltip("Value range ($) when size is Medium.")]
+        [SerializeField] private Vector2Int mediumValueRange = new Vector2Int(150, 350);
+        [Tooltip("Value range ($) when size is Large.")]
+        [SerializeField] private Vector2Int largeValueRange = new Vector2Int(350, 500);
+
         [Header("Allowed Options")]
         [SerializeField] private PackageSize[] allowedSizes = new[] { PackageSize.Small, PackageSize.Medium, PackageSize.Large };
         [SerializeField] private Color[] colorPalette = new[] { Color.yellow, Color.red, Color.blue, Color.green, Color.cyan };
@@ -160,11 +170,13 @@ namespace DeliverHere.Items
             // Weight depends on size
             var weight = RandomWeightForSize(size);
 
+            // Value depends on size
+            var value = RandomValueForSize(size);
+
             // Scale multiplier depends on size (optional)
             var scaleMult = randomizeScale ? RandomScaleMultiplierForSize(size) : 1f;
 
             // Other properties
-            var value = UnityEngine.Random.Range(Mathf.Min(minValue, maxValue), Mathf.Max(minValue, maxValue) + 1);
             var fragility = UnityEngine.Random.Range(Mathf.Min(minFragility, maxFragility), Mathf.Max(minFragility, maxFragility));
 
             byte colorIndex = 0;
@@ -220,6 +232,34 @@ namespace DeliverHere.Items
 
             if (max < min) max = min;
             return UnityEngine.Random.Range(min, max);
+        }
+
+        private int RandomValueForSize(PackageSize size)
+        {
+            int min = minValue, max = maxValue;
+
+            if (useSizeBasedValue)
+            {
+                switch (size)
+                {
+                    case PackageSize.Small:
+                        min = Mathf.Max(minValue, Mathf.Min(smallValueRange.x, smallValueRange.y));
+                        max = Mathf.Min(maxValue, Mathf.Max(smallValueRange.x, smallValueRange.y));
+                        break;
+                    case PackageSize.Medium:
+                        min = Mathf.Max(minValue, Mathf.Min(mediumValueRange.x, mediumValueRange.y));
+                        max = Mathf.Min(maxValue, Mathf.Max(mediumValueRange.x, mediumValueRange.y));
+                        break;
+                    case PackageSize.Large:
+                        min = Mathf.Max(minValue, Mathf.Min(largeValueRange.x, largeValueRange.y));
+                        max = Mathf.Min(maxValue, Mathf.Max(largeValueRange.x, largeValueRange.y));
+                        break;
+                }
+            }
+
+            if (max < min) max = min;
+            // int Random.Range is [min, max) so add +1 to include max
+            return UnityEngine.Random.Range(min, max + 1);
         }
 
         private float RandomScaleMultiplierForSize(PackageSize size)
@@ -304,7 +344,7 @@ namespace DeliverHere.Items
             maxFragility = Mathf.Clamp01(maxFragility);
             if (maxFragility < minFragility) maxFragility = minFragility;
 
-            // Keep size ranges sensible and within global bounds
+            // Keep size ranges sensible and within global bounds (weight)
             smallWeightKgRange.x = Mathf.Clamp(smallWeightKgRange.x, minWeightKg, maxWeightKg);
             smallWeightKgRange.y = Mathf.Clamp(smallWeightKgRange.y, smallWeightKgRange.x, maxWeightKg);
 
@@ -323,6 +363,16 @@ namespace DeliverHere.Items
 
             largeScaleMultiplierRange.x = Mathf.Max(0.01f, largeScaleMultiplierRange.x);
             largeScaleMultiplierRange.y = Mathf.Max(largeScaleMultiplierRange.x, largeScaleMultiplierRange.y);
+
+            // Keep size ranges sensible and within global bounds (value)
+            smallValueRange.x = Mathf.Clamp(smallValueRange.x, minValue, maxValue);
+            smallValueRange.y = Mathf.Clamp(smallValueRange.y, smallValueRange.x, maxValue);
+
+            mediumValueRange.x = Mathf.Clamp(mediumValueRange.x, minValue, maxValue);
+            mediumValueRange.y = Mathf.Clamp(mediumValueRange.y, mediumValueRange.x, maxValue);
+
+            largeValueRange.x = Mathf.Clamp(largeValueRange.x, minValue, maxValue);
+            largeValueRange.y = Mathf.Clamp(largeValueRange.y, largeValueRange.x, maxValue);
         }
 #endif
     }
