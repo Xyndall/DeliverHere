@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
+using System; // Added for Action
 
 public class DayNightCycle : MonoBehaviour
 {
@@ -56,6 +57,10 @@ public class DayNightCycle : MonoBehaviour
     private MoneyTargetManager money;
     private GameManager gm;
 
+    // NEW: network state access for clients
+    private NetworkGameState netState;
+    private int lastSeenNetDay = -1;
+
     // Public read-only
     public float RemainingTime => Mathf.Max(0f, remainingTime);
     public float TotalTime => totalTime;
@@ -63,6 +68,9 @@ public class DayNightCycle : MonoBehaviour
     public bool IsRunning => running;
     public bool AwaitingNextDay => awaitingNextDay;
     public bool WasSuccessAtDayEnd => lastDaySuccess;
+
+    // NEW: Fired exactly when the timer hits zero, BEFORE success is evaluated.
+    public event Action OnDayTimerAboutToExpire;
 
     private bool IsServerOrStandalone =>
         NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
@@ -76,13 +84,11 @@ public class DayNightCycle : MonoBehaviour
     {
         EnsureRefs();
 
-        // Subscribe to day changes so we reset timer and lighting each new day
         if (money != null)
         {
             money.OnDayAdvanced += HandleDayAdvanced;
         }
 
-        // If no day started yet, kick off Day 1 (server-only when networked)
         if (money != null && autoStartFirstDay && money.CurrentDay <= 0 && IsServerOrStandalone)
         {
             money.AdvanceDay();
@@ -93,6 +99,15 @@ public class DayNightCycle : MonoBehaviour
             {
                 StartNewDayTimer();
             }
+        }
+
+        // Clients: on first enable, if server already started a day, prime visuals
+        if (!IsServerOrStandalone && netState != null && netState.CurrentDay > 0)
+        {
+            lastSeenNetDay = netState.CurrentDay;
+            CaptureDayRotation();
+            ApplyLighting(0f);
+            PushDayNightUI(Mathf.Clamp01(netState.DayNightProgress));
         }
     }
 
@@ -131,6 +146,11 @@ public class DayNightCycle : MonoBehaviour
         {
             directionalLight.useColorTemperature = true;
         }
+
+        if (netState == null)
+        {
+            netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+        }
     }
 
     private void HandleDayAdvanced(int newDayIndex)
@@ -149,7 +169,7 @@ public class DayNightCycle : MonoBehaviour
         running = true;
 
         CaptureDayRotation();
-        ApplyLighting(0f); // full day lighting at start
+        ApplyLighting(0f);
         PushDayNightUI(0f);
     }
 
@@ -171,30 +191,48 @@ public class DayNightCycle : MonoBehaviour
 
     private void Update()
     {
-        // Server-only ticking; clients get slider updates via NetworkGameState
-        if (!IsServerOrStandalone) return;
-        if (!running) return;
+        // Do nothing if gameplay is inactive for this peer
+        if (gm != null && !gm.IsGameplayActive) return;
 
-        if (gm != null && !gm.IsGameplayActive)
-            return;
-
-        remainingTime -= Time.deltaTime;
-        if (remainingTime <= 0f)
+        if (IsServerOrStandalone)
         {
-            remainingTime = 0f;
-            TickLighting();
-            PushDayNightUI(1f);
-            OnTimeExpired();
-            return;
-        }
+            // Server/standalone: authoritative timer
+            if (!running) return;
 
-        TickLighting();
-        PushDayNightUI(Mathf.Clamp01(Normalized));
+            remainingTime -= Time.deltaTime;
+            if (remainingTime <= 0f)
+            {
+                remainingTime = 0f;
+                TickLightingFromNormalized(1f);
+                PushDayNightUI(1f);
+                OnTimeExpired();
+                return;
+            }
+
+            TickLightingFromNormalized(Mathf.Clamp01(Normalized));
+            PushDayNightUI(Mathf.Clamp01(Normalized));
+        }
+        else
+        {
+            // Client: render visuals from networked day/night progress and recapture on day changes
+            if (netState == null) return;
+
+            // Detect day change to recapture baseline rotation
+            int currentNetDay = netState.CurrentDay;
+            if (currentNetDay != lastSeenNetDay && currentNetDay > 0)
+            {
+                lastSeenNetDay = currentNetDay;
+                CaptureDayRotation();
+            }
+
+            float t = Mathf.Clamp01(netState.DayNightProgress);
+            TickLightingFromNormalized(t);
+            PushDayNightUI(t);
+        }
     }
 
-    private void TickLighting()
+    private void TickLightingFromNormalized(float t)
     {
-        float t = Mathf.Clamp01(Normalized);
         float eased = dayToNightCurve != null ? Mathf.Clamp01(dayToNightCurve.Evaluate(t)) : t;
         ApplyLighting(eased);
     }
@@ -223,6 +261,9 @@ public class DayNightCycle : MonoBehaviour
     {
         running = false;
 
+        // NEW: allow systems (e.g., delivery zones) to deposit earnings BEFORE success check.
+        OnDayTimerAboutToExpire?.Invoke();
+
         bool success = money != null && money.IsTargetReached;
         lastDaySuccess = success;
         awaitingNextDay = success;
@@ -249,7 +290,6 @@ public class DayNightCycle : MonoBehaviour
         }
     }
 
-    // Server-only advances day; in a networked session, only host should invoke.
     public void ConfirmStartNextDay()
     {
         if (!awaitingNextDay) return;

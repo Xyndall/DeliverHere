@@ -1,6 +1,7 @@
 using UnityEngine;
 using TMPro;
 using DeliverHere.Items;
+using Unity.Netcode;
 
 public class PackageIndicatorUI : MonoBehaviour
 {
@@ -19,6 +20,10 @@ public class PackageIndicatorUI : MonoBehaviour
     [SerializeField] private Color heavyColor = Color.red;
     [SerializeField] private bool colorizeByPenalty = true;
 
+    [Header("Networking")]
+    [Tooltip("When enabled, the UI only updates for the locally owned player.")]
+    [SerializeField] private bool requireLocalOwner = true;
+
     private void Reset()
     {
         if (playerHold == null)
@@ -27,10 +32,32 @@ public class PackageIndicatorUI : MonoBehaviour
             weightText = GetComponentInChildren<TextMeshProUGUI>();
     }
 
+    private void Awake()
+    {
+        TryResolveLocalPlayerHold();
+    }
+
+    private void OnEnable()
+    {
+        TryResolveLocalPlayerHold();
+        if (weightText != null)
+            weightText.gameObject.SetActive(false);
+    }
+
     private void Update()
     {
         if (playerHold == null || weightText == null)
+        {
+            TryResolveLocalPlayerHold();
             return;
+        }
+
+        // Gate by local ownership so only the local player's HUD updates.
+        if (requireLocalOwner && !playerHold.IsOwner)
+        {
+            weightText.gameObject.SetActive(false);
+            return;
+        }
 
         if (!playerHold.IsHolding || playerHold.HeldMass == null)
         {
@@ -66,6 +93,35 @@ public class PackageIndicatorUI : MonoBehaviour
         {
             float p = Mathf.Clamp01(playerHold.ControlPenalty01);
             weightText.color = Color.Lerp(lightColor, heavyColor, p);
+        }
+    }
+
+    private void TryResolveLocalPlayerHold()
+    {
+        if (playerHold != null)
+            return;
+
+        // Prefer the local player's PlayerHold via Netcode
+        var nm = NetworkManager.Singleton;
+        if (nm != null && nm.IsClient)
+        {
+            var localObj = nm.SpawnManager?.GetLocalPlayerObject();
+            if (localObj != null)
+                playerHold = localObj.GetComponent<PlayerHold>();
+        }
+
+        // Fallback: pick the owned PlayerHold found in the scene (e.g., host before player object assignment).
+        if (playerHold == null)
+        {
+            var all = FindObjectsByType<PlayerHold>(FindObjectsSortMode.None);
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null && all[i].IsOwner)
+                {
+                    playerHold = all[i];
+                    break;
+                }
+            }
         }
     }
 }

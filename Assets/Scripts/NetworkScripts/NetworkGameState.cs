@@ -40,6 +40,10 @@ public class NetworkGameState : NetworkBehaviour
 
     public bool GameStarted => gameStarted.Value;
 
+    // NEW: expose read-only mirrors for clients/others to sample
+    public int CurrentDay => nvCurrentDay.Value;
+    public float DayNightProgress => nvDayNightProgress.Value;
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
