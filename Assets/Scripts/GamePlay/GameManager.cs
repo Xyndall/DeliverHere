@@ -7,7 +7,6 @@ using DeliverHere.GamePlay;
 
 public class GameManager : MonoBehaviour
 {
-    // Singleton
     public static GameManager Instance { get; private set; }
 
     [Header("Lifecycle")]
@@ -20,43 +19,35 @@ public class GameManager : MonoBehaviour
     [SerializeField] private bool autoFindUIController = true;
 
     [Header("Package Spawning")]
-    [Tooltip("Auto-find all PackageSpawner components in the scene each time this enables.")]
     [SerializeField] private bool autoFindPackageSpawners = true;
-    [Tooltip("Optional explicit list of spawners. Leave empty and enable Auto Find to discover automatically.")]
     [SerializeField] private List<PackageSpawner> packageSpawners = new List<PackageSpawner>();
-    [Tooltip("Base min package count for Day 1.")]
     [SerializeField] private int baseMinPackages = 5;
-    [Tooltip("Base max package count for Day 1.")]
     [SerializeField] private int baseMaxPackages = 12;
-    [Tooltip("Increase applied to min packages each day after Day 1.")]
     [SerializeField] private int minIncreasePerDay = 1;
-    [Tooltip("Increase applied to max packages each day after Day 1.")]
     [SerializeField] private int maxIncreasePerDay = 2;
-    [Tooltip("Hard cap for daily maximum to avoid runaway growth.")]
     [SerializeField] private int dailyHardCap = 100;
 
     [Header("Spawn Safety")]
-    [Tooltip("Prevents spawning more than once for the same day index.")]
     [SerializeField] private bool preventDuplicateSpawnsPerDay = true;
 
-    // Raised when the target is reached for the current day.
     public event Action OnWinCondition;
-
-    // Gameplay state (no longer controls cursor)
     public bool IsGameplayActive { get; private set; }
 
-    // Input
     private InputSystem_Actions _input;
     private InputAction _pauseAction;
 
     private int lastSpawnedDay = -1;
+    private int dailyPackagesDelivered = 0;
+    private int currentDayTargetMoney = 0;
+    private bool endOfDayPopupShown = false;
+
+    private DayNightCycle _dayNight;
 
     private bool IsServerOrStandalone =>
         NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
 
     private void Awake()
     {
-        // Singleton setup
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
@@ -78,12 +69,11 @@ public class GameManager : MonoBehaviour
         EnsureSpawnerReferences();
 
         SubscribeToMoneyTarget();
+        FindDayNightAndSubscribe();
         SyncAllUI();
 
-        // Start in menu: gameplay inactive
         IsGameplayActive = false;
 
-        // Input setup for Pause -> toggle cursor visibility
         if (_input == null)
             _input = new InputSystem_Actions();
 
@@ -93,13 +83,14 @@ public class GameManager : MonoBehaviour
         _input.Enable();
         _pauseAction.Enable();
 
-        // Ensure HUD is hidden at boot; Menu will call StartGame to show it.
         uiController?.HideHUD();
+        uiController?.ConfigureDayEndButtons(HostAdvanceToNextDay, HostRestartRun);
     }
 
     private void OnDisable()
     {
         UnsubscribeFromMoneyTarget();
+        UnsubscribeDayNight();
 
         if (_pauseAction != null)
             _pauseAction.performed -= OnPausePerformed;
@@ -110,20 +101,30 @@ public class GameManager : MonoBehaviour
         _pauseAction = null;
     }
 
+    private void FindDayNightAndSubscribe()
+    {
+        if (_dayNight == null)
+            _dayNight = FindFirstObjectByType<DayNightCycle>();
+        if (_dayNight != null)
+            _dayNight.OnDayEndedEvaluated += HandleDayEndedEvaluated;
+    }
+
+    private void UnsubscribeDayNight()
+    {
+        if (_dayNight != null)
+            _dayNight.OnDayEndedEvaluated -= HandleDayEndedEvaluated;
+    }
+
     private void EnsureMoneyTargetReference()
     {
         if (moneyTargetManager == null && autoFindMoneyTargetManager)
-        {
             moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
-        }
     }
 
     private void EnsureUIReference()
     {
         if (uiController == null && autoFindUIController)
-        {
             uiController = FindFirstObjectByType<GameUIController>();
-        }
     }
 
     private void EnsureSpawnerReferences()
@@ -145,6 +146,8 @@ public class GameManager : MonoBehaviour
         moneyTargetManager.OnTargetIncreased += HandleTargetIncreased;
         moneyTargetManager.OnDayAdvanced += HandleDayAdvanced;
         moneyTargetManager.OnTargetReached += HandleTargetReached;
+
+        currentDayTargetMoney = moneyTargetManager.TargetMoney;
     }
 
     private void UnsubscribeFromMoneyTarget()
@@ -163,38 +166,33 @@ public class GameManager : MonoBehaviour
     private void SyncAllUI()
     {
         if (uiController == null || moneyTargetManager == null) return;
-
         uiController.SetDay(GetCurrentDay());
         uiController.SetTarget(GetTargetMoney());
         uiController.SetDailyEarnings(GetCurrentMoney(), GetTargetMoney(), GetProgress());
         uiController.SetBankedMoney(GetBankedMoney());
     }
 
-    // ---- Public API for other systems ----
-
     public void StartGame()
     {
-        // Ensure refs in case this is called very early
         EnsureMoneyTargetReference();
         EnsureUIReference();
         EnsureSpawnerReferences();
 
-        // Enter gameplay
         IsGameplayActive = true;
 
-        // If the run hasn't started yet, only the server begins Day 1.
-        // IMPORTANT: use else-if to avoid spawning twice on day start.
-        if (moneyTargetManager != null && moneyTargetManager.CurrentDay <= 0 &&
-            IsServerOrStandalone)
+        if (moneyTargetManager != null && moneyTargetManager.CurrentDay <= 0 && IsServerOrStandalone)
         {
-            moneyTargetManager.AdvanceDay(); // HandleDayAdvanced will spawn
+            moneyTargetManager.AdvanceDay();
         }
         else if (moneyTargetManager != null && moneyTargetManager.CurrentDay > 0 && IsServerOrStandalone)
         {
             TrySpawnPackagesForDay(moneyTargetManager.CurrentDay);
         }
 
-        // Show HUD and sync UI
+        dailyPackagesDelivered = 0;
+        currentDayTargetMoney = GetTargetMoney();
+        endOfDayPopupShown = false;
+
         SyncAllUI();
         uiController?.HideWinPanel();
         uiController?.HideDayEndSummary();
@@ -203,22 +201,43 @@ public class GameManager : MonoBehaviour
 
     public void EndGame()
     {
-        // Exit gameplay
         IsGameplayActive = false;
-
-        // Reset guard and money/state, hide HUD.
         lastSpawnedDay = -1;
         ResetRun();
+        dailyPackagesDelivered = 0;
+        endOfDayPopupShown = false;
+
         uiController?.HideWinPanel();
         uiController?.HideDayEndSummary();
         uiController?.HideHUD();
     }
 
-    // Toggle cursor on Pause press
-    private void OnPausePerformed(InputAction.CallbackContext ctx)
+    public void RegisterPackagesDelivered(int count)
     {
-        ToggleCursorVisibility();
+        if (count <= 0) return;
+        dailyPackagesDelivered += count;
     }
+
+    public void HostAdvanceToNextDay()
+    {
+        if (!IsServerOrStandalone) return;
+        uiController?.HideDayEndSummary();
+        endOfDayPopupShown = false;
+        moneyTargetManager?.AdvanceDay();
+    }
+
+    public void HostRestartRun()
+    {
+        if (!IsServerOrStandalone) return;
+        uiController?.HideDayEndSummary();
+        ResetRun();
+        dailyPackagesDelivered = 0;
+        lastSpawnedDay = -1;
+        endOfDayPopupShown = false;
+        moneyTargetManager?.AdvanceDay();
+    }
+
+    private void OnPausePerformed(InputAction.CallbackContext ctx) => ToggleCursorVisibility();
 
     public void ToggleCursorVisibility()
     {
@@ -232,7 +251,12 @@ public class GameManager : MonoBehaviour
     public bool SpendBanked(int amount) => moneyTargetManager != null && moneyTargetManager.SpendBanked(amount);
     public void AdvanceDay() => moneyTargetManager?.AdvanceDay();
     public void AdvanceDays(int days) => moneyTargetManager?.AdvanceDays(days);
-    public void ResetRun() => moneyTargetManager?.ResetProgress();
+
+    public void ResetRun()
+    {
+        moneyTargetManager?.ResetProgress();
+        currentDayTargetMoney = GetTargetMoney();
+    }
 
     public void SetTargetMoney(int value)
     {
@@ -240,18 +264,16 @@ public class GameManager : MonoBehaviour
         moneyTargetManager.TargetMoney = value;
         uiController?.SetTarget(value);
         uiController?.SetDailyEarnings(GetCurrentMoney(), value, GetProgress());
+        currentDayTargetMoney = value;
     }
 
     public int PreviewIncreaseForNextDay() => moneyTargetManager != null ? moneyTargetManager.PreviewIncreaseForNextDay() : 0;
 
-    // Convenience getters
     public int GetCurrentMoney() => moneyTargetManager != null ? moneyTargetManager.CurrentMoney : 0;
     public int GetBankedMoney() => moneyTargetManager != null ? moneyTargetManager.BankedMoney : 0;
     public int GetTargetMoney() => moneyTargetManager != null ? moneyTargetManager.TargetMoney : 0;
     public int GetCurrentDay() => moneyTargetManager != null ? moneyTargetManager.CurrentDay : 0;
     public float GetProgress() => moneyTargetManager != null ? moneyTargetManager.Progress : 0f;
-
-    // ---- Event handlers ----
 
     private void HandleMoneyChanged(int newAmount)
     {
@@ -265,37 +287,68 @@ public class GameManager : MonoBehaviour
 
     private void HandleDailyEarningsBanked(int newBanked, int amountAdded)
     {
-        uiController?.ShowDayEndSummary(amountAdded, newBanked);
+        // Only show summary here if we did NOT already show it at timer end.
+        if (endOfDayPopupShown) return;
+
+        bool metQuota = amountAdded >= currentDayTargetMoney;
+        bool hostControls = IsServerOrStandalone;
+        uiController?.ShowDayEndSummary(amountAdded, newBanked, dailyPackagesDelivered, metQuota, hostControls);
+        dailyPackagesDelivered = 0;
+        endOfDayPopupShown = true;
     }
 
     private void HandleTargetChanged(int newTarget)
     {
         uiController?.SetTarget(newTarget);
         uiController?.SetDailyEarnings(GetCurrentMoney(), newTarget, GetProgress());
+        currentDayTargetMoney = newTarget;
     }
 
     private void HandleTargetIncreased(int newTarget, int deltaAdded)
     {
         uiController?.ShowTargetIncrease(newTarget, deltaAdded);
+        currentDayTargetMoney = newTarget;
     }
 
     private void HandleDayAdvanced(int newDayIndex)
     {
         uiController?.SetDay(newDayIndex);
         uiController?.SetDailyEarnings(GetCurrentMoney(), GetTargetMoney(), GetProgress());
+        currentDayTargetMoney = GetTargetMoney();
+        dailyPackagesDelivered = 0;
+        endOfDayPopupShown = false;
 
-        // Server/host spawns packages at the start of each new day
         if (IsServerOrStandalone)
-        {
             TrySpawnPackagesForDay(newDayIndex);
-        }
     }
 
     private void HandleTargetReached()
     {
         TriggerWinCondition();
     }
-       
+
+    private void HandleDayEndedEvaluated(bool success)
+    {
+        // Show popup immediately when timer ends
+        int earnedToday = GetCurrentMoney();
+        int previewBankedTotal = GetBankedMoney() + earnedToday; // not yet banked
+        bool hostControls = IsServerOrStandalone;
+
+        uiController?.ShowDayEndSummary(earnedToday, previewBankedTotal, dailyPackagesDelivered, success, hostControls);
+        endOfDayPopupShown = true;
+
+        if (!success)
+        {
+            // On failure we halt gameplay but keep summary visible.
+            IsGameplayActive = false;
+        }
+        else
+        {
+            // On success gameplay pauses awaiting host button.
+            IsGameplayActive = false;
+        }
+    }
+
     private void TriggerWinCondition()
     {
         OnWinCondition?.Invoke();
@@ -303,10 +356,10 @@ public class GameManager : MonoBehaviour
         Debug.Log("[GameManager] Win condition met.");
     }
 
-    // ---- Optional setters ----
     public void SetUIController(GameUIController controller)
     {
         uiController = controller;
+        uiController?.ConfigureDayEndButtons(HostAdvanceToNextDay, HostRestartRun);
         SyncAllUI();
     }
 
@@ -318,8 +371,6 @@ public class GameManager : MonoBehaviour
         SubscribeToMoneyTarget();
         SyncAllUI();
     }
-
-    // ---------- Package spawn control ----------
 
     private void TrySpawnPackagesForDay(int dayIndex)
     {
@@ -334,7 +385,6 @@ public class GameManager : MonoBehaviour
     {
         if (packageSpawners == null) return;
 
-        // Filter active spawners
         var active = new List<PackageSpawner>();
         foreach (var s in packageSpawners)
         {
@@ -343,13 +393,11 @@ public class GameManager : MonoBehaviour
         }
         if (active.Count == 0) return;
 
-        // Day 1 uses base values. Day 2 adds one step, etc.
         int dayOffset = Mathf.Max(0, dayIndex - 1);
         int minForDay = Mathf.Max(0, baseMinPackages + minIncreasePerDay * dayOffset);
         int maxForDay = Mathf.Max(minForDay, baseMaxPackages + maxIncreasePerDay * dayOffset);
         maxForDay = Mathf.Min(maxForDay, Mathf.Max(0, dailyHardCap));
 
-        // Choose a single global count and distribute across spawners
         int totalToSpawn = UnityEngine.Random.Range(minForDay, maxForDay + 1);
 
         int baseEach = totalToSpawn / active.Count;
@@ -360,7 +408,6 @@ public class GameManager : MonoBehaviour
         {
             int toSpawn = baseEach + (i < remainder ? 1 : 0);
             if (toSpawn <= 0) continue;
-
             spawnedTotal += active[i].SpawnCount(toSpawn);
         }
 

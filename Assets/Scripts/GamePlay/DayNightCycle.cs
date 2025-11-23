@@ -71,6 +71,8 @@ public class DayNightCycle : MonoBehaviour
 
     // NEW: Fired exactly when the timer hits zero, BEFORE success is evaluated.
     public event Action OnDayTimerAboutToExpire;
+    // NEW: Fired AFTER success/fail is evaluated (GameManager listens to show popup).
+    public event Action<bool> OnDayEndedEvaluated;
 
     private bool IsServerOrStandalone =>
         NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
@@ -268,17 +270,13 @@ public class DayNightCycle : MonoBehaviour
         lastDaySuccess = success;
         awaitingNextDay = success;
 
+        // Fire evaluated event so GameManager can show popup immediately.
+        OnDayEndedEvaluated?.Invoke(success);
+
         if (!success)
         {
-            if (gm != null)
-            {
-                Debug.Log("[DayNightCycle] Time up. Target NOT reached. Ending game.");
-                gm.EndGame();
-            }
-            else
-            {
-                Debug.LogWarning("[DayNightCycle] Time up and target not reached, but GameManager not found.");
-            }
+            // Do not immediately EndGame; popup lets host restart.
+            Debug.Log("[DayNightCycle] Time up. Target NOT reached. Showing failure popup.");
         }
         else
         {

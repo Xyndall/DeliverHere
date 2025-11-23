@@ -23,6 +23,10 @@ public class GameUIController : MonoBehaviour
     [Header("Day End Summary UI")]
     [SerializeField] private TMP_Text dayEarnedText;
     [SerializeField] private TMP_Text dayNewBankedText;
+    [SerializeField] private TMP_Text packagesDeliveredText;
+    [SerializeField] private TMP_Text quotaStatusText;
+    [SerializeField] private Button nextDayButton;
+    [SerializeField] private Button restartButton;
 
     [Header("Target Increase UI")]
     [SerializeField] private TMP_Text targetIncreaseText; // Optional popup/text
@@ -31,7 +35,7 @@ public class GameUIController : MonoBehaviour
     {
         HideWinPanel();
         HideDayEndSummary();
-        HideHUD(); // Hide all HUD text until the game starts
+        HideHUD();
         if (targetIncreaseText != null) targetIncreaseText.gameObject.SetActive(false);
 
         if (dayNightSlider != null)
@@ -39,6 +43,25 @@ public class GameUIController : MonoBehaviour
             dayNightSlider.minValue = 0f;
             dayNightSlider.maxValue = 1f;
             dayNightSlider.value = 0f;
+        }
+
+        // Clear button listeners (safety)
+        if (nextDayButton != null) nextDayButton.onClick.RemoveAllListeners();
+        if (restartButton != null) restartButton.onClick.RemoveAllListeners();
+    }
+
+    // Set button callbacks (called by GameManager after it sets itself up)
+    public void ConfigureDayEndButtons(System.Action onNextDay, System.Action onRestart)
+    {
+        if (nextDayButton != null)
+        {
+            nextDayButton.onClick.RemoveAllListeners();
+            if (onNextDay != null) nextDayButton.onClick.AddListener(() => onNextDay());
+        }
+        if (restartButton != null)
+        {
+            restartButton.onClick.RemoveAllListeners();
+            if (onRestart != null) restartButton.onClick.AddListener(() => onRestart());
         }
     }
 
@@ -79,14 +102,24 @@ public class GameUIController : MonoBehaviour
         if (targetIncreaseText == null) return;
         targetIncreaseText.gameObject.SetActive(true);
         targetIncreaseText.text = $"+{delta} target -> {newTarget}";
-        // Optionally hide after a delay via coroutine/tween.
     }
 
-    public void ShowDayEndSummary(int earnedToday, int newBanked)
+    // New extended summary (replaces old)
+    public void ShowDayEndSummary(int earnedToday, int newBanked, int packagesDelivered, bool metQuota, bool hostHasControl)
     {
         if (dayEndSummaryPanel != null) dayEndSummaryPanel.SetActive(true);
         if (dayEarnedText != null) dayEarnedText.text = $"Earned Today: {earnedToday}";
         if (dayNewBankedText != null) dayNewBankedText.text = $"Banked Total: {newBanked}";
+        if (packagesDeliveredText != null) packagesDeliveredText.text = $"Packages Delivered: {packagesDelivered}";
+        if (quotaStatusText != null)
+        {
+            quotaStatusText.text = metQuota ? "Quota: PASSED" : "Quota: FAILED";
+            quotaStatusText.color = metQuota ? Color.green : Color.red;
+        }
+
+        // Host-only buttons visibility
+        if (nextDayButton != null) nextDayButton.gameObject.SetActive(hostHasControl);
+        if (restartButton != null) restartButton.gameObject.SetActive(hostHasControl);
     }
 
     public void HideDayEndSummary()

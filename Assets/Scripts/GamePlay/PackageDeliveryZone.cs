@@ -160,6 +160,7 @@ namespace DeliverHere.GamePlay
             }
 
             int totalReward = 0;
+            int deliveredCount = 0;
             for (int i = 0; i < toDeliver.Count; i++)
             {
                 var props = toDeliver[i];
@@ -172,16 +173,23 @@ namespace DeliverHere.GamePlay
                 DepositReward(reward);
                 MarkProcessed(props);
                 totalReward += reward;
+                deliveredCount++;
 
                 if (consumePackageOnDeposit)
                 {
                     DespawnOrDestroy(props.gameObject);
                 }
+
+                // Inform GameManager about each package delivered
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.RegisterPackagesDelivered(1);
+                }
             }
 
-            if (totalReward > 0)
+            if (deliveredCount > 0)
             {
-                Debug.Log($"[PackageDeliveryZone] Batch delivered {toDeliver.Count} packages for total ${totalReward}.");
+                Debug.Log($"[PackageDeliveryZone] Batch delivered {deliveredCount} packages for total ${totalReward}.");
             }
 
             // Remove consumed/destroyed from pending

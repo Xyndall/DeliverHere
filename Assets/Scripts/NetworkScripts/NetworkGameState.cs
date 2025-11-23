@@ -13,10 +13,8 @@ public class NetworkGameState : NetworkBehaviour
     [SerializeField] private GameUIController uiController;
     [SerializeField] private bool autoFindReferences = true;
 
-    // Expose a simple C# event for non-NetworkBehaviours (e.g., MenuUI)
     public event Action<bool> OnGameStartedChangedEvent;
 
-    // Networked state (server writes, everyone reads)
     private readonly NetworkVariable<bool> gameStarted = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
@@ -39,8 +37,6 @@ public class NetworkGameState : NetworkBehaviour
         0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     public bool GameStarted => gameStarted.Value;
-
-    // NEW: expose read-only mirrors for clients/others to sample
     public int CurrentDay => nvCurrentDay.Value;
     public float DayNightProgress => nvDayNightProgress.Value;
 
@@ -95,7 +91,6 @@ public class NetworkGameState : NetworkBehaviour
         }
         else
         {
-            // Client: apply a snapshot immediately
             ApplyAllToClientUI();
             if (gameStarted.Value)
             {
@@ -114,14 +109,12 @@ public class NetworkGameState : NetworkBehaviour
 
     private void Update()
     {
-        // Server polls time-of-day and mirrors to NV
         if (IsServer && dayNightCycle != null)
         {
             nvDayNightProgress.Value = Mathf.Clamp01(dayNightCycle.Normalized);
         }
     }
 
-    // Requests from UI (host-only in practice, but allow from anyone; server validates)
     [ServerRpc(RequireOwnership = false)]
     public void RequestStartGameServerRpc()
     {
@@ -129,6 +122,7 @@ public class NetworkGameState : NetworkBehaviour
         gameStarted.Value = true;
         gameManager?.StartGame();
         PushAllFromServer();
+        HideDayEndSummaryClientRpc(); // Ensure leftover panel hidden.
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -138,6 +132,7 @@ public class NetworkGameState : NetworkBehaviour
         gameStarted.Value = false;
         gameManager?.EndGame();
         PushAllFromServer();
+        HideDayEndSummaryClientRpc();
     }
 
     private void OnGameStartedChanged(bool _, bool started)
@@ -147,11 +142,9 @@ public class NetworkGameState : NetworkBehaviour
         else gameManager?.EndGame();
     }
 
-    // Server-only: mirror MoneyTargetManager into NVs
     private void SubscribeServerToMoneyEvents()
     {
         if (moneyTargetManager == null) return;
-
         moneyTargetManager.OnMoneyChanged += Server_OnMoneyChanged;
         moneyTargetManager.OnBankedMoneyChanged += Server_OnBankedMoneyChanged;
         moneyTargetManager.OnDailyEarningsBanked += Server_OnDailyEarningsBanked;
@@ -163,7 +156,6 @@ public class NetworkGameState : NetworkBehaviour
     private void UnsubscribeServerFromMoneyEvents()
     {
         if (moneyTargetManager == null) return;
-
         moneyTargetManager.OnMoneyChanged -= Server_OnMoneyChanged;
         moneyTargetManager.OnBankedMoneyChanged -= Server_OnBankedMoneyChanged;
         moneyTargetManager.OnDailyEarningsBanked -= Server_OnDailyEarningsBanked;
@@ -211,12 +203,14 @@ public class NetworkGameState : NetworkBehaviour
         nvCurrentDay.Value = v;
         nvCurrentMoney.Value = moneyTargetManager.CurrentMoney;
         nvProgress.Value = moneyTargetManager.Progress;
+
+        // Hide the previous day's end summary for everyone.
+        HideDayEndSummaryClientRpc();
     }
 
     private void PushAllFromServer()
     {
         if (!IsServer || moneyTargetManager == null) return;
-
         nvCurrentMoney.Value = moneyTargetManager.CurrentMoney;
         nvBankedMoney.Value = moneyTargetManager.BankedMoney;
         nvTargetMoney.Value = moneyTargetManager.TargetMoney;
@@ -234,5 +228,12 @@ public class NetworkGameState : NetworkBehaviour
         uiController?.SetBankedMoney(nvBankedMoney.Value);
         uiController?.SetDayNightVisible(true);
         uiController?.SetDayNightProgress(Mathf.Clamp01(nvDayNightProgress.Value));
+    }
+
+    // RPC to hide the day-end summary panel on all peers.
+    [ClientRpc]
+    private void HideDayEndSummaryClientRpc()
+    {
+        uiController?.HideDayEndSummary();
     }
 }
