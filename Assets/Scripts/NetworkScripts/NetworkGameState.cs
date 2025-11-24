@@ -17,22 +17,16 @@ public class NetworkGameState : NetworkBehaviour
 
     private readonly NetworkVariable<bool> gameStarted = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
     private readonly NetworkVariable<int> nvCurrentMoney = new NetworkVariable<int>(
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
     private readonly NetworkVariable<int> nvBankedMoney = new NetworkVariable<int>(
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
     private readonly NetworkVariable<int> nvTargetMoney = new NetworkVariable<int>(
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
     private readonly NetworkVariable<int> nvCurrentDay = new NetworkVariable<int>(
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
     private readonly NetworkVariable<float> nvProgress = new NetworkVariable<float>(
         0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
     private readonly NetworkVariable<float> nvDayNightProgress = new NetworkVariable<float>(
         0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
@@ -93,26 +87,20 @@ public class NetworkGameState : NetworkBehaviour
         {
             ApplyAllToClientUI();
             if (gameStarted.Value)
-            {
                 gameManager?.StartGame();
-            }
         }
     }
 
     public override void OnNetworkDespawn()
     {
         if (IsServer)
-        {
             UnsubscribeServerFromMoneyEvents();
-        }
     }
 
     private void Update()
     {
         if (IsServer && dayNightCycle != null)
-        {
             nvDayNightProgress.Value = Mathf.Clamp01(dayNightCycle.Normalized);
-        }
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -122,7 +110,7 @@ public class NetworkGameState : NetworkBehaviour
         gameStarted.Value = true;
         gameManager?.StartGame();
         PushAllFromServer();
-        HideDayEndSummaryClientRpc(); // Ensure leftover panel hidden.
+        HideDayEndSummaryClientRpc();
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -140,6 +128,28 @@ public class NetworkGameState : NetworkBehaviour
         OnGameStartedChangedEvent?.Invoke(started);
         if (started) gameManager?.StartGame();
         else gameManager?.EndGame();
+    }
+
+    // SERVER helper to broadcast popup
+    public void BroadcastDayEndSummary(int earnedToday, int bankedPreview, int packagesDelivered, bool metQuota)
+    {
+        if (!IsServer) return;
+        ShowDayEndSummaryClientRpc(earnedToday, bankedPreview, packagesDelivered, metQuota);
+    }
+
+    [ClientRpc]
+    public void ShowDayEndSummaryClientRpc(int earnedToday, int bankedPreview, int packagesDelivered, bool metQuota)
+    {
+        if (uiController == null) return;
+        bool hostHasControl = NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
+        uiController.ShowDayEndSummary(earnedToday, bankedPreview, packagesDelivered, metQuota, hostHasControl);
+    }
+
+    // Made public so GameManager can call directly
+    [ClientRpc]
+    public void HideDayEndSummaryClientRpc()
+    {
+        uiController?.HideDayEndSummary();
     }
 
     private void SubscribeServerToMoneyEvents()
@@ -203,8 +213,6 @@ public class NetworkGameState : NetworkBehaviour
         nvCurrentDay.Value = v;
         nvCurrentMoney.Value = moneyTargetManager.CurrentMoney;
         nvProgress.Value = moneyTargetManager.Progress;
-
-        // Hide the previous day's end summary for everyone.
         HideDayEndSummaryClientRpc();
     }
 
@@ -228,12 +236,5 @@ public class NetworkGameState : NetworkBehaviour
         uiController?.SetBankedMoney(nvBankedMoney.Value);
         uiController?.SetDayNightVisible(true);
         uiController?.SetDayNightProgress(Mathf.Clamp01(nvDayNightProgress.Value));
-    }
-
-    // RPC to hide the day-end summary panel on all peers.
-    [ClientRpc]
-    private void HideDayEndSummaryClientRpc()
-    {
-        uiController?.HideDayEndSummary();
     }
 }

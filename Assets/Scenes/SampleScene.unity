@@ -5964,7 +5964,7 @@ MonoBehaviour:
   enableDailyIncrease: 1
   growthMode: 2
   baseDailyIncrease: 100
-  percentDailyIncrease: 0.141
+  percentDailyIncrease: 0.312
   useScalingCurve: 1
   dailyScalingCurve:
     serializedVersion: 2
