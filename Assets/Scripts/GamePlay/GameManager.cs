@@ -323,6 +323,11 @@ public class GameManager : MonoBehaviour
         dailyPackagesDelivered = 0;
         endOfDayPopupShown = false;
 
+        // NEW: resume gameplay for the next day so DayNightCycle.Update ticks again.
+        IsGameplayActive = true;
+        uiController?.HideDayEndSummary();
+        uiController?.ShowHUD();
+
         if (IsServerOrStandalone)
             TrySpawnPackagesForDay(newDayIndex);
     }

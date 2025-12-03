@@ -98,8 +98,44 @@ namespace DeliverHere.GamePlay
             if (currentDay >= 0 && _lastDeliveredDay == currentDay)
                 return; // Already delivered this day.
 
+            // 1) Deliver anything currently in the zone.
             DeliverAllPending();
+
+            // 2) Regardless of delivery status, delete all remaining packages in the scene.
+            ClearAllScenePackages();
+
             _lastDeliveredDay = currentDay;
+        }
+
+        private void ClearAllScenePackages()
+        {
+            if (!IsProcessingAuthority()) return;
+
+            var allPackages = FindObjectsByType<PackageProperties>(FindObjectsSortMode.None);
+            int cleared = 0;
+
+            for (int i = 0; i < allPackages.Length; i++)
+            {
+                var p = allPackages[i];
+                if (p == null) continue;
+
+                // Skip if already processed and despawned/destroyed
+                if (IsAlreadyProcessed(p)) continue;
+
+                // Despawn/destroy the GameObject
+                DespawnOrDestroy(p.gameObject);
+                cleared++;
+            }
+
+            if (cleared > 0)
+            {
+                Debug.Log($"[PackageDeliveryZone] Cleared {cleared} undelivered package(s) at day end.");
+            }
+
+            // Also clear local tracking sets to avoid stale references
+            _pendingPackages.RemoveWhere(p => p == null || IsAlreadyProcessed(p));
+            _processedNetworkIds.Clear();
+            _processedInstanceIdUntil.Clear();
         }
 
         // Trigger accumulation only (no immediate delivery)

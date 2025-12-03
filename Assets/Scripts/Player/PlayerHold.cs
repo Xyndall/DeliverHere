@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Unity.Netcode;
+using System;
 
 [DisallowMultipleComponent]
 public class PlayerHold : NetworkBehaviour
@@ -348,6 +349,11 @@ public class PlayerHold : NetworkBehaviour
         _prevAnchorPos = _anchorRb.position;
 
         if (IsServer && _heldBody != null) CreateOrConfigureJoint();
+
+        if (_heldBody != null)
+        {
+            PickedUp?.Invoke(_heldBody);
+        }
     }
 
     private void CreateOrConfigureJoint()
@@ -523,10 +529,14 @@ public class PlayerHold : NetworkBehaviour
             // Optionally reclaim ownership
         }
 
+        var droppedBody = _heldBody;
+
         _heldBody = null;
         _heldRef.Value = default;
         _restoreCaptured = false;
         _exceededSeparationTime = 0f;
+
+        Dropped?.Invoke(droppedBody);
     }
 
     private Quaternion GetYawRotation()
@@ -606,4 +616,10 @@ public class PlayerHold : NetworkBehaviour
         postPickupGraceTime = Mathf.Clamp(postPickupGraceTime, 0f, 5f);
     }
 #endif
+
+    public Transform AnchorTransform => _anchorRb != null ? _anchorRb.transform : null;
+
+    // Notify external systems (e.g., PlayerArms) when pickup/drop occur.
+    public event Action<Rigidbody> PickedUp;
+    public event Action<Rigidbody> Dropped;
 }

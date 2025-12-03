@@ -342,6 +342,9 @@ GameObject:
   - component: {fileID: 8255747168946339222}
   - component: {fileID: 1258810096796857199}
   - component: {fileID: 276092387163634943}
+  - component: {fileID: 2250398095121221054}
+  - component: {fileID: 2317586595272727960}
+  - component: {fileID: 8983411890034586755}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -442,6 +445,7 @@ MonoBehaviour:
   playerHold: {fileID: 0}
   speedMultiplierAtMaxPenalty: 0.55
   rotateLerpMultiplierAtMaxPenalty: 0.4
+  weightManager: {fileID: 0}
 --- !u!54 &5082883330226292188
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -692,6 +696,69 @@ MonoBehaviour:
   weight: 1
   followLerp: 16
   ownerOnly: 1
+--- !u!95 &2250398095121221054
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 0}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
+--- !u!114 &2317586595272727960
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f0a9b229e310f0a4d83b7131bd4006a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerArms
+  playerHold: {fileID: 1258810096796857199}
+  defaultLocalOffset: {x: 0, y: -0.15, z: 0}
+  handHorizontalSeparation: 0.25
+  verticalOffset: 0
+  holdIKWeight: 1
+  blendSpeed: 6
+  applyRotation: 1
+--- !u!114 &8983411890034586755
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6b68070a1c6e90e4da5e4a8667ffbbe4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerWeightManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  baseBodyMassKg: 75
+  baseEquipmentMassKg: 5
+  heldMassSmoothTime: 0.12
+  speedMultiplierAtMin: 1
+  speedMultiplierAtMax: 0.55
+  maxSlowdownMassKg: 10
+  rotateLerpMultiplierAtMax: 0.4
+  maxMassForJumpKg: 95
+  maxMassForSprintKg: 110
 --- !u!1001 &4803753625747206198
 PrefabInstance:
   m_ObjectHideFlags: 0

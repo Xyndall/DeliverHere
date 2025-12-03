@@ -33,6 +33,11 @@ public class PlayerMovement : NetworkBehaviour
     [Tooltip("At max penalty, rotateLerp is multiplied by this (lower = harder to turn).")]
     [Range(0.1f, 1f)] [SerializeField] private float rotateLerpMultiplierAtMaxPenalty = 0.4f;
 
+    // NEW: Centralized weight manager
+    [Header("Weight Manager")]
+    [Tooltip("If not assigned, will try to GetComponent on the same GameObject.")]
+    [SerializeField] private PlayerWeightManager weightManager;
+
     public NetworkVariable<float> Stamina { get; private set; }
         = new NetworkVariable<float>(100f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
@@ -53,6 +58,7 @@ public class PlayerMovement : NetworkBehaviour
     {
         _controller = GetComponent<CharacterController>();
         if (playerHold == null) playerHold = GetComponent<PlayerHold>();
+        if (weightManager == null) weightManager = GetComponent<PlayerWeightManager>();
     }
 
     public override void OnNetworkSpawn()
@@ -124,6 +130,13 @@ public class PlayerMovement : NetworkBehaviour
 
         float dt = Time.deltaTime;
 
+        // Feed held mass into weight manager (centralized source of truth)
+        if (weightManager != null)
+        {
+            // PlayerHold.HeldMass is nullable; null indicates no held object
+            weightManager.SetHeldMass(playerHold != null ? playerHold.HeldMass : null);
+        }
+
         bool grounded = _controller.isGrounded;
         if (grounded && _verticalVel.y < 0f)
             _verticalVel.y = -2f; // keep grounded
@@ -131,15 +144,33 @@ public class PlayerMovement : NetworkBehaviour
         Vector2 move = _moveAction != null ? _moveAction.ReadValue<Vector2>() : Vector2.zero;
         bool hasMove = move.sqrMagnitude > 0.0001f;
 
-        bool wantsSprint = (_sprintAction != null && _sprintAction.IsPressed()) && hasMove && Stamina.Value > 0.01f;
-        float speed = wantsSprint ? runSpeed : walkSpeed;
+        bool staminaAllowsSprint = Stamina.Value > 0.01f;
+        bool weightAllowsSprint = weightManager == null || weightManager.CanSprint();
+        bool wantsSprintInput = (_sprintAction != null && _sprintAction.IsPressed());
+        bool wantsSprint = wantsSprintInput && hasMove && staminaAllowsSprint && weightAllowsSprint;
 
-        // APPLY ARMS PENALTY (speed and turning)
-        float penalty01 = playerHold != null ? playerHold.ControlPenalty01 : 0f;
-        float speedMult = Mathf.Lerp(1f, speedMultiplierAtMaxPenalty, penalty01);
-        float rotateMult = Mathf.Lerp(1f, rotateLerpMultiplierAtMaxPenalty, penalty01);
-        speed *= speedMult;
-        float rotateLerpCurrent = rotateLerp * rotateMult;
+        float baseSpeed = wantsSprint ? runSpeed : walkSpeed;
+        float speed = baseSpeed;
+
+        // APPLY WEIGHT PENALTY (speed and turning) via PlayerWeightManager
+        float rotateLerpCurrent = rotateLerp;
+        if (weightManager != null)
+        {
+            float speedMult = weightManager.GetSpeedMultiplier();
+            speed *= speedMult;
+
+            float rotateMult = weightManager.GetRotateLerpMultiplier();
+            rotateLerpCurrent = rotateLerp * rotateMult;
+        }
+        else
+        {
+            // Fallback to existing arms penalty if no weight manager present
+            float penalty01 = playerHold != null ? playerHold.ControlPenalty01 : 0f;
+            float speedMult = Mathf.Lerp(1f, speedMultiplierAtMaxPenalty, penalty01);
+            float rotateMult = Mathf.Lerp(1f, rotateLerpMultiplierAtMaxPenalty, penalty01);
+            speed *= speedMult;
+            rotateLerpCurrent = rotateLerp * rotateMult;
+        }
 
         // Camera-relative planar movement
         Vector3 forward = transform.forward;
@@ -177,8 +208,9 @@ public class PlayerMovement : NetworkBehaviour
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, rotateLerpCurrent * dt);
         }
 
-        // Jump
-        if (grounded && _jumpAction != null && _jumpAction.WasPressedThisFrame())
+        // Jump (blocked if overweight)
+        bool canJumpByWeight = weightManager == null || weightManager.CanJump();
+        if (grounded && canJumpByWeight && _jumpAction != null && _jumpAction.WasPressedThisFrame())
         {
             _verticalVel.y = Mathf.Sqrt(jumpHeight * -2f * gravity); // v = sqrt(2gh)
         }

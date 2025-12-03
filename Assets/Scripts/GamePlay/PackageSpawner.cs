@@ -53,6 +53,9 @@ namespace DeliverHere.GamePlay
         [Header("Lifecycle")]
         [SerializeField] private bool autoSpawnOnNetworkSpawn = false;
 
+        [Header("Retry")]
+        [SerializeField, Min(0)] private int extraRetryPassesIfBelowMin = 2;
+
         [Header("Parenting")]
         [SerializeField] private Transform spawnParent;
         [SerializeField] private bool useNetworkParenting = false;
@@ -75,8 +78,34 @@ namespace DeliverHere.GamePlay
             {
                 return;
             }
-            int count = Random.Range(Mathf.Min(minPackages, maxPackages), Mathf.Max(minPackages, maxPackages) + 1);
-            SpawnCount(count);
+
+            int desired = Random.Range(Mathf.Min(minPackages, maxPackages), Mathf.Max(minPackages, maxPackages) + 1);
+            int totalSpawned = SpawnCount(desired);
+
+            // Ensure we at least meet the minimum by retrying the "missing" amount
+            if (totalSpawned < minPackages)
+            {
+                int passes = 0;
+                int maxPasses = Mathf.Max(0, extraRetryPassesIfBelowMin);
+
+                while (totalSpawned < minPackages && passes < maxPasses)
+                {
+                    int need = minPackages - totalSpawned;
+                    int spawnedThisPass = SpawnCount(need);
+                    if (spawnedThisPass <= 0)
+                    {
+                        // No progress, stop retrying
+                        break;
+                    }
+                    totalSpawned += spawnedThisPass;
+                    passes++;
+                }
+
+                if (totalSpawned < minPackages)
+                {
+                    Debug.LogWarning($"[PackageSpawner] Minimum {minPackages} not met after retries. Spawned {totalSpawned}.");
+                }
+            }
         }
 
         public int SpawnCount(int desiredCount)

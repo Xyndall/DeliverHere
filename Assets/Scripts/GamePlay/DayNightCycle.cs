@@ -298,6 +298,8 @@ public class DayNightCycle : MonoBehaviour
         }
 
         awaitingNextDay = false;
+
+        // Advance the day index first
         if (money != null)
         {
             money.AdvanceDay();
@@ -306,6 +308,9 @@ public class DayNightCycle : MonoBehaviour
         {
             Debug.LogWarning("[DayNightCycle] ConfirmStartNextDay called but MoneyTargetManager not found.");
         }
+
+        // Guard: ensure the next day timer actually starts even if the event timing or subscription misses.
+        StartNewDayTimer();
     }
 
 #if UNITY_EDITOR
