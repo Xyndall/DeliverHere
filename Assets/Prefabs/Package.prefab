@@ -17,7 +17,9 @@ GameObject:
   - component: {fileID: -122704528989098008}
   - component: {fileID: 6799413146419209583}
   - component: {fileID: 3430845716624476526}
+  - component: {fileID: -8715937964813551339}
   - component: {fileID: 6220255637439932627}
+  - component: {fileID: 8668353324425754610}
   m_Layer: 6
   m_Name: Package
   m_TagString: Package
@@ -244,6 +246,19 @@ MonoBehaviour:
   UseRigidBodyForMotion: 0
   AutoUpdateKinematicState: 0
   AutoSetKinematicOnDespawn: 0
+--- !u!114 &-8715937964813551339
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2581277190305902517}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be98fa95e9595be44b33d4080bbc7196, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HoldableHoldingState
+  ShowTopMostFoldoutHeaderGroup: 1
 --- !u!114 &6220255637439932627
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -288,3 +303,24 @@ MonoBehaviour:
   mediumScaleMultiplierRange: {x: 0.9, y: 1.2}
   largeScaleMultiplierRange: {x: 1.2, y: 1.4}
   body: {fileID: 2364863683543904165}
+--- !u!114 &8668353324425754610
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2581277190305902517}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1bd17860d20ab754f93de8f108a1a117, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PackageDamageSystem
+  minDamageSpeed: 3.5
+  damagePerSpeed: 2
+  fragilityMultiplier: 1
+  maxDamagePerHit: 50
+  ignoreLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  perColliderCooldownSeconds: 0.5
+  scaleByContactCount: 0

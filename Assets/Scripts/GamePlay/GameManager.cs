@@ -21,11 +21,6 @@ public class GameManager : MonoBehaviour
     [Header("Package Spawning")]
     [SerializeField] private bool autoFindPackageSpawners = true;
     [SerializeField] private List<PackageSpawner> packageSpawners = new List<PackageSpawner>();
-    [SerializeField] private int baseMinPackages = 5;
-    [SerializeField] private int baseMaxPackages = 12;
-    [SerializeField] private int minIncreasePerDay = 1;
-    [SerializeField] private int maxIncreasePerDay = 2;
-    [SerializeField] private int dailyHardCap = 100;
 
     [Header("Spawn Safety")]
     [SerializeField] private bool preventDuplicateSpawnsPerDay = true;
@@ -400,38 +395,12 @@ public class GameManager : MonoBehaviour
         }
         if (active.Count == 0) return;
 
-        int dayOffset = Mathf.Max(0, dayIndex - 1);
-        int minForDay = Mathf.Max(0, baseMinPackages + minIncreasePerDay * dayOffset);
-        int maxForDay = Mathf.Max(minForDay, baseMaxPackages + maxIncreasePerDay * dayOffset);
-        maxForDay = Mathf.Min(maxForDay, Mathf.Max(0, dailyHardCap));
-
-        int totalToSpawn = UnityEngine.Random.Range(minForDay, maxForDay + 1);
-
-        int baseEach = totalToSpawn / active.Count;
-        int remainder = totalToSpawn % active.Count;
-
-        int spawnedTotal = 0;
-        for (int i = 0; i < active.Count; i++)
+        foreach (var spawner in active)
         {
-            int toSpawn = baseEach + (i < remainder ? 1 : 0);
-            if (toSpawn <= 0) continue;
-            spawnedTotal += active[i].SpawnCount(toSpawn);
-        }
-
-        if (spawnedTotal < totalToSpawn)
-        {
-            Debug.LogWarning($"[GameManager] Requested total {totalToSpawn} across {active.Count} spawners, actually spawned {spawnedTotal}.");
+            // Ensure spawner uses the day provided by GameManager
+            spawner.SetUseDailyIncreasingCount(false); // disable auto/self lookup
+            spawner.ApplyDayIndex(dayIndex);           // provide explicit day
+            spawner.SpawnAll();                        // spawns exactly the computed count
         }
     }
-
-#if UNITY_EDITOR
-    private void OnValidate()
-    {
-        baseMinPackages = Mathf.Max(0, baseMinPackages);
-        baseMaxPackages = Mathf.Max(baseMinPackages, baseMaxPackages);
-        minIncreasePerDay = Mathf.Max(0, minIncreasePerDay);
-        maxIncreasePerDay = Mathf.Max(0, maxIncreasePerDay);
-        dailyHardCap = Mathf.Max(0, dailyHardCap);
-    }
-#endif
 }

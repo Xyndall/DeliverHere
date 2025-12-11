@@ -26,9 +26,8 @@ namespace DeliverHere.GamePlay
         [Header("Package Prefabs (must have NetworkObject + PackageProperties)")]
         [SerializeField] private List<WeightedPackage> packageOptions = new List<WeightedPackage>();
 
-        [Header("Count (local, used by SpawnAll)")]
-        [SerializeField] private int minPackages = 5;
-        [SerializeField] private int maxPackages = 12;
+        [Header("Desired Count")]
+        [SerializeField, Min(0)] private int desiredPackages = 15;
 
         [Header("Spawn Positions")]
         [SerializeField] private SpawnMode spawnMode = SpawnMode.Mixed;
@@ -53,14 +52,19 @@ namespace DeliverHere.GamePlay
         [Header("Lifecycle")]
         [SerializeField] private bool autoSpawnOnNetworkSpawn = false;
 
-        [Header("Retry")]
-        [SerializeField, Min(0)] private int extraRetryPassesIfBelowMin = 2;
-
         [Header("Parenting")]
         [SerializeField] private Transform spawnParent;
         [SerializeField] private bool useNetworkParenting = false;
 
+        [Header("Daily Mode (optional)")]
+        [SerializeField] private bool useDailyIncreasingCount = true;
+        [SerializeField, Min(0)] private int basePackagesFirstDay = 15;      // Day 1 default
+        [SerializeField, Min(0)] private int packagesIncrementPerDay = 1;    // +1 per day
+        [SerializeField, Min(0)] private int maxDailyPackagesCap = 0;        // 0 = no cap
+
         private readonly HashSet<int> usedPointIndices = new HashSet<int>();
+        private bool dailyOverrideActive;
+        private int dailyOverrideCount;
 
         public override void OnNetworkSpawn()
         {
@@ -79,38 +83,91 @@ namespace DeliverHere.GamePlay
                 return;
             }
 
-            int desired = Random.Range(Mathf.Min(minPackages, maxPackages), Mathf.Max(minPackages, maxPackages) + 1);
-            int totalSpawned = SpawnCount(desired);
-
-            // Ensure we at least meet the minimum by retrying the "missing" amount
-            if (totalSpawned < minPackages)
+            int desired;
+            if (dailyOverrideActive)
             {
-                int passes = 0;
-                int maxPasses = Mathf.Max(0, extraRetryPassesIfBelowMin);
+                desired = dailyOverrideCount;
+            }
+            else if (useDailyIncreasingCount)
+            {
+                desired = ComputeDesiredForDay(GetCurrentDayIndexSafe());
+            }
+            else
+            {
+                desired = Mathf.Max(0, basePackagesFirstDay);
+            }
 
-                while (totalSpawned < minPackages && passes < maxPasses)
-                {
-                    int need = minPackages - totalSpawned;
-                    int spawnedThisPass = SpawnCount(need);
-                    if (spawnedThisPass <= 0)
-                    {
-                        // No progress, stop retrying
-                        break;
-                    }
-                    totalSpawned += spawnedThisPass;
-                    passes++;
-                }
+            int totalSpawned = 0;
 
-                if (totalSpawned < minPackages)
-                {
-                    Debug.LogWarning($"[PackageSpawner] Minimum {minPackages} not met after retries. Spawned {totalSpawned}.");
-                }
+            // Pass 1: normal rules
+            totalSpawned += SpawnPass(desired - totalSpawned, validateNavMesh: useNavMeshValidation, clearanceRadius: overlapRadius);
+
+            // Pass 2: soft fallback (disable NavMesh, reduce clearance)
+            if (totalSpawned < desired)
+            {
+                totalSpawned += SpawnPass(desired - totalSpawned, validateNavMesh: false, clearanceRadius: Mathf.Max(0.1f, overlapRadius * 0.75f));
+            }
+
+            // Pass 3: hard guarantee (ground-only placement)
+            if (totalSpawned < desired)
+            {
+                totalSpawned += HardGuaranteeSpawn(desired - totalSpawned);
+            }
+
+            // Pass 4: final force placement (stack on first valid ground hit)
+            if (totalSpawned < desired)
+            {
+                totalSpawned += ForcePlaceRemaining(desired - totalSpawned);
+            }
+
+            if (totalSpawned < desired)
+            {
+                Debug.LogWarning($"[PackageSpawner] Target {desired} not met. Spawned {totalSpawned}.");
             }
         }
 
-        public int SpawnCount(int desiredCount)
+        // Public API to set desired exact count
+        public void SetDesiredPackages(int count)
         {
-            if (desiredCount <= 0) return 0;
+            desiredPackages = Mathf.Max(0, count);
+        }
+
+        // Public API to set daily count from external systems (DayNightCycle/GameManager)
+        public void ApplyDayIndex(int dayIndex)
+        {
+            int desired = ComputeDesiredForDay(dayIndex);
+            // lock exact count for SpawnAll
+            dailyOverrideActive = true;
+            dailyOverrideCount = Mathf.Max(0, desired);
+        }
+
+        // Optional explicit toggle if you want to disable auto daily mode when using ApplyDayIndex
+        public void SetUseDailyIncreasingCount(bool enabled)
+        {
+            useDailyIncreasingCount = enabled;
+        }
+
+        private int ComputeDesiredForDay(int dayIndex)
+        {
+            int dayOneBased = Mathf.Max(1, dayIndex);
+            long desired = (long)basePackagesFirstDay + (long)(packagesIncrementPerDay) * (long)(dayOneBased - 1);
+            if (maxDailyPackagesCap > 0)
+            {
+                desired = Mathf.Min((int)desired, maxDailyPackagesCap);
+            }
+            return Mathf.Max(0, (int)desired);
+        }
+
+        private int GetCurrentDayIndexSafe()
+        {
+            // Hook to your DayNightCycle or GameManager if available.
+            return 1;
+        }
+
+        // Normal/soft pass using TryGetSpawnTransform and validations
+        private int SpawnPass(int need, bool validateNavMesh, float clearanceRadius)
+        {
+            if (need <= 0) return 0;
             if (NetworkManager.Singleton != null && !IsServer) return 0;
             if (!HasValidPackageOption())
             {
@@ -122,13 +179,20 @@ namespace DeliverHere.GamePlay
 
             int spawned = 0;
             int safety = 0;
-            int maxSafety = Mathf.Max(1, desiredCount) * Mathf.Max(1, maxAttemptsPerPackage);
+            int maxSafety = Mathf.Max(1, need) * Mathf.Max(1, maxAttemptsPerPackage);
 
-            while (spawned < desiredCount && safety < maxSafety)
+            while (spawned < need && safety < maxSafety)
             {
                 safety++;
 
                 if (!TryGetSpawnTransform(out var position, out var rotation))
+                    continue;
+
+                // Validate clearance and NavMesh per pass configuration
+                if (!IsPositionClearWithRadius(position, clearanceRadius))
+                    continue;
+
+                if (validateNavMesh && !OnNavMesh(position))
                     continue;
 
                 var chosen = PickWeightedPackage();
@@ -136,53 +200,204 @@ namespace DeliverHere.GamePlay
                     continue;
 
                 var instance = Instantiate(chosen.prefab, position, rotation);
-
-                if (NetworkManager.Singleton != null)
-                {
-                    instance.Spawn(true);
-
-                    // Parent after spawn (NGO requirement)
-                    if (spawnParent != null)
-                    {
-                        if (useNetworkParenting)
-                        {
-                            var parentNO = spawnParent.GetComponent<NetworkObject>();
-                            if (parentNO != null && parentNO.IsSpawned)
-                            {
-                                instance.TrySetParent(parentNO, true);
-                            }
-                            else
-                            {
-                                instance.transform.SetParent(spawnParent, true);
-                            }
-                        }
-                        else
-                        {
-                            instance.transform.SetParent(spawnParent, true);
-                        }
-                    }
-                }
-                else
-                {
-                    if (spawnParent != null)
-                    {
-                        instance.transform.SetParent(spawnParent, true);
-                    }
-
-                    // Offline: force per-instance randomization immediately
-                    var propsOffline = instance.GetComponentInChildren<PackageProperties>(true);
-                    propsOffline?.ServerRandomize();
-                }
+                SpawnAndParent(instance);
 
                 spawned++;
             }
 
-            if (spawned < desiredCount)
+            return spawned;
+        }
+
+        // Hard guarantee: place on any ground hit inside areas/points without clearance or NavMesh check.
+        private int HardGuaranteeSpawn(int need)
+        {
+            if (need <= 0) return 0;
+            int placed = 0;
+
+            var origins = new List<Vector3>(spawnPoints.Count + spawnAreas.Count * 4);
+
+            for (int i = 0; i < spawnPoints.Count; i++)
             {
-                Debug.LogWarning($"[PackageSpawner] Requested {desiredCount}, spawned {spawned}.");
+                var t = spawnPoints[i];
+                if (t == null) continue;
+                origins.Add(t.position + Vector3.up * sampleAbove);
             }
 
-            return spawned;
+            for (int i = 0; i < spawnAreas.Count; i++)
+            {
+                var area = spawnAreas[i];
+                if (area == null) continue;
+
+                var b = area.bounds;
+                int samples = Mathf.Max(4, need * 10);
+                for (int s = 0; s < samples; s++)
+                {
+                    var origin = new Vector3(
+                        Random.Range(b.min.x, b.max.x),
+                        b.max.y + sampleAbove,
+                        Random.Range(b.min.z, b.max.z)
+                    );
+                    origins.Add(origin);
+                }
+            }
+
+            if (origins.Count == 0)
+            {
+                int samples = Mathf.Max(10, need * 10);
+                var center = transform.position;
+                float radius = 10f;
+                for (int s = 0; s < samples; s++)
+                {
+                    var offset = new Vector2(Random.Range(-radius, radius), Random.Range(-radius, radius));
+                    var origin = new Vector3(center.x + offset.x, center.y + sampleAbove, center.z + offset.y);
+                    origins.Add(origin);
+                }
+            }
+
+            // Shuffle some
+            for (int i = 0; i < origins.Count; i++)
+            {
+                int j = Random.Range(i, origins.Count);
+                (origins[i], origins[j]) = (origins[j], origins[i]);
+            }
+
+            int attempts = 0;
+            int maxAttempts = Mathf.Max(need * 50, need * maxAttemptsPerPackage);
+
+            while (placed < need && attempts < maxAttempts)
+            {
+                attempts++;
+                var origin = origins[Random.Range(0, origins.Count)];
+
+                if (!Physics.Raycast(origin, Vector3.down, out var hit, groundRayLength, groundMask, QueryTriggerInteraction.Ignore))
+                    continue;
+
+                var pos = hit.point + hit.normal * surfaceOffset;
+                var rot = Quaternion.FromToRotation(Vector3.up, hit.normal) * Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+
+                var chosen = PickWeightedPackage();
+                if (chosen == null || chosen.prefab == null) continue;
+
+                var instance = Instantiate(chosen.prefab, pos, rot);
+                SpawnAndParent(instance);
+
+                placed++;
+            }
+
+            return placed;
+        }
+
+        // Absolute last resort: stack remaining packages at the first valid ground hit so the count is exact.
+        private int ForcePlaceRemaining(int need)
+        {
+            if (need <= 0) return 0;
+
+            // Find a single valid ground position near the spawner (or first spawn point/area) and stack upwards
+            Vector3? basePos = null;
+            Vector3 baseNormal = Vector3.up;
+
+            // Try points
+            foreach (var t in spawnPoints)
+            {
+                if (t == null) continue;
+                var origin = t.position + Vector3.up * sampleAbove;
+                if (Physics.Raycast(origin, Vector3.down, out var hit, groundRayLength, groundMask, QueryTriggerInteraction.Ignore))
+                {
+                    basePos = hit.point + hit.normal * surfaceOffset;
+                    baseNormal = hit.normal;
+                    break;
+                }
+            }
+
+            // Try areas if needed
+            if (!basePos.HasValue)
+            {
+                foreach (var area in spawnAreas)
+                {
+                    if (area == null) continue;
+                    var b = area.bounds;
+                    var origin = new Vector3(
+                        (b.min.x + b.max.x) * 0.5f,
+                        b.max.y + sampleAbove,
+                        (b.min.z + b.max.z) * 0.5f
+                    );
+                    if (Physics.Raycast(origin, Vector3.down, out var hit, groundRayLength, groundMask, QueryTriggerInteraction.Ignore))
+                    {
+                        basePos = hit.point + hit.normal * surfaceOffset;
+                        baseNormal = hit.normal;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback to spawner position
+            if (!basePos.HasValue)
+            {
+                var origin = transform.position + Vector3.up * sampleAbove;
+                if (Physics.Raycast(origin, Vector3.down, out var hit, groundRayLength, groundMask, QueryTriggerInteraction.Ignore))
+                {
+                    basePos = hit.point + hit.normal * surfaceOffset;
+                    baseNormal = hit.normal;
+                }
+            }
+
+            if (!basePos.HasValue)
+            {
+                Debug.LogError("[PackageSpawner] Force placement failed: no ground found.");
+                return 0;
+            }
+
+            int placed = 0;
+            var rot = Quaternion.FromToRotation(Vector3.up, baseNormal);
+
+            // Stack vertically with small offsets to avoid immediate overlaps
+            float verticalStep = Mathf.Max(0.1f, overlapRadius * 1.5f);
+            Vector3 pos = basePos.Value;
+
+            while (placed < need)
+            {
+                var chosen = PickWeightedPackage();
+                if (chosen == null || chosen.prefab == null) break;
+
+                var instance = Instantiate(chosen.prefab, pos, rot * Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
+                SpawnAndParent(instance);
+
+                placed++;
+                pos += Vector3.up * verticalStep;
+            }
+
+            Debug.LogWarning($"[PackageSpawner] Forced placement stacked {placed} packages to meet target.");
+            return placed;
+        }
+
+        private void SpawnAndParent(NetworkObject instance)
+        {
+            if (NetworkManager.Singleton != null)
+            {
+                instance.Spawn(true);
+
+                if (spawnParent != null)
+                {
+                    if (useNetworkParenting)
+                    {
+                        var parentNO = spawnParent.GetComponent<NetworkObject>();
+                        if (parentNO != null && parentNO.IsSpawned)
+                            instance.TrySetParent(parentNO, true);
+                        else
+                            instance.transform.SetParent(spawnParent, true);
+                    }
+                    else
+                    {
+                        instance.transform.SetParent(spawnParent, true);
+                    }
+                }
+            }
+            else
+            {
+                if (spawnParent != null) instance.transform.SetParent(spawnParent, true);
+                var propsOffline = instance.GetComponentInChildren<PackageProperties>(true);
+                propsOffline?.ServerRandomize();
+            }
         }
 
         private bool TryGetSpawnTransform(out Vector3 position, out Quaternion rotation)
@@ -251,12 +466,12 @@ namespace DeliverHere.GamePlay
                 if (area == null) continue;
 
                 var bounds = area.bounds;
-                var randomXZ = new Vector3(
+                var origin = new Vector3(
                     Random.Range(bounds.min.x, bounds.max.x),
                     bounds.max.y + sampleAbove,
                     Random.Range(bounds.min.z, bounds.max.z));
 
-                if (!TryProjectToGround(randomXZ, out var hitPoint, out var hitNormal)) continue;
+                if (!TryProjectToGround(origin, out var hitPoint, out var hitNormal)) continue;
                 if (useNavMeshValidation && !OnNavMesh(hitPoint)) continue;
                 if (!IsPositionClear(hitPoint)) continue;
 
@@ -290,8 +505,13 @@ namespace DeliverHere.GamePlay
 
         private bool IsPositionClear(Vector3 position)
         {
-            var center = position + Vector3.up * (overlapRadius + surfaceOffset + 0.01f);
-            return !Physics.CheckSphere(center, overlapRadius, obstacleMask, QueryTriggerInteraction.Ignore);
+            return IsPositionClearWithRadius(position, overlapRadius);
+        }
+
+        private bool IsPositionClearWithRadius(Vector3 position, float radius)
+        {
+            var center = position + Vector3.up * (radius + surfaceOffset + 0.01f);
+            return !Physics.CheckSphere(center, radius, obstacleMask, QueryTriggerInteraction.Ignore);
         }
 
 #if UNITY_EDITOR
@@ -318,13 +538,6 @@ namespace DeliverHere.GamePlay
             }
         }
 #endif
-
-        // ---------- Public API for daily changes ----------
-        public void SetDailySpawnCount(int min, int max)
-        {
-            minPackages = Mathf.Max(0, Mathf.Min(min, max));
-            maxPackages = Mathf.Max(minPackages, max);
-        }
 
         public void ApplyDailyWeights(IList<float> weights)
         {

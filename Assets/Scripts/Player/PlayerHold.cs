@@ -159,6 +159,12 @@ public class PlayerHold : NetworkBehaviour
     private HeldRestore _restore;
     private bool _restoreCaptured;
 
+    // Track holder-count component and listener
+    private HoldableHoldingState _holdingState;
+
+    // Cache PlayerWeightManager
+    private PlayerWeightManager _weightManager;
+
     private void Awake()
     {
         if (handsRoot == null) handsRoot = transform;
@@ -166,6 +172,8 @@ public class PlayerHold : NetworkBehaviour
                 ? (minHoldDistance + maxHoldDistance) * 0.5f
                 : _holdDistance),
             minHoldDistance, maxHoldDistance);
+
+        _weightManager = GetComponent<PlayerWeightManager>();
     }
 
     public override void OnNetworkSpawn()
@@ -337,23 +345,70 @@ public class PlayerHold : NetworkBehaviour
     {
         if (!current.TryGet(out NetworkObject netObj))
         {
-            _heldBody = null;
-            DestroyJoint();
-            _restoreCaptured = false;
-            _exceededSeparationTime = 0f;
+            ClearHeldLocalState();
             return;
         }
 
         _heldBody = netObj.GetComponent<Rigidbody>();
+        _holdingState = netObj.GetComponent<HoldableHoldingState>();
+
         _anchorRampElapsed = 0f;
         _prevAnchorPos = _anchorRb.position;
 
-        if (IsServer && _heldBody != null) CreateOrConfigureJoint();
+        if (IsServer && _heldBody != null)
+        {
+            // Ensure joint and register as holder
+            CreateOrConfigureJoint();
+            _holdingState ??= netObj.gameObject.AddComponent<HoldableHoldingState>();
+            _holdingState.ServerAddHolder();
+        }
 
         if (_heldBody != null)
         {
+            // Subscribe to holder count changes to recompute shared mass locally
+            if (_holdingState != null)
+            {
+                _holdingState.HoldersCount.OnValueChanged += OnHoldersCountChanged;
+            }
+            UpdateHeldMassForPlayer();
             PickedUp?.Invoke(_heldBody);
         }
+    }
+
+    private void OnHoldersCountChanged(int previous, int current)
+    {
+        UpdateHeldMassForPlayer();
+    }
+
+    private void UpdateHeldMassForPlayer()
+    {
+        if (_weightManager == null) return;
+        if (_heldBody == null)
+        {
+            _weightManager.SetHeldMass(null);
+            return;
+        }
+        int holders = (_holdingState != null) ? Mathf.Max(1, _holdingState.CurrentCount) : 1;
+        float sharedMass = _heldBody.mass / holders;
+        _weightManager.SetHeldMass(sharedMass);
+    }
+
+    private void ClearHeldLocalState()
+    {
+        // Unsubscribe events
+        if (_holdingState != null)
+        {
+            _holdingState.HoldersCount.OnValueChanged -= OnHoldersCountChanged;
+        }
+        _holdingState = null;
+
+        _heldBody = null;
+        DestroyJoint();
+        _restoreCaptured = false;
+        _exceededSeparationTime = 0f;
+
+        // Inform weight manager
+        _weightManager?.SetHeldMass(null);
     }
 
     private void CreateOrConfigureJoint()
@@ -439,6 +494,9 @@ public class PlayerHold : NetworkBehaviour
         _heldBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         _heldBody.isKinematic = false;
 
+        // After creating joint, ensure weight manager reflects current shared mass
+        UpdateHeldMassForPlayer();
+
         // Separation timers
         _pickupTimestamp = Time.time;
         _exceededSeparationTime = 0f;
@@ -479,6 +537,11 @@ public class PlayerHold : NetworkBehaviour
         _pickupTimestamp = Time.time;
         _exceededSeparationTime = 0f;
 
+        // Holder-count setup
+        _holdingState = netObj.GetComponent<HoldableHoldingState>();
+        if (_holdingState == null) _holdingState = netObj.gameObject.AddComponent<HoldableHoldingState>();
+        _holdingState.ServerAddHolder();
+
         CreateOrConfigureJoint();
     }
 
@@ -511,6 +574,9 @@ public class PlayerHold : NetworkBehaviour
     {
         if (_heldBody == null) return;
 
+        // Decrement holders count on server
+        if (_holdingState != null) _holdingState.ServerRemoveHolder();
+
         DestroyJoint();
 
         _heldBody.isKinematic = false;
@@ -526,10 +592,20 @@ public class PlayerHold : NetworkBehaviour
         var netObj = _heldBody.GetComponent<NetworkObject>();
         if (netObj != null && netObj.OwnerClientId == OwnerClientId)
         {
-            // Optionally reclaim ownership
+            // Optional ownership behavior
         }
 
         var droppedBody = _heldBody;
+
+        // Clear local references and weight
+        _weightManager?.SetHeldMass(null);
+
+        // Unsubscribe holder-count changes
+        if (_holdingState != null)
+        {
+            _holdingState.HoldersCount.OnValueChanged -= OnHoldersCountChanged;
+        }
+        _holdingState = null;
 
         _heldBody = null;
         _heldRef.Value = default;
