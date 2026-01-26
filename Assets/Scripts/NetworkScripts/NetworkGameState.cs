@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 
@@ -9,14 +11,14 @@ public class NetworkGameState : NetworkBehaviour
     [Header("References")]
     [SerializeField] private GameManager gameManager;
     [SerializeField] private MoneyTargetManager moneyTargetManager;
-    [SerializeField] private DayNightCycle dayNightCycle;
     [SerializeField] private GameUIController uiController;
-    [SerializeField] private bool autoFindReferences = true;
+    [SerializeField] private LevelFlowController levelFlow;
 
     public event Action<bool> OnGameStartedChangedEvent;
 
     private readonly NetworkVariable<bool> gameStarted = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
     private readonly NetworkVariable<int> nvCurrentMoney = new NetworkVariable<int>(
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<int> nvBankedMoney = new NetworkVariable<int>(
@@ -27,12 +29,17 @@ public class NetworkGameState : NetworkBehaviour
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<float> nvProgress = new NetworkVariable<float>(
         0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-    private readonly NetworkVariable<float> nvDayNightProgress = new NetworkVariable<float>(
+    private readonly NetworkVariable<float> nvTimerProgress = new NetworkVariable<float>(
         0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    // Client-ready handshake (server only)
+    private HashSet<ulong> _clientsAwaiting;
+    private Coroutine _clientReadyCoroutine;
+    private Action _onAllClientsReadyCallback;
 
     public bool GameStarted => gameStarted.Value;
     public int CurrentDay => nvCurrentDay.Value;
-    public float DayNightProgress => nvDayNightProgress.Value;
+    public float TimerProgress => nvTimerProgress.Value;
 
     private void Awake()
     {
@@ -42,74 +49,159 @@ public class NetworkGameState : NetworkBehaviour
             return;
         }
         Instance = this;
-        DontDestroyOnLoad(gameObject);
     }
 
     public override void OnNetworkSpawn()
     {
-        if (autoFindReferences)
-        {
-            if (gameManager == null) gameManager = FindFirstObjectByType<GameManager>();
-            if (moneyTargetManager == null) moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
-            if (dayNightCycle == null) dayNightCycle = FindFirstObjectByType<DayNightCycle>();
-            if (uiController == null) uiController = FindFirstObjectByType<GameUIController>();
-        }
 
-        gameStarted.OnValueChanged += OnGameStartedChanged;
-        nvCurrentMoney.OnValueChanged += (_, v) => uiController?.SetDailyEarnings(v, nvTargetMoney.Value, nvProgress.Value);
-        nvBankedMoney.OnValueChanged += (_, v) => uiController?.SetBankedMoney(v);
+        // Bind UI updates on clients
+        nvCurrentMoney.OnValueChanged += (_, v) => uiController.SetDailyEarnings(v, nvTargetMoney.Value, nvProgress.Value);
+        nvBankedMoney.OnValueChanged += (_, v) => uiController.SetBankedMoney(v);
         nvTargetMoney.OnValueChanged += (_, v) =>
         {
-            uiController?.SetTarget(v);
-            uiController?.SetDailyEarnings(nvCurrentMoney.Value, v, nvProgress.Value);
+            uiController.SetTarget(v);
+            uiController.SetDailyEarnings(nvCurrentMoney.Value, v, nvProgress.Value);
         };
         nvCurrentDay.OnValueChanged += (_, v) =>
         {
-            uiController?.SetDay(v);
-            uiController?.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, nvProgress.Value);
+            uiController.SetDay(v);
+            uiController.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, nvProgress.Value);
         };
         nvProgress.OnValueChanged += (_, v) =>
         {
-            uiController?.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, v);
-        };
-        nvDayNightProgress.OnValueChanged += (_, v) =>
-        {
-            uiController?.SetDayNightVisible(true);
-            uiController?.SetDayNightProgress(Mathf.Clamp01(v));
+            uiController.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, v);
         };
 
+        // Push initial snapshot
         if (IsServer)
         {
-            SubscribeServerToMoneyEvents();
-            PushAllFromServer();
+            ServerPushSnapshot();
         }
         else
         {
             ApplyAllToClientUI();
-            if (gameStarted.Value)
-                gameManager?.StartGame();
+
         }
     }
 
-    public override void OnNetworkDespawn()
-    {
-        if (IsServer)
-            UnsubscribeServerFromMoneyEvents();
-    }
 
     private void Update()
     {
-        if (IsServer && dayNightCycle != null)
-            nvDayNightProgress.Value = Mathf.Clamp01(dayNightCycle.Normalized);
+        if (!IsServer) return;
+
+        // Keep server-side state synced to clients
+        if (moneyTargetManager == null)
+            moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
+
+        nvCurrentMoney.Value = moneyTargetManager != null ? moneyTargetManager.CurrentMoney : nvCurrentMoney.Value;
+        nvBankedMoney.Value = moneyTargetManager != null ? moneyTargetManager.BankedMoney : nvBankedMoney.Value;
+        nvTargetMoney.Value = moneyTargetManager != null ? moneyTargetManager.TargetMoney : nvTargetMoney.Value;
+        nvCurrentDay.Value = moneyTargetManager != null ? moneyTargetManager.CurrentDay : nvCurrentDay.Value;
+        nvProgress.Value = moneyTargetManager != null ? moneyTargetManager.Progress : nvProgress.Value;
+
+        // Timer progress from GameTimer
+        float timerNorm = 0f;
+        var timer = FindFirstObjectByType<GameTimer>();
+        if (timer != null) timerNorm = timer.Normalized;
+        nvTimerProgress.Value = timerNorm;
     }
 
+    // Client -> Server: scene-loaded handshake
+    [ServerRpc(RequireOwnership = false)]
+    public void ClientSceneLoadedServerRpc(ServerRpcParams rpcParams = default)
+    {
+        if (!IsServer) return;
+        var clientId = rpcParams.Receive.SenderClientId;
+        if (_clientsAwaiting == null) return;
+
+        if (_clientsAwaiting.Remove(clientId))
+        {
+            Debug.Log($"[NetworkGameState] Client {clientId} reported scene loaded. Remaining: {_clientsAwaiting.Count}");
+            if (_clientsAwaiting.Count == 0)
+                CompleteClientReadyHandshake(allClientsReported: true);
+        }
+    }
+
+    public void BeginClientReadyHandshake(Action onAllReadyCallback, float timeoutSeconds)
+    {
+        if (!IsServer) return;
+
+        if (_clientReadyCoroutine != null)
+        {
+            StopCoroutine(_clientReadyCoroutine);
+            _clientReadyCoroutine = null;
+        }
+
+        _clientsAwaiting = new HashSet<ulong>();
+        foreach (var id in NetworkManager.Singleton.ConnectedClientsIds)
+        {
+            if (id == NetworkManager.ServerClientId) continue;
+            _clientsAwaiting.Add(id);
+        }
+
+        _onAllClientsReadyCallback = onAllReadyCallback;
+
+        if (_clientsAwaiting.Count == 0)
+        {
+            Debug.Log("[NetworkGameState] No remote clients to wait for; completing handshake immediately.");
+            CompleteClientReadyHandshake(allClientsReported: true);
+            return;
+        }
+
+        _clientReadyCoroutine = StartCoroutine(ClientReadyTimeoutCoroutine(timeoutSeconds));
+        Debug.Log($"[NetworkGameState] Waiting for {_clientsAwaiting.Count} clients to report ready (timeout {timeoutSeconds}s).");
+    }
+
+    private IEnumerator ClientReadyTimeoutCoroutine(float timeoutSeconds)
+    {
+        float deadline = Time.realtimeSinceStartup + Mathf.Max(0.01f, timeoutSeconds);
+        while (Time.realtimeSinceStartup < deadline && _clientsAwaiting != null && _clientsAwaiting.Count > 0)
+            yield return null;
+
+        if (_clientsAwaiting != null && _clientsAwaiting.Count > 0)
+        {
+            Debug.LogWarning($"[NetworkGameState] Client-ready handshake timed out. Missing: {string.Join(", ", _clientsAwaiting)}");
+        }
+
+        CompleteClientReadyHandshake(allClientsReported: _clientsAwaiting == null || _clientsAwaiting.Count == 0);
+    }
+
+    private void CompleteClientReadyHandshake(bool allClientsReported)
+    {
+        if (_clientReadyCoroutine != null)
+        {
+            StopCoroutine(_clientReadyCoroutine);
+            _clientReadyCoroutine = null;
+        }
+
+        _clientsAwaiting = null;
+
+        var callback = _onAllClientsReadyCallback;
+        _onAllClientsReadyCallback = null;
+
+        try
+        {
+            callback.Invoke();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogException(ex);
+        }
+
+        Debug.Log($"[NetworkGameState] Client-ready handshake completed. allClientsReported={allClientsReported}");
+    }
+
+    // Start/End game requests
     [ServerRpc(RequireOwnership = false)]
     public void RequestStartGameServerRpc()
     {
         if (gameStarted.Value) return;
         gameStarted.Value = true;
-        gameManager?.StartGame();
-        PushAllFromServer();
+
+        
+        levelFlow.StartLoadNextLevel();
+
+        ServerPushSnapshot();
         HideDayEndSummaryClientRpc();
     }
 
@@ -119,122 +211,49 @@ public class NetworkGameState : NetworkBehaviour
         if (!gameStarted.Value) return;
         gameStarted.Value = false;
         gameManager?.EndGame();
-        PushAllFromServer();
+        ServerPushSnapshot();
         HideDayEndSummaryClientRpc();
     }
 
-    private void OnGameStartedChanged(bool _, bool started)
+    // Snapshot helpers
+    private void ServerPushSnapshot()
     {
-        OnGameStartedChangedEvent?.Invoke(started);
-        if (started) gameManager?.StartGame();
-        else gameManager?.EndGame();
+        if (moneyTargetManager == null)
+            moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
+
+        nvCurrentMoney.Value = moneyTargetManager != null ? moneyTargetManager.CurrentMoney : 0;
+        nvBankedMoney.Value = moneyTargetManager != null ? moneyTargetManager.BankedMoney : 0;
+        nvTargetMoney.Value = moneyTargetManager != null ? moneyTargetManager.TargetMoney : 0;
+        nvCurrentDay.Value = moneyTargetManager != null ? moneyTargetManager.CurrentDay : 0;
+        nvProgress.Value = moneyTargetManager != null ? moneyTargetManager.Progress : 0f;
+
+        float timerNorm = 0f;
+        var timer = FindFirstObjectByType<GameTimer>();
+        if (timer != null) timerNorm = timer.Normalized;
+        nvTimerProgress.Value = timerNorm;
     }
 
-    // SERVER helper to broadcast popup
-    public void BroadcastDayEndSummary(int earnedToday, int bankedPreview, int packagesDelivered, bool metQuota)
-    {
-        if (!IsServer) return;
-        ShowDayEndSummaryClientRpc(earnedToday, bankedPreview, packagesDelivered, metQuota);
-    }
-
-    [ClientRpc]
-    public void ShowDayEndSummaryClientRpc(int earnedToday, int bankedPreview, int packagesDelivered, bool metQuota)
-    {
-        if (uiController == null) return;
-        bool hostHasControl = NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
-        uiController.ShowDayEndSummary(earnedToday, bankedPreview, packagesDelivered, metQuota, hostHasControl);
-    }
-
-    // Made public so GameManager can call directly
-    [ClientRpc]
-    public void HideDayEndSummaryClientRpc()
-    {
-        uiController?.HideDayEndSummary();
-    }
-
-    private void SubscribeServerToMoneyEvents()
-    {
-        if (moneyTargetManager == null) return;
-        moneyTargetManager.OnMoneyChanged += Server_OnMoneyChanged;
-        moneyTargetManager.OnBankedMoneyChanged += Server_OnBankedMoneyChanged;
-        moneyTargetManager.OnDailyEarningsBanked += Server_OnDailyEarningsBanked;
-        moneyTargetManager.OnTargetChanged += Server_OnTargetChanged;
-        moneyTargetManager.OnTargetIncreased += Server_OnTargetIncreased;
-        moneyTargetManager.OnDayAdvanced += Server_OnDayAdvanced;
-    }
-
-    private void UnsubscribeServerFromMoneyEvents()
-    {
-        if (moneyTargetManager == null) return;
-        moneyTargetManager.OnMoneyChanged -= Server_OnMoneyChanged;
-        moneyTargetManager.OnBankedMoneyChanged -= Server_OnBankedMoneyChanged;
-        moneyTargetManager.OnDailyEarningsBanked -= Server_OnDailyEarningsBanked;
-        moneyTargetManager.OnTargetChanged -= Server_OnTargetChanged;
-        moneyTargetManager.OnTargetIncreased -= Server_OnTargetIncreased;
-        moneyTargetManager.OnDayAdvanced -= Server_OnDayAdvanced;
-    }
-
-    private void Server_OnMoneyChanged(int v)
-    {
-        if (!IsServer) return;
-        nvCurrentMoney.Value = v;
-        nvProgress.Value = moneyTargetManager.Progress;
-    }
-
-    private void Server_OnBankedMoneyChanged(int v)
-    {
-        if (!IsServer) return;
-        nvBankedMoney.Value = v;
-    }
-
-    private void Server_OnDailyEarningsBanked(int newBanked, int _)
-    {
-        if (!IsServer) return;
-        nvBankedMoney.Value = newBanked;
-    }
-
-    private void Server_OnTargetChanged(int v)
-    {
-        if (!IsServer) return;
-        nvTargetMoney.Value = v;
-        nvProgress.Value = moneyTargetManager.Progress;
-    }
-
-    private void Server_OnTargetIncreased(int newTarget, int _)
-    {
-        if (!IsServer) return;
-        nvTargetMoney.Value = newTarget;
-        nvProgress.Value = moneyTargetManager.Progress;
-    }
-
-    private void Server_OnDayAdvanced(int v)
-    {
-        if (!IsServer) return;
-        nvCurrentDay.Value = v;
-        nvCurrentMoney.Value = moneyTargetManager.CurrentMoney;
-        nvProgress.Value = moneyTargetManager.Progress;
-        HideDayEndSummaryClientRpc();
-    }
-
-    private void PushAllFromServer()
-    {
-        if (!IsServer || moneyTargetManager == null) return;
-        nvCurrentMoney.Value = moneyTargetManager.CurrentMoney;
-        nvBankedMoney.Value = moneyTargetManager.BankedMoney;
-        nvTargetMoney.Value = moneyTargetManager.TargetMoney;
-        nvCurrentDay.Value = moneyTargetManager.CurrentDay;
-        nvProgress.Value = moneyTargetManager.Progress;
-        if (dayNightCycle != null)
-            nvDayNightProgress.Value = Mathf.Clamp01(dayNightCycle.Normalized);
-    }
 
     private void ApplyAllToClientUI()
     {
-        uiController?.SetDay(nvCurrentDay.Value);
-        uiController?.SetTarget(nvTargetMoney.Value);
-        uiController?.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, nvProgress.Value);
-        uiController?.SetBankedMoney(nvBankedMoney.Value);
-        uiController?.SetDayNightVisible(true);
-        uiController?.SetDayNightProgress(Mathf.Clamp01(nvDayNightProgress.Value));
+        uiController.SetDay(nvCurrentDay.Value);
+        uiController.SetTarget(nvTargetMoney.Value);
+        uiController.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, nvProgress.Value);
+        uiController.SetBankedMoney(nvBankedMoney.Value);
+        uiController.SetTimerSeconds(nvTimerProgress.Value); 
+    }
+
+    // Optional: UI summary RPCs (kept for compatibility)
+    [ClientRpc]
+    public void ShowDayEndSummaryClientRpc(int earnedToday, int newBankedTotal, int packagesDelivered, bool metQuota)
+    {
+        bool hostHasControl = NetworkManager.Singleton == null || IsServer;
+        uiController.ShowDayEndSummary(earnedToday, newBankedTotal, packagesDelivered, metQuota, hostHasControl);
+    }
+
+    [ClientRpc]
+    public void HideDayEndSummaryClientRpc()
+    {
+        uiController.HideDayEndSummary();
     }
 }

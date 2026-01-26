@@ -17,6 +17,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] private bool autoFindMoneyTargetManager = true;
     [SerializeField] private GameUIController uiController;
     [SerializeField] private bool autoFindUIController = true;
+    [SerializeField] private GameManager gameManager;
+    [SerializeField] private GameTimer gameTimer;
 
     [Header("Package Spawning")]
     [SerializeField] private bool autoFindPackageSpawners = true;
@@ -24,6 +26,10 @@ public class GameManager : MonoBehaviour
 
     [Header("Spawn Safety")]
     [SerializeField] private bool preventDuplicateSpawnsPerDay = true;
+
+    [Header("Player Spawning")]
+    [SerializeField] private bool autoFindSpawnPoints = true;
+    [SerializeField] private List<Transform> playerSpawnPoints = new List<Transform>();
 
     public event Action OnWinCondition;
     public bool IsGameplayActive { get; private set; }
@@ -36,7 +42,6 @@ public class GameManager : MonoBehaviour
     private int currentDayTargetMoney = 0;
     private bool endOfDayPopupShown = false;
 
-    private DayNightCycle _dayNight;
     private NetworkGameState _netState;
 
     private bool IsServerOrStandalone =>
@@ -56,16 +61,13 @@ public class GameManager : MonoBehaviour
         EnsureMoneyTargetReference();
         EnsureUIReference();
         EnsureSpawnerReferences();
+        EnsureSpawnPointReferences();
     }
 
     private void OnEnable()
     {
-        EnsureMoneyTargetReference();
-        EnsureUIReference();
-        EnsureSpawnerReferences();
-
         SubscribeToMoneyTarget();
-        FindDayNightAndNetState();
+        FindTimerAndNetState();
         SyncAllUI();
 
         IsGameplayActive = false;
@@ -86,7 +88,7 @@ public class GameManager : MonoBehaviour
     private void OnDisable()
     {
         UnsubscribeFromMoneyTarget();
-        UnsubscribeDayNight();
+        UnsubscribeTimer();
 
         if (_pauseAction != null)
             _pauseAction.performed -= OnPausePerformed;
@@ -97,21 +99,47 @@ public class GameManager : MonoBehaviour
         _pauseAction = null;
     }
 
-    private void FindDayNightAndNetState()
+    // Find timer and net state
+    private void FindTimerAndNetState()
     {
-        if (_dayNight == null)
-            _dayNight = FindFirstObjectByType<DayNightCycle>();
-        if (_dayNight != null)
-            _dayNight.OnDayEndedEvaluated += HandleDayEndedEvaluated;
+        _netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+        var timer = FindFirstObjectByType<GameTimer>();
 
-        if (_netState == null)
-            _netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+        if (timer != null)
+        {
+            // Prevent duplicate subscription
+            UnsubscribeTimer();
+
+            timer.OnDayTimerAboutToExpire += () =>
+            {
+                // Pre-expiration hook if needed
+            };
+
+            timer.OnDayEndedEvaluated += (metQuota) =>
+            {
+                // Show summary popup locally
+                int earnedToday = GetCurrentMoney();
+                int newBanked = GetBankedMoney();
+                bool hostHasControl = NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
+                uiController?.ShowDayEndSummary(earnedToday, newBanked, dailyPackagesDelivered, metQuota, hostHasControl);
+
+                endOfDayPopupShown = true;
+                IsGameplayActive = false;
+            };
+        }
+
+        SyncAllUI();
     }
 
-    private void UnsubscribeDayNight()
+    private void UnsubscribeTimer()
     {
-        if (_dayNight != null)
-            _dayNight.OnDayEndedEvaluated -= HandleDayEndedEvaluated;
+        var timer = FindFirstObjectByType<GameTimer>();
+        if (timer != null)
+        {
+            // Note: to safely unsubscribe, store delegates if you add named handlers.
+            timer.OnDayEndedEvaluated -= (bool _) => { };
+            timer.OnDayTimerAboutToExpire -= () => { };
+        }
     }
 
     private void EnsureMoneyTargetReference()
@@ -134,6 +162,40 @@ public class GameManager : MonoBehaviour
         packageSpawners.AddRange(found);
     }
 
+    private void EnsureSpawnPointReferences()
+    {
+        if (!autoFindSpawnPoints) return;
+        playerSpawnPoints.Clear();
+
+        try
+        {
+            var tagged = GameObject.FindGameObjectsWithTag("PlayerSpawn");
+            foreach (var go in tagged)
+            {
+                if (go != null && go.activeInHierarchy)
+                    playerSpawnPoints.Add(go.transform);
+            }
+        }
+        catch { }
+
+        if (playerSpawnPoints.Count == 0)
+        {
+            var allTransforms = FindObjectsByType<Transform>(FindObjectsSortMode.None);
+            foreach (var t in allTransforms)
+            {
+                if (t == null || !t.gameObject.activeInHierarchy) continue;
+                if (t.name.IndexOf("spawn", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    t.name.IndexOf("SpawnPoint", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    playerSpawnPoints.Add(t);
+                }
+            }
+        }
+
+        if (playerSpawnPoints.Count == 0)
+            playerSpawnPoints.Add(this.transform);
+    }
+
     private void SubscribeToMoneyTarget()
     {
         if (moneyTargetManager == null) return;
@@ -141,7 +203,6 @@ public class GameManager : MonoBehaviour
         moneyTargetManager.OnBankedMoneyChanged += HandleBankedMoneyChanged;
         moneyTargetManager.OnDailyEarningsBanked += HandleDailyEarningsBanked;
         moneyTargetManager.OnTargetChanged += HandleTargetChanged;
-        moneyTargetManager.OnTargetIncreased += HandleTargetIncreased;
         moneyTargetManager.OnDayAdvanced += HandleDayAdvanced;
         moneyTargetManager.OnTargetReached += HandleTargetReached;
         currentDayTargetMoney = moneyTargetManager.TargetMoney;
@@ -154,7 +215,6 @@ public class GameManager : MonoBehaviour
         moneyTargetManager.OnBankedMoneyChanged -= HandleBankedMoneyChanged;
         moneyTargetManager.OnDailyEarningsBanked -= HandleDailyEarningsBanked;
         moneyTargetManager.OnTargetChanged -= HandleTargetChanged;
-        moneyTargetManager.OnTargetIncreased -= HandleTargetIncreased;
         moneyTargetManager.OnDayAdvanced -= HandleDayAdvanced;
         moneyTargetManager.OnTargetReached -= HandleTargetReached;
     }
@@ -173,9 +233,15 @@ public class GameManager : MonoBehaviour
         EnsureMoneyTargetReference();
         EnsureUIReference();
         EnsureSpawnerReferences();
-        FindDayNightAndNetState();
+        EnsureSpawnPointReferences();
+        FindTimerAndNetState();
 
         IsGameplayActive = true;
+
+        if (IsServerOrStandalone)
+        {
+            PositionPlayersToSpawnPoints();
+        }
 
         if (moneyTargetManager != null && moneyTargetManager.CurrentDay <= 0 && IsServerOrStandalone)
             moneyTargetManager.AdvanceDay();
@@ -187,9 +253,63 @@ public class GameManager : MonoBehaviour
         endOfDayPopupShown = false;
 
         SyncAllUI();
-        uiController?.HideWinPanel();
-        uiController?.HideDayEndSummary();
-        uiController?.ShowHUD();
+        uiController.HideWinPanel();
+        uiController.HideDayEndSummary();
+        uiController.ShowHUD();
+    }
+
+    /// <summary>
+    /// Find player NetworkObjects (PlayerMovement components) and teleport them to spawn points.
+    /// Uses the inspector-assigned spawn points or auto-found ones. Safe with CharacterController.
+    /// Runs on the server/host so positions will be authoritative and replicate to clients.
+    /// </summary>
+    private void PositionPlayersToSpawnPoints()
+    {
+        EnsureSpawnPointReferences();
+        if (playerSpawnPoints == null || playerSpawnPoints.Count == 0) return;
+
+        var players = FindObjectsByType<PlayerMovement>(FindObjectsSortMode.None);
+        if (players == null || players.Length == 0) return;
+
+        int spawnIndex = 0;
+        foreach (var pm in players)
+        {
+            if (pm == null) continue;
+
+            var netObj = pm.GetComponent<NetworkObject>();
+            if (netObj == null) continue;
+            if (!netObj.IsSpawned) continue; // only reposition spawned objects
+
+            // Assign spawn to by index (round-robin)
+            var spawn = playerSpawnPoints[spawnIndex % playerSpawnPoints.Count];
+            spawnIndex++;
+
+            try
+            {
+                var cc = pm.GetComponent<CharacterController>();
+                if (cc != null) cc.enabled = false;
+
+                pm.transform.SetPositionAndRotation(spawn.position, spawn.rotation);
+
+                var rb = pm.GetComponent<Rigidbody>();
+                if (rb != null)
+                {
+                    rb.linearVelocity = Vector3.zero;
+                    rb.angularVelocity = Vector3.zero;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+            finally
+            {
+                var cc = pm.GetComponent<CharacterController>();
+                if (cc != null) cc.enabled = true;
+            }
+        }
+
+        Debug.Log($"[GameManager] Positioned {players.Length} players to spawn points.");
     }
 
     public void EndGame()
@@ -200,9 +320,9 @@ public class GameManager : MonoBehaviour
         dailyPackagesDelivered = 0;
         endOfDayPopupShown = false;
 
-        uiController?.HideWinPanel();
-        uiController?.HideDayEndSummary();
-        uiController?.HideHUD();
+        uiController.HideWinPanel();
+        uiController.HideDayEndSummary();
+        uiController.HideHUD();
     }
 
     public void RegisterPackagesDelivered(int count)
@@ -214,18 +334,19 @@ public class GameManager : MonoBehaviour
     public void HostAdvanceToNextDay()
     {
         if (!IsServerOrStandalone) return;
-        _netState?.BroadcastDayEndSummary(0, 0, 0, true); // ensure any stale state hidden next frame
-        _netState?.HideDayEndSummaryClientRpc();
-        uiController?.HideDayEndSummary();
+
+        // Hide any stale summaries locally
+        uiController.HideDayEndSummary();
         endOfDayPopupShown = false;
+
         moneyTargetManager?.AdvanceDay();
     }
 
     public void HostRestartRun()
     {
         if (!IsServerOrStandalone) return;
-        _netState?.HideDayEndSummaryClientRpc();
-        uiController?.HideDayEndSummary();
+
+        uiController.HideDayEndSummary();
         ResetRun();
         dailyPackagesDelivered = 0;
         lastSpawnedDay = -1;
@@ -242,15 +363,15 @@ public class GameManager : MonoBehaviour
         Cursor.lockState = show ? CursorLockMode.None : CursorLockMode.Locked;
     }
 
-    public void AddMoney(int amount) => moneyTargetManager?.AddMoney(amount);
-    public void RemoveMoney(int amount) => moneyTargetManager?.RemoveMoney(amount);
+    public void AddMoney(int amount) => moneyTargetManager.AddMoney(amount);
+    public void RemoveMoney(int amount) => moneyTargetManager.RemoveMoney(amount);
     public bool SpendBanked(int amount) => moneyTargetManager != null && moneyTargetManager.SpendBanked(amount);
-    public void AdvanceDay() => moneyTargetManager?.AdvanceDay();
+    public void AdvanceDay() => moneyTargetManager.AdvanceDay();
     public void AdvanceDays(int days) => moneyTargetManager?.AdvanceDays(days);
 
     public void ResetRun()
     {
-        moneyTargetManager?.ResetProgress();
+        moneyTargetManager.ResetProgress();
         currentDayTargetMoney = GetTargetMoney();
     }
 
@@ -285,43 +406,32 @@ public class GameManager : MonoBehaviour
     {
         if (endOfDayPopupShown) return;
         bool metQuota = amountAdded >= currentDayTargetMoney;
-        if (NetworkManager.Singleton == null)
-        {
-            uiController?.ShowDayEndSummary(amountAdded, newBanked, dailyPackagesDelivered, metQuota, true);
-        }
-        else if (IsServerOrStandalone)
-        {
-            _netState?.BroadcastDayEndSummary(amountAdded, newBanked, dailyPackagesDelivered, metQuota);
-        }
+
+        // Show local summary; if you need network broadcast, add a ClientRpc in NetworkGameState
+        uiController?.ShowDayEndSummary(amountAdded, newBanked, dailyPackagesDelivered, metQuota, IsServerOrStandalone);
+
         dailyPackagesDelivered = 0;
         endOfDayPopupShown = true;
     }
 
     private void HandleTargetChanged(int newTarget)
     {
-        uiController?.SetTarget(newTarget);
-        uiController?.SetDailyEarnings(GetCurrentMoney(), newTarget, GetProgress());
-        currentDayTargetMoney = newTarget;
-    }
-
-    private void HandleTargetIncreased(int newTarget, int deltaAdded)
-    {
-        uiController?.ShowTargetIncrease(newTarget, deltaAdded);
+        uiController.SetTarget(newTarget);
+        uiController.SetDailyEarnings(GetCurrentMoney(), newTarget, GetProgress());
         currentDayTargetMoney = newTarget;
     }
 
     private void HandleDayAdvanced(int newDayIndex)
     {
-        uiController?.SetDay(newDayIndex);
-        uiController?.SetDailyEarnings(GetCurrentMoney(), GetTargetMoney(), GetProgress());
+        uiController.SetDay(newDayIndex);
+        uiController.SetDailyEarnings(GetCurrentMoney(), GetTargetMoney(), GetProgress());
         currentDayTargetMoney = GetTargetMoney();
         dailyPackagesDelivered = 0;
         endOfDayPopupShown = false;
 
-        // NEW: resume gameplay for the next day so DayNightCycle.Update ticks again.
         IsGameplayActive = true;
-        uiController?.HideDayEndSummary();
-        uiController?.ShowHUD();
+        uiController.HideDayEndSummary();
+        uiController.ShowHUD();
 
         if (IsServerOrStandalone)
             TrySpawnPackagesForDay(newDayIndex);
@@ -332,36 +442,17 @@ public class GameManager : MonoBehaviour
         TriggerWinCondition();
     }
 
-    private void HandleDayEndedEvaluated(bool success)
-    {
-        int earnedToday = GetCurrentMoney();
-        int previewBankedTotal = GetBankedMoney() + earnedToday;
-        bool metQuota = success;
-
-        if (NetworkManager.Singleton == null)
-        {
-            uiController?.ShowDayEndSummary(earnedToday, previewBankedTotal, dailyPackagesDelivered, metQuota, true);
-        }
-        else if (IsServerOrStandalone)
-        {
-            _netState?.BroadcastDayEndSummary(earnedToday, previewBankedTotal, dailyPackagesDelivered, metQuota);
-        }
-
-        endOfDayPopupShown = true;
-        IsGameplayActive = false;
-    }
-
     private void TriggerWinCondition()
     {
-        OnWinCondition?.Invoke();
-        uiController?.ShowWinPanel();
+        OnWinCondition.Invoke();
+        uiController.ShowWinPanel();
         Debug.Log("[GameManager] Win condition met.");
     }
 
     public void SetUIController(GameUIController controller)
     {
         uiController = controller;
-        uiController?.ConfigureDayEndButtons(HostAdvanceToNextDay, HostRestartRun);
+        uiController.ConfigureDayEndButtons(HostAdvanceToNextDay, HostRestartRun);
         SyncAllUI();
     }
 
@@ -397,10 +488,9 @@ public class GameManager : MonoBehaviour
 
         foreach (var spawner in active)
         {
-            // Ensure spawner uses the day provided by GameManager
-            spawner.SetUseDailyIncreasingCount(false); // disable auto/self lookup
-            spawner.ApplyDayIndex(dayIndex);           // provide explicit day
-            spawner.SpawnAll();                        // spawns exactly the computed count
+            spawner.SetUseDailyIncreasingCount(false);
+            spawner.ApplyDayIndex(dayIndex);
+            spawner.SpawnAll();
         }
     }
 }

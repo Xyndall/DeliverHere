@@ -5,7 +5,7 @@ using TMPro;
 public class GameUIController : MonoBehaviour
 {
     [Header("HUD Root")]
-    [SerializeField] private GameObject hudRoot; // Assign the HUD Canvas/Panel to toggle visibility
+    [SerializeField] private GameObject hudRoot;
 
     [Header("HUD - Text")]
     [SerializeField] private TMP_Text dayText;
@@ -13,8 +13,9 @@ public class GameUIController : MonoBehaviour
     [SerializeField] private TMP_Text targetMoneyText;
     [SerializeField] private TMP_Text bankedMoneyText;
 
-    [Header("HUD - Day/Night Timer")]
-    [SerializeField] private Slider dayNightSlider;
+    [Header("HUD - Timer")]
+    [SerializeField] private TMP_Text timerText; // display seconds
+    // [SerializeField] private Slider timerSlider; // removed: using text instead
 
     [Header("Panels")]
     [SerializeField] private GameObject winPanel;
@@ -28,26 +29,12 @@ public class GameUIController : MonoBehaviour
     [SerializeField] private Button nextDayButton;
     [SerializeField] private Button restartButton;
 
-    [Header("Target Increase UI")]
-    [SerializeField] private TMP_Text targetIncreaseText; // Optional popup/text
 
     private void Awake()
     {
-        HideWinPanel();
-        HideDayEndSummary();
         HideHUD();
-        if (targetIncreaseText != null) targetIncreaseText.gameObject.SetActive(false);
-
-        if (dayNightSlider != null)
-        {
-            dayNightSlider.minValue = 0f;
-            dayNightSlider.maxValue = 1f;
-            dayNightSlider.value = 0f;
-        }
-
-        // Clear button listeners (safety)
-        if (nextDayButton != null) nextDayButton.onClick.RemoveAllListeners();
-        if (restartButton != null) restartButton.onClick.RemoveAllListeners();
+        HideDayEndSummary();
+        HideWinPanel();
     }
 
     // Set button callbacks (called by GameManager after it sets itself up)
@@ -56,60 +43,38 @@ public class GameUIController : MonoBehaviour
         if (nextDayButton != null)
         {
             nextDayButton.onClick.RemoveAllListeners();
-            if (onNextDay != null) nextDayButton.onClick.AddListener(() => onNextDay());
+            nextDayButton.onClick.AddListener(() => onNextDay?.Invoke());
         }
+
         if (restartButton != null)
         {
             restartButton.onClick.RemoveAllListeners();
-            if (onRestart != null) restartButton.onClick.AddListener(() => onRestart());
+            restartButton.onClick.AddListener(() => onRestart?.Invoke());
         }
     }
 
     // ---- HUD visibility ----
-    public void ShowHUD()
-    {
-        if (hudRoot != null) hudRoot.SetActive(true);
-    }
-
-    public void HideHUD()
-    {
-        if (hudRoot != null) hudRoot.SetActive(false);
-    }
+    public void ShowHUD() { if (hudRoot != null) hudRoot.SetActive(true); }
+    public void HideHUD() { if (hudRoot != null) hudRoot.SetActive(false); }
 
     // ---- Setters used by GameManager ----
-    public void SetDay(int day)
-    {
-        if (dayText != null) dayText.text = $"Day: {day}";
-    }
-
-    public void SetTarget(int target)
-    {
-        if (targetMoneyText != null) targetMoneyText.text = $"Target: {target}";
-    }
-
+    public void SetDay(int day) { if (dayText != null) dayText.text = $"Day {day}"; }
+    public void SetTarget(int target) { if (targetMoneyText != null) targetMoneyText.text = $"Target: ${target}"; }
     public void SetDailyEarnings(int current, int target, float progress)
     {
-        if (currentMoneyText != null) currentMoneyText.text = $"Today: {current}";
+        if (currentMoneyText != null) currentMoneyText.text = $"Today: ${current}";
+        if (targetMoneyText != null) targetMoneyText.text = $"Target: ${target}";
+        // Previously updated slider progress; now unused. If you still receive normalized progress, you can ignore or map to seconds elsewhere.
     }
-
-    public void SetBankedMoney(int banked)
-    {
-        if (bankedMoneyText != null) bankedMoneyText.text = $"Banked: {banked}";
-    }
-
-    public void ShowTargetIncrease(int newTarget, int delta)
-    {
-        if (targetIncreaseText == null) return;
-        targetIncreaseText.gameObject.SetActive(true);
-        targetIncreaseText.text = $"+{delta} target -> {newTarget}";
-    }
+    public void SetBankedMoney(int banked) { if (bankedMoneyText != null) bankedMoneyText.text = $"Banked: ${banked}"; }
 
     // New extended summary (replaces old)
     public void ShowDayEndSummary(int earnedToday, int newBanked, int packagesDelivered, bool metQuota, bool hostHasControl)
     {
         if (dayEndSummaryPanel != null) dayEndSummaryPanel.SetActive(true);
-        if (dayEarnedText != null) dayEarnedText.text = $"Earned Today: {earnedToday}";
-        if (dayNewBankedText != null) dayNewBankedText.text = $"Banked Total: {newBanked}";
+
+        if (dayEarnedText != null) dayEarnedText.text = $"Earned Today: ${earnedToday}";
+        if (dayNewBankedText != null) dayNewBankedText.text = $"New Banked Total: ${newBanked}";
         if (packagesDeliveredText != null) packagesDeliveredText.text = $"Packages Delivered: {packagesDelivered}";
         if (quotaStatusText != null)
         {
@@ -117,7 +82,6 @@ public class GameUIController : MonoBehaviour
             quotaStatusText.color = metQuota ? Color.green : Color.red;
         }
 
-        // Host-only buttons visibility
         if (nextDayButton != null) nextDayButton.gameObject.SetActive(hostHasControl);
         if (restartButton != null) restartButton.gameObject.SetActive(hostHasControl);
     }
@@ -127,26 +91,26 @@ public class GameUIController : MonoBehaviour
         if (dayEndSummaryPanel != null) dayEndSummaryPanel.SetActive(false);
     }
 
-    public void ShowWinPanel()
+    public void ShowWinPanel() { if (winPanel != null) winPanel.SetActive(true); }
+    public void HideWinPanel() { if (winPanel != null) winPanel.SetActive(false); }
+
+    // ---- Timer UI ----
+    // New: set timer by seconds (rounded or mm:ss)
+    public void SetTimerSeconds(float secondsRemaining)
     {
-        if (winPanel != null) winPanel.SetActive(true);
+        if (timerText == null) return;
+
+        // Choose formatting: integer seconds or mm:ss. Here we use mm:ss.
+        int totalSeconds = Mathf.Max(0, Mathf.FloorToInt(secondsRemaining));
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+        timerText.text = $"{minutes:00}:{seconds:00}";
     }
 
-    public void HideWinPanel()
+    public void SetTimerVisible(bool visible)
     {
-        if (winPanel != null) winPanel.SetActive(false);
+        if (timerText == null) return;
+        timerText.gameObject.SetActive(visible);
     }
 
-    // ---- Day/Night timer UI ----
-    public void SetDayNightProgress(float normalized01)
-    {
-        if (dayNightSlider == null) return;
-        dayNightSlider.value = Mathf.Clamp01(normalized01);
-    }
-
-    public void SetDayNightVisible(bool visible)
-    {
-        if (dayNightSlider == null) return;
-        dayNightSlider.gameObject.SetActive(visible);
-    }
 }

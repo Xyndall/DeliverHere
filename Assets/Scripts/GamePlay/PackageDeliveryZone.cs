@@ -24,8 +24,8 @@ namespace DeliverHere.GamePlay
         [SerializeField] private string requiredTag = "";
 
         [Header("Batch Delivery")]
-        [Tooltip("Automatically deliver all packages in zone when the day timer expires.")]
-        [SerializeField] private bool autoDeliverOnDayEnd = true;
+        [Tooltip("Automatically deliver all packages in zone when the timer expires.")]
+        [SerializeField] private bool autoDeliverOnTimerEnd = true;
 
         [Tooltip("Also clear (consume/despawn) packages after batch delivery.")]
         [SerializeField] private bool consumePackageOnDeposit = true;
@@ -45,7 +45,8 @@ namespace DeliverHere.GamePlay
         // For ensuring we only auto-batch once per day.
         private int _lastDeliveredDay = -1;
 
-        private DayNightCycle _dayNight;
+        // Timer reference (replaces DayNightCycle)
+        private GameTimer _timer;
 
         private void Awake()
         {
@@ -64,33 +65,33 @@ namespace DeliverHere.GamePlay
 
         private void OnEnable()
         {
-            FindDayNightAndSubscribe();
+            FindTimerAndSubscribe();
         }
 
         private void OnDisable()
         {
-            UnsubscribeDayNight();
+            UnsubscribeTimer();
         }
 
-        private void FindDayNightAndSubscribe()
+        private void FindTimerAndSubscribe()
         {
-            if (!autoDeliverOnDayEnd) return;
-            if (_dayNight == null)
-                _dayNight = FindFirstObjectByType<DayNightCycle>();
+            if (!autoDeliverOnTimerEnd) return;
+            if (_timer == null)
+                _timer = FindFirstObjectByType<GameTimer>();
 
-            if (_dayNight != null)
-                _dayNight.OnDayTimerAboutToExpire += HandleDayTimerAboutToExpire;
+            if (_timer != null)
+                _timer.OnDayTimerAboutToExpire += HandleTimerAboutToExpire;
         }
 
-        private void UnsubscribeDayNight()
+        private void UnsubscribeTimer()
         {
-            if (_dayNight != null)
-                _dayNight.OnDayTimerAboutToExpire -= HandleDayTimerAboutToExpire;
+            if (_timer != null)
+                _timer.OnDayTimerAboutToExpire -= HandleTimerAboutToExpire;
         }
 
-        private void HandleDayTimerAboutToExpire()
+        private void HandleTimerAboutToExpire()
         {
-            if (!autoDeliverOnDayEnd) return;
+            if (!autoDeliverOnTimerEnd) return;
 
             int currentDay = moneyTargetManager != null ? moneyTargetManager.CurrentDay :
                              (GameManager.Instance != null ? GameManager.Instance.GetCurrentDay() : -1);
@@ -129,7 +130,7 @@ namespace DeliverHere.GamePlay
 
             if (cleared > 0)
             {
-                Debug.Log($"[PackageDeliveryZone] Cleared {cleared} undelivered package(s) at day end.");
+                Debug.Log($"[PackageDeliveryZone] Cleared {cleared} undelivered package(s) at timer end.");
             }
 
             // Also clear local tracking sets to avoid stale references

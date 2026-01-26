@@ -6,6 +6,7 @@ TagManager:
   tags:
   - PlayerCamera
   - Package
+  - PlayerSpawn
   layers:
   - Default
   - TransparentFX

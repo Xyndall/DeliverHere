@@ -163,16 +163,7 @@ public class MenuUIController : MonoBehaviour
 
     private void OnStartGameClicked()
     {
-        if (NetworkGameState.Instance != null)
-        {
             NetworkGameState.Instance.RequestStartGameServerRpc();
-        }
-        else
-        {
-            // Fallback for offline testing
-            GameManager.Instance?.StartGame();
-            if (menuRoot != null) menuRoot.SetActive(false);
-        }
     }
 
     private void OnEndGameClicked()
