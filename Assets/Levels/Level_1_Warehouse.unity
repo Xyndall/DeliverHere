@@ -157,7 +157,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 64
   requiredTag: Package
-  autoDeliverOnDayEnd: 1
+  autoDeliverOnTimerEnd: 1
   consumePackageOnDeposit: 1
   reEntryIgnoreSeconds: 0.25
 --- !u!114 &7249707
@@ -26999,8 +26999,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 945552235}
-  - component: {fileID: 945552234}
-  - component: {fileID: 945552233}
+  - component: {fileID: 945552236}
   m_Layer: 0
   m_Name: PackageSpawnPoints
   m_TagString: Untagged
@@ -27008,74 +27007,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 2147483647
   m_IsActive: 1
---- !u!114 &945552233
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 945552232}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 08e4ea71f85c8f846b9f9d34213052b7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.PackageSpawner
-  ShowTopMostFoldoutHeaderGroup: 1
-  packageOptions:
-  - prefab: {fileID: -122704528989098008, guid: 41173a9fe6a77ce46acc137dfe4daa63, type: 3}
-    weight: 1
-  desiredPackages: 10
-  spawnMode: 1
-  spawnPoints: []
-  spawnAreas:
-  - {fileID: 1442878396}
-  - {fileID: 837267031}
-  - {fileID: 322364427}
-  groundMask:
-    serializedVersion: 2
-    m_Bits: 128
-  obstacleMask:
-    serializedVersion: 2
-    m_Bits: 256
-  surfaceOffset: 0.1
-  overlapRadius: 0.1
-  maxAttemptsPerPackage: 100
-  useNavMeshValidation: 0
-  navMeshSampleMaxDistance: 2
-  sampleAbove: 5
-  groundRayLength: 50
-  autoSpawnOnNetworkSpawn: 0
-  spawnParent: {fileID: 251529393}
-  useNetworkParenting: 1
-  useDailyIncreasingCount: 1
-  basePackagesFirstDay: 10
-  packagesIncrementPerDay: 5
-  maxDailyPackagesCap: 50
---- !u!114 &945552234
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 945552232}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 790786579
-  InScenePlacedSourceGlobalObjectIdHash: 0
-  DeferredDespawnTick: 0
-  Ownership: 1
-  AlwaysReplicateAsRoot: 0
-  SynchronizeTransform: 1
-  ActiveSceneSynchronization: 0
-  SceneMigrationSynchronization: 0
-  SpawnWithObservers: 1
-  DontDestroyWithOwner: 0
-  AutoObjectParentSync: 1
-  SyncOwnerTransformWhenParented: 1
-  AllowOwnerToParent: 0
 --- !u!4 &945552235
 Transform:
   m_ObjectHideFlags: 0
@@ -27093,6 +27024,27 @@ Transform:
   - {fileID: 251529393}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &945552236
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 945552232}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f5269d0f3a316164797659e567b32bdd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.PackageSpawnAreas
+  autoDiscover: 0
+  spawnPoints: []
+  spawnAreas:
+  - {fileID: 1442878396}
+  - {fileID: 837267031}
+  - {fileID: 322364427}
+  pointTag: PackageSpawnPoint
+  areaTag: PackageSpawnArea
+  includeInactive: 0
 --- !u!1001 &963420492
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -27536,6 +27488,72 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 3316348976071172204, guid: d3b18a163983407489b668d9b13a9ac1, type: 3}
   m_PrefabInstance: {fileID: 984110788}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &986407429
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 986407431}
+  - component: {fileID: 986407430}
+  - component: {fileID: 986407432}
+  m_Layer: 0
+  m_Name: Meteoritespawner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!65 &986407430
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 986407429}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!4 &986407431
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 986407429}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -22.2, y: 9.1, z: 18.1}
+  m_LocalScale: {x: 51.907047, y: 18.60907, z: 38.55454}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &986407432
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 986407429}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 97c8e405dd9391647bb5820e0cd70b90, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MeteoriteSpawnArea
 --- !u!1001 &987261584
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -57413,3 +57431,4 @@ SceneRoots:
   - {fileID: 945552235}
   - {fileID: 2141960978}
   - {fileID: 668418125}
+  - {fileID: 986407431}

@@ -119,6 +119,56 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &24441900
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 24441902}
+  - component: {fileID: 24441901}
+  m_Layer: 0
+  m_Name: RandomEventManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &24441901
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 24441900}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e09082c0f22dbd4e90fe29999a08294, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RandomEventSystem
+  gameTimer: {fileID: 1657870876}
+  autoFindGameTimer: 0
+  events:
+  - {fileID: 11400000, guid: e9297b4eb56fb154b95202cb384bd731, type: 2}
+  serverAuthoritative: 1
+  eventParent: {fileID: 24441902}
+--- !u!4 &24441902
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 24441900}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 9.69045, y: -5, z: 2.65665}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &42608491
 GameObject:
   m_ObjectHideFlags: 0
@@ -1189,6 +1239,104 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 322990625}
   m_CullTransparentMesh: 1
+--- !u!1 &325799801
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 325799804}
+  - component: {fileID: 325799802}
+  - component: {fileID: 325799803}
+  m_Layer: 0
+  m_Name: PackageSpawner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &325799802
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 325799801}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 3350240885
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &325799803
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 325799801}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 08e4ea71f85c8f846b9f9d34213052b7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.PackageSpawner
+  ShowTopMostFoldoutHeaderGroup: 1
+  packageOptions:
+  - prefab: {fileID: -122704528989098008, guid: 41173a9fe6a77ce46acc137dfe4daa63, type: 3}
+    weight: 1
+  desiredPackages: 50
+  spawnMode: 1
+  autoFindSpawnAreasProvider: 1
+  spawnAreasProvider: {fileID: 0}
+  groundMask:
+    serializedVersion: 2
+    m_Bits: 128
+  obstacleMask:
+    serializedVersion: 2
+    m_Bits: 256
+  surfaceOffset: 0.1
+  overlapRadius: 0.1
+  maxAttemptsPerPackage: 100
+  sampleAbove: 5
+  groundRayLength: 50
+  autoSpawnOnNetworkSpawn: 0
+  spawnParent: {fileID: 325799804}
+  useNetworkParenting: 1
+  useDailyIncreasingCount: 1
+  basePackagesFirstDay: 50
+  packagesIncrementPerDay: 5
+  maxDailyPackagesCap: 50
+  verboseLogging: 1
+  deferUntilProviderReady: 0
+--- !u!4 &325799804
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 325799801}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 19.83226, y: -5, z: 43.50259}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -4363,9 +4511,8 @@ MonoBehaviour:
   autoFindUIController: 0
   gameManager: {fileID: 1657870875}
   gameTimer: {fileID: 1657870876}
-  autoFindPackageSpawners: 1
   packageSpawners:
-  - {fileID: 0}
+  - {fileID: 325799803}
   preventDuplicateSpawnsPerDay: 1
   autoFindSpawnPoints: 1
   playerSpawnPoints: []
@@ -5165,7 +5312,6 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   Levels:
   - Level_1_Warehouse
-  - Level_2_Rocket
 --- !u!4 &2074574622
 Transform:
   m_ObjectHideFlags: 0
@@ -5547,3 +5693,5 @@ SceneRoots:
   - {fileID: 2074574622}
   - {fileID: 880771542}
   - {fileID: 236239648}
+  - {fileID: 24441902}
+  - {fileID: 325799804}

@@ -21,7 +21,6 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameTimer gameTimer;
 
     [Header("Package Spawning")]
-    [SerializeField] private bool autoFindPackageSpawners = true;
     [SerializeField] private List<PackageSpawner> packageSpawners = new List<PackageSpawner>();
 
     [Header("Spawn Safety")]
@@ -60,7 +59,6 @@ public class GameManager : MonoBehaviour
 
         EnsureMoneyTargetReference();
         EnsureUIReference();
-        EnsureSpawnerReferences();
         EnsureSpawnPointReferences();
     }
 
@@ -154,13 +152,6 @@ public class GameManager : MonoBehaviour
             uiController = FindFirstObjectByType<GameUIController>();
     }
 
-    private void EnsureSpawnerReferences()
-    {
-        if (!autoFindPackageSpawners) return;
-        var found = FindObjectsByType<PackageSpawner>(FindObjectsSortMode.None);
-        packageSpawners.Clear();
-        packageSpawners.AddRange(found);
-    }
 
     private void EnsureSpawnPointReferences()
     {
@@ -232,7 +223,6 @@ public class GameManager : MonoBehaviour
     {
         EnsureMoneyTargetReference();
         EnsureUIReference();
-        EnsureSpawnerReferences();
         EnsureSpawnPointReferences();
         FindTimerAndNetState();
 
@@ -240,7 +230,21 @@ public class GameManager : MonoBehaviour
 
         if (IsServerOrStandalone)
         {
-            PositionPlayersToSpawnPoints();
+            // Defer player positioning until clients report ready to avoid moving
+            // only the host’s player when clients aren’t fully spawned yet.
+            if (_netState != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+            {
+                // Small timeout (e.g., 5s) to avoid hanging if a client never reports.
+                _netState.BeginClientReadyHandshake(() =>
+                {
+                    PositionPlayersToSpawnPoints();
+                }, timeoutSeconds: 5f);
+            }
+            else
+            {
+                // Standalone (no networking) – teleport immediately.
+                PositionPlayersToSpawnPoints();
+            }
         }
 
         if (moneyTargetManager != null && moneyTargetManager.CurrentDay <= 0 && IsServerOrStandalone)
@@ -277,36 +281,25 @@ public class GameManager : MonoBehaviour
             if (pm == null) continue;
 
             var netObj = pm.GetComponent<NetworkObject>();
-            if (netObj == null) continue;
-            if (!netObj.IsSpawned) continue; // only reposition spawned objects
+            if (netObj == null || !netObj.IsSpawned) continue;
 
-            // Assign spawn to by index (round-robin)
             var spawn = playerSpawnPoints[spawnIndex % playerSpawnPoints.Count];
             spawnIndex++;
 
-            try
+            // Host (server) can update transform immediately for its own view.
+            var cc = pm.GetComponent<CharacterController>();
+            var rb = pm.GetComponent<Rigidbody>();
+            if (cc != null) cc.enabled = false;
+            pm.transform.SetPositionAndRotation(spawn.position, spawn.rotation);
+            if (rb != null)
             {
-                var cc = pm.GetComponent<CharacterController>();
-                if (cc != null) cc.enabled = false;
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+            if (cc != null) cc.enabled = true;
 
-                pm.transform.SetPositionAndRotation(spawn.position, spawn.rotation);
-
-                var rb = pm.GetComponent<Rigidbody>();
-                if (rb != null)
-                {
-                    rb.linearVelocity = Vector3.zero;
-                    rb.angularVelocity = Vector3.zero;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogException(ex);
-            }
-            finally
-            {
-                var cc = pm.GetComponent<CharacterController>();
-                if (cc != null) cc.enabled = true;
-            }
+            // Let the owner client (for non-host players) apply the move locally (owner-authoritative).
+            _netState?.ServerRequestOwnerTeleport(netObj, spawn.position, spawn.rotation);
         }
 
         Debug.Log($"[GameManager] Positioned {players.Length} players to spawn points.");
@@ -444,7 +437,7 @@ public class GameManager : MonoBehaviour
 
     private void TriggerWinCondition()
     {
-        OnWinCondition.Invoke();
+        OnWinCondition?.Invoke();
         uiController.ShowWinPanel();
         Debug.Log("[GameManager] Win condition met.");
     }

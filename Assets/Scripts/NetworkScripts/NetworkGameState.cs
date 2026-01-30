@@ -256,4 +256,64 @@ public class NetworkGameState : NetworkBehaviour
     {
         uiController.HideDayEndSummary();
     }
+
+    [ClientRpc]
+    private void ApplyPlayerTeleportClientRpc(ulong networkObjectId, Vector3 position, Quaternion rotation, ClientRpcParams clientRpcParams = default)
+    {
+        NetworkObject netObj = null;
+
+        var spawnMgr = NetworkManager.Singleton?.SpawnManager;
+        if (spawnMgr != null)
+        {
+            // Current NGO exposes a dictionary of spawned objects keyed by NetworkObjectId
+            spawnMgr.SpawnedObjects.TryGetValue(networkObjectId, out netObj);
+        }
+
+        if (netObj == null)
+        {
+            // Fallback: slow, but safe if called rarely
+            foreach (var candidate in FindObjectsByType<NetworkObject>(FindObjectsSortMode.None))
+            {
+                if (candidate.NetworkObjectId == networkObjectId)
+                {
+                    netObj = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (netObj == null) return;
+
+        var pm = netObj.GetComponent<PlayerMovement>();
+        if (pm == null) return;
+
+        var cc = pm.GetComponent<CharacterController>();
+        var rb = pm.GetComponent<Rigidbody>();
+
+        if (cc != null) cc.enabled = false;
+        pm.transform.SetPositionAndRotation(position, rotation);
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
+        if (cc != null) cc.enabled = true;
+    }
+
+    // SERVER: request the owning client to apply the move locally (owner-authoritative NetworkTransform).
+    public void ServerRequestOwnerTeleport(NetworkObject playerNetObj, Vector3 position, Quaternion rotation)
+    {
+        if (!IsServer || playerNetObj == null || !playerNetObj.IsSpawned) return;
+
+        var ownerId = playerNetObj.OwnerClientId;
+        var rpcParams = new ClientRpcParams
+        {
+            Send = new ClientRpcSendParams
+            {
+                TargetClientIds = new[] { ownerId }
+            }
+        };
+
+        ApplyPlayerTeleportClientRpc(playerNetObj.NetworkObjectId, position, rotation, rpcParams);
+    }
 }
