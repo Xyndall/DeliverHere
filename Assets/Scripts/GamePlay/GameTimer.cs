@@ -65,6 +65,10 @@ public class GameTimer : MonoBehaviour
             money.OnDayAdvanced += HandleDayAdvanced;
         }
 
+        // Initialize totalTime locally to support client display from normalized progress
+        if (totalTime <= 0f)
+            totalTime = Mathf.Max(1f, durationSeconds);
+
         // Start flow based on current day
         if (money != null && autoStartFirstDay && money.CurrentDay <= 0 && IsServerOrStandalone)
         {
@@ -121,7 +125,7 @@ public class GameTimer : MonoBehaviour
         running = true;
 
         uiController?.SetTimerVisible(true);
-        PushTimerUI(); // Ensure slider shows start value immediately
+        PushTimerUI(); // Ensure text shows start value immediately
         UpdateInspectorDebug();
     }
 
@@ -151,6 +155,11 @@ public class GameTimer : MonoBehaviour
             // Client: render visuals from networked progress only
             if (netState == null) { UpdateInspectorDebug(); return; }
             float t = Mathf.Clamp01(netState.TimerProgress);
+
+            // Compute remaining seconds from normalized progress (0..1, where 1 == time over)
+            // remaining = (1 - t) * totalTime
+            remainingTime = Mathf.Clamp((1f - t) * Mathf.Max(1f, totalTime), 0f, Mathf.Max(1f, totalTime));
+
             PushTimerUI();
         }
 

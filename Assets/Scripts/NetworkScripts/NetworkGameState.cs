@@ -72,6 +72,23 @@ public class NetworkGameState : NetworkBehaviour
             uiController.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, v);
         };
 
+        // NEW: toggle HUD locally on clients when gameStarted changes
+        gameStarted.OnValueChanged += (_, started) =>
+        {
+            OnGameStartedChangedEvent?.Invoke(started);
+            if (!IsServer)
+            {
+                if (started)
+                {
+                    GameManager.Instance?.StartGame();    // shows HUD on clients
+                }
+                else
+                {
+                    GameManager.Instance?.EndGame();      // hides HUD on clients
+                }
+            }
+        };
+
         // Push initial snapshot
         if (IsServer)
         {
@@ -80,7 +97,11 @@ public class NetworkGameState : NetworkBehaviour
         else
         {
             ApplyAllToClientUI();
-
+            // Ensure correct HUD visibility for late-joiners
+            if (gameStarted.Value)
+                GameManager.Instance?.StartGame();
+            else
+                GameManager.Instance?.EndGame();
         }
     }
 
@@ -240,7 +261,8 @@ public class NetworkGameState : NetworkBehaviour
         uiController.SetTarget(nvTargetMoney.Value);
         uiController.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, nvProgress.Value);
         uiController.SetBankedMoney(nvBankedMoney.Value);
-        uiController.SetTimerSeconds(nvTimerProgress.Value); 
+        // Keep timer visible; GameTimer will drive seconds on clients
+        uiController.SetTimerVisible(true);
     }
 
     // Optional: UI summary RPCs (kept for compatibility)

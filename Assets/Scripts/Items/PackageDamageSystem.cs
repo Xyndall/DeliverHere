@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using DeliverHere.Items;
 using Unity.Netcode;
@@ -20,21 +19,31 @@ public class PackageDamageSystem : MonoBehaviour
     [Tooltip("Clamp applied damage to this maximum per single collision.")]
     [SerializeField] private int maxDamagePerHit = 50;
 
+    [Tooltip("Minimum applied damage required to count as damage (e.g., 5). Below this, damage is ignored.")]
+    [SerializeField] private int minDamageAmount = 5;
+
     [Header("Collision Filtering")]
     [Tooltip("Ignore collisions with layers in this mask (e.g., player hands).")]
     [SerializeField] private LayerMask ignoreLayers;
 
-    [Tooltip("Minimum time between damage applications from the same other collider.")]
-    [SerializeField] private float perColliderCooldownSeconds = 0.25f;
+    [Tooltip("Minimum time between any damage applications to this package (global cooldown, independent of collider).")]
+    [SerializeField] private float packageCooldownSeconds = 0.25f;
 
     [Tooltip("Scale damage by contact count within a collision. If false, only the strongest contact is used.")]
     [SerializeField] private bool scaleByContactCount = true;
 
+    [Header("Feedback")]
+    [Tooltip("Optional broadcaster used to display floating damage text.")]
+    [SerializeField] private DamageFeedbackBroadcaster feedbackBroadcaster;
+
+    [Tooltip("Local offset for spawned text relative to the package origin.")]
+    [SerializeField] private Vector3 textLocalOffset = new Vector3(0f, 0.25f, 0f);
+
     private Rigidbody _rb;
     private PackageProperties _props;
 
-    // Track last damage time per other collider to avoid rapid repeated hits
-    private readonly Dictionary<int, float> _lastHitTimeByOtherInstanceId = new Dictionary<int, float>();
+    // Global cooldown: last time the package took damage (any collider)
+    private float _lastPackageDamageTime = -999f;
 
     private void Awake()
     {
@@ -47,6 +56,10 @@ public class PackageDamageSystem : MonoBehaviour
         if (_props == null)
         {
             Debug.LogWarning($"{nameof(PackageDamageSystem)} could not find PackageProperties; damage will not affect value.");
+        }
+        if (feedbackBroadcaster == null)
+        {
+            feedbackBroadcaster = GetComponent<DamageFeedbackBroadcaster>() ?? GetComponentInParent<DamageFeedbackBroadcaster>();
         }
     }
 
@@ -69,13 +82,11 @@ public class PackageDamageSystem : MonoBehaviour
         if (((1 << collision.gameObject.layer) & ignoreLayers.value) != 0)
             return;
 
-        int otherId = collision.collider.GetInstanceID();
         float now = Time.time;
-        if (_lastHitTimeByOtherInstanceId.TryGetValue(otherId, out var lastTime))
-        {
-            if (now - lastTime < perColliderCooldownSeconds)
-                return;
-        }
+
+        // Global package cooldown first (independent of which collider hit us)
+        if (now - _lastPackageDamageTime < packageCooldownSeconds)
+            return;
 
         // Use relative velocity magnitude as impact speed
         float impactSpeed = collision.relativeVelocity.magnitude;
@@ -94,14 +105,20 @@ public class PackageDamageSystem : MonoBehaviour
         float fragilityScale = 1f + Mathf.Max(0f, fragilityMultiplier) * Mathf.Clamp01(_props.Fragility);
         int damage = Mathf.Clamp(Mathf.RoundToInt(baseDamage * fragilityScale), 0, Mathf.Max(1, maxDamagePerHit));
 
-        if (damage <= 0)
+        // Enforce minimum applied damage amount
+        if (damage < minDamageAmount)
             return;
 
-        ApplyDamageToValue(damage);
-        _lastHitTimeByOtherInstanceId[otherId] = now;
+        // Prefer package origin with a small upward local offset so it’s visible above geometry
+        Vector3 localOffset = textLocalOffset;
+
+        ApplyDamageToValue(damage, localOffset);
+
+        // Record global cooldown
+        _lastPackageDamageTime = now;
     }
 
-    private void ApplyDamageToValue(int damage)
+    private void ApplyDamageToValue(int damage, Vector3 localOffset)
     {
         // Server-authoritative: only server mutates NetValue.
         // Clients do not apply damage directly to avoid desync.
@@ -116,19 +133,26 @@ public class PackageDamageSystem : MonoBehaviour
                 if (next != current)
                 {
                     _props.NetValue.Value = next;
+
+                    // Broadcast to all clients to show floating damage (spawned as child of the broadcaster/package)
+                    if (feedbackBroadcaster != null && feedbackBroadcaster.IsServer)
+                    {
+                        feedbackBroadcaster.ShowDamageClientRpc(damage, localOffset);
+                    }
                 }
             }
-            // If not server, do nothing; server will apply and replicate.
+            // If not server, do nothing; server will apply and replicate and clients get the RPC.
         }
         else
         {
-            // Offline run: PackageProperties.Value is backed by a private localValue.
-            // We cannot set it directly, so we cache health locally and mirror the initial Value.
-            // As a fallback, we reduce Rigidbody mass slightly to simulate degradation and log the change.
-            // Prefer adding a setter method on PackageProperties for offline support.
+            // Offline run: show local feedback even though value does not change
 #if UNITY_EDITOR
             Debug.LogWarning($"{nameof(PackageDamageSystem)}: Offline mode detected. Consider adding a public method to PackageProperties to mutate local value. Damage ({damage}) not reflected in PackageProperties.Value.");
 #endif
+            if (feedbackBroadcaster != null)
+            {
+                feedbackBroadcaster.ShowLocal(damage, localOffset);
+            }
         }
     }
 }

@@ -26,9 +26,6 @@ namespace DeliverHere.GamePlay
         [Header("Package Prefabs (must have NetworkObject + PackageProperties)")]
         [SerializeField] private List<WeightedPackage> packageOptions = new List<WeightedPackage>();
 
-        [Header("Desired Count")]
-        [SerializeField, Min(0)] private int desiredPackages = 15;
-
         [Header("Spawn Positions")]
         [SerializeField] private SpawnMode spawnMode = SpawnMode.Mixed;
 

@@ -87,7 +87,7 @@ public class MeteoriteEventSpawner : MonoBehaviour
         {
             for (int i = 0; i < burstAtStart; i++)
             {
-                if (TrySpawnOne(out _))
+                if (TrySpawnOneNetworked(out _))
                 {
                     spawned++;
                 }
@@ -111,7 +111,7 @@ public class MeteoriteEventSpawner : MonoBehaviour
             while (Time.time < nextTime)
                 yield return null;
 
-            if (TrySpawnOne(out _))
+            if (TrySpawnOneNetworked(out _))
             {
                 spawned++;
                 remaining--;
@@ -129,7 +129,7 @@ public class MeteoriteEventSpawner : MonoBehaviour
         Destroy(gameObject);
     }
 
-    private bool TrySpawnOne(out Vector3 spawnPosOut)
+    private bool TrySpawnOneNetworked(out Vector3 spawnPosOut)
     {
         spawnPosOut = Vector3.zero;
         if (!TryGetSpawnPosition(out var basePos))
@@ -138,12 +138,18 @@ public class MeteoriteEventSpawner : MonoBehaviour
         var spawnPos = basePos + Vector3.up * Mathf.Max(1f, dropHeight);
         var rot = Quaternion.LookRotation(Vector3.down, Vector3.forward);
 
+        // Instantiate
         var go = Instantiate(meteoritePrefab, spawnPos, rot, meteoriteParent);
 
-        if (!go.activeSelf) go.SetActive(true);
-        if (go.transform.localScale == Vector3.zero)
-            go.transform.localScale = Vector3.one;
+        // If this prefab has a NetworkObject, spawn it so clients see it
+        var netObj = go.GetComponent<NetworkObject>();
+        if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer && netObj != null && !netObj.IsSpawned)
+        {
+            netObj.Spawn(true);
+        }
+        // If running standalone, no network needed.
 
+        // Initialize Meteorite behavior
         var meteor = go.GetComponent<Meteorite>();
         if (meteor != null)
         {
@@ -157,6 +163,11 @@ public class MeteoriteEventSpawner : MonoBehaviour
                 knockbackForce = 12f
             });
         }
+
+        // Ensure visible
+        if (!go.activeSelf) go.SetActive(true);
+        if (go.transform.localScale == Vector3.zero)
+            go.transform.localScale = Vector3.one;
 
         var scaleJitter = Random.Range(0.95f, 1.08f);
         go.transform.localScale *= scaleJitter;

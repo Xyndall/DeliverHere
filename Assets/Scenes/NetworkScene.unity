@@ -1298,7 +1298,6 @@ MonoBehaviour:
   packageOptions:
   - prefab: {fileID: -122704528989098008, guid: 41173a9fe6a77ce46acc137dfe4daa63, type: 3}
     weight: 1
-  desiredPackages: 50
   spawnMode: 1
   autoFindSpawnAreasProvider: 1
   spawnAreasProvider: {fileID: 0}
@@ -1320,8 +1319,6 @@ MonoBehaviour:
   basePackagesFirstDay: 50
   packagesIncrementPerDay: 5
   maxDailyPackagesCap: 50
-  verboseLogging: 1
-  deferUntilProviderReady: 0
 --- !u!4 &325799804
 Transform:
   m_ObjectHideFlags: 0
@@ -3284,7 +3281,7 @@ MonoBehaviour:
     Prefabs:
       NetworkPrefabsLists:
       - {fileID: 11400000, guid: e5842e793e5420f48bd88e08f96c0a37, type: 2}
-    TickRate: 30
+    TickRate: 60
     ClientConnectionBufferTimeout: 10
     ConnectionApproval: 0
     ConnectionData: 
