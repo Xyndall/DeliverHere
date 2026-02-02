@@ -33,6 +33,9 @@ public class GameManager : MonoBehaviour
     public event Action OnWinCondition;
     public bool IsGameplayActive { get; private set; }
 
+    // Expose spawn points read-only to other components.
+    public IReadOnlyList<Transform> PlayerSpawnPoints => playerSpawnPoints;
+
     private InputSystem_Actions _input;
     private InputAction _pauseAction;
 
@@ -185,6 +188,28 @@ public class GameManager : MonoBehaviour
 
         if (playerSpawnPoints.Count == 0)
             playerSpawnPoints.Add(this.transform);
+    }
+
+    /// <summary>
+    /// Returns a random active player spawn point; falls back to GameManager transform if none.
+    /// </summary>
+    public Transform GetRandomPlayerSpawn()
+    {
+        EnsureSpawnPointReferences();
+        if (playerSpawnPoints == null || playerSpawnPoints.Count == 0)
+            return this.transform;
+
+        // Choose a random active one if possible
+        var active = new List<Transform>();
+        foreach (var t in playerSpawnPoints)
+        {
+            if (t != null && t.gameObject.activeInHierarchy)
+                active.Add(t);
+        }
+
+        var source = active.Count > 0 ? active : playerSpawnPoints;
+        int idx = UnityEngine.Random.Range(0, source.Count);
+        return source[idx] ?? this.transform;
     }
 
     private void SubscribeToMoneyTarget()

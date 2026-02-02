@@ -40,7 +40,7 @@ public class Meteorite : MonoBehaviour
     [Tooltip("Optional layer mask to filter which objects count as packages. Leave 0 to auto-detect via components.")]
     [SerializeField] private LayerMask packageMask;
 
-    private FallParams p;
+    [SerializeField] private FallParams p;
     private float verticalSpeed;
     private bool landed;
 
@@ -119,14 +119,6 @@ public class Meteorite : MonoBehaviour
         var hits = Physics.OverlapSphere(center, radius, playerMask, QueryTriggerInteraction.Ignore);
         foreach (var h in hits)
         {
-            // Apply knockback if a Rigidbody is present
-            var rb = h.attachedRigidbody;
-            if (rb != null)
-            {
-                var dir = (rb.worldCenterOfMass - center).normalized;
-                rb.AddForce(dir * knockbackForce, ForceMode.Impulse);
-            }
-
             // If a health interface exists, call it. Otherwise, no-op
             var damageable = h.GetComponentInParent<IPlayerDamageable>();
             if (damageable != null)

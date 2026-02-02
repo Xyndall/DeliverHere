@@ -157,7 +157,7 @@ public class MeteoriteEventSpawner : MonoBehaviour
             {
                 gravity = 30f,
                 terminalVelocity = 60f,
-                landDestroyDelay = 0.5f,
+                landDestroyDelay = 0f,
                 impactRadius = 2.5f,
                 impactDamage = 25,
                 knockbackForce = 12f
