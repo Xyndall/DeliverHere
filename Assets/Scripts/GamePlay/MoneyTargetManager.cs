@@ -5,9 +5,9 @@ public class MoneyTargetManager : MonoBehaviour
 {
     public enum GrowthMode
     {
-        FixedAmount,                 // Adds a flat amount each day.
-        PercentageOfCurrentTarget,   // Adds a percentage of the current target.
-        FixedPlusPercentage          // Adds (fixed + percentage) per day.
+        FixedAmount,
+        PercentageOfCurrentTarget,
+        FixedPlusPercentage
     }
 
     [Header("Goal Settings")]
@@ -44,14 +44,17 @@ public class MoneyTargetManager : MonoBehaviour
     private bool targetReached;
     private int currentDay; // Day counter, starts at 0 on Awake. First AdvanceDay() -> day 1.
 
+    // Cache of the initial target to restore on ResetProgress
+    private int initialTargetMoney;
+
     // Events for other systems (e.g., GameManager/UI)
-    public event Action<int> OnMoneyChanged;         // daily earnings changed
-    public event Action<int> OnBankedMoneyChanged;   // banked money changed
-    public event Action<int, int> OnDailyEarningsBanked; // (newBanked, amountAdded)
-    public event Action<int> OnTargetChanged;        // target changed
-    public event Action OnTargetReached;             // fired once when daily earnings reach target
-    public event Action<int> OnDayAdvanced;          // new current day index (1-based after first advance)
-    public event Action<int, int> OnTargetIncreased; // (newTarget, deltaAdded)
+    public event Action<int> OnMoneyChanged;
+    public event Action<int> OnBankedMoneyChanged;
+    public event Action<int, int> OnDailyEarningsBanked;
+    public event Action<int> OnTargetChanged;
+    public event Action OnTargetReached;
+    public event Action<int> OnDayAdvanced;
+    public event Action<int, int> OnTargetIncreased;
 
     public int TargetMoney
     {
@@ -63,28 +66,24 @@ public class MoneyTargetManager : MonoBehaviour
 
             targetMoney = newTarget;
             OnTargetChanged?.Invoke(targetMoney);
-
-            // Re-evaluate in case changing the target immediately satisfies/fails it
             EvaluateTargetReached();
         }
     }
 
-    // Daily earnings toward today's target
     public int CurrentMoney => currentMoney;
-
-    // Total spendable currency
     public int BankedMoney => bankedMoney;
-
     public float Progress => targetMoney <= 0 ? 1f : Mathf.Clamp01((float)currentMoney / targetMoney);
     public bool IsTargetReached => targetReached;
     public int CurrentDay => currentDay;
 
     private void Awake()
     {
+        // Cache the initial configured target before any resets
+        initialTargetMoney = targetMoney;
+
         ResetProgress();
     }
 
-    // Call this from your future money-earning logic (adds to today's earnings; not clamped to target)
     public void AddMoney(int amount)
     {
         if (amount == 0) return;
@@ -105,7 +104,6 @@ public class MoneyTargetManager : MonoBehaviour
         EvaluateTargetReached();
     }
 
-    // Optional: penalties that reduce today's earnings
     public void RemoveMoney(int amount)
     {
         if (amount <= 0) return;
@@ -118,14 +116,12 @@ public class MoneyTargetManager : MonoBehaviour
         currentMoney = newValue;
         OnMoneyChanged?.Invoke(currentMoney);
 
-        // If daily earnings drop below target, allow re-reaching
         if (wasReached && currentMoney < targetMoney)
         {
             targetReached = false;
         }
     }
 
-    // Spend from banked money; returns true if successful
     public bool SpendBanked(int amount)
     {
         if (amount <= 0) return false;
@@ -136,7 +132,6 @@ public class MoneyTargetManager : MonoBehaviour
         return true;
     }
 
-    // Directly set daily earnings (useful for debugging)
     public void SetMoney(int value)
     {
         int newValue = Mathf.Max(0, value);
@@ -147,7 +142,6 @@ public class MoneyTargetManager : MonoBehaviour
         EvaluateTargetReached();
     }
 
-    // Directly set banked (debug/admin)
     public void SetBankedMoney(int value)
     {
         int newValue = Mathf.Max(0, value);
@@ -159,29 +153,33 @@ public class MoneyTargetManager : MonoBehaviour
 
     public void ResetProgress()
     {
+        // Restore target to its initial configured value first
+        TargetMoney = initialTargetMoney;
+
+        // Reset earnings/banked/day state
         currentMoney = Mathf.Max(0, startingMoney);
         bankedMoney = 0;
         targetReached = false;
         currentDay = 0;
+
+        // Notify listeners for UI sync
         OnMoneyChanged?.Invoke(currentMoney);
         OnBankedMoneyChanged?.Invoke(bankedMoney);
+
         EvaluateTargetReached();
     }
 
-    // Advance the in-game day by 1: bank today's earnings, reset daily, then optionally increase target.
     public void AdvanceDay()
     {
         AdvanceDays(1);
     }
 
-    // Advance several days at once (applies: bank -> reset -> increase target -> advance event).
     public void AdvanceDays(int days)
     {
         if (days <= 0) return;
 
         for (int i = 0; i < days; i++)
         {
-            // 1) Bank today's earnings and reset daily
             if (currentMoney > 0)
             {
                 long sum = (long)bankedMoney + currentMoney;
@@ -194,10 +192,8 @@ public class MoneyTargetManager : MonoBehaviour
             targetReached = false;
             OnMoneyChanged?.Invoke(currentMoney);
 
-            // 2) Advance day counter
             currentDay++;
 
-            // 3) Increase target for the new day if enabled
             if (enableDailyIncrease)
             {
                 int delta = CalculateDailyIncrease(currentDay);
@@ -210,27 +206,14 @@ public class MoneyTargetManager : MonoBehaviour
 
                     if (newTarget != targetMoney)
                     {
-                        TargetMoney = newTarget; // triggers OnTargetChanged + re-evaluation
+                        TargetMoney = newTarget;
                         OnTargetIncreased?.Invoke(TargetMoney, delta);
                     }
                 }
             }
 
-            // 4) Notify listeners day has advanced
             OnDayAdvanced?.Invoke(currentDay);
         }
-    }
-
-    // Peek at what the next day’s increase would be (considering caps and rounding).
-    public int PreviewIncreaseForNextDay()
-    {
-        int nextDay = currentDay + 1;
-        int inc = CalculateDailyIncrease(nextDay);
-
-        if (maxTargetMoneyCap > 0)
-            inc = Mathf.Clamp(inc, 0, Math.Max(0, maxTargetMoneyCap - targetMoney));
-
-        return inc;
     }
 
     private int CalculateDailyIncrease(int dayIndex1Based)
@@ -274,7 +257,6 @@ public class MoneyTargetManager : MonoBehaviour
 
     private void EvaluateTargetReached()
     {
-        // Target of 0 means instantly "reached"
         if (!targetReached && (targetMoney == 0 || currentMoney >= targetMoney))
         {
             targetReached = true;

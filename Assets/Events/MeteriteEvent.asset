@@ -14,10 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RandomEventDefinition
   eventId: Meteorites
   description: Spawns randome meteorites the crash down on the players
-  baseChance: 1
-  maxTriggersPerDay: 1
+  baseChance: 0.1
+  maxTriggersPerDay: 2
   cooldownSeconds: 30
-  windowStart01: 0.115
-  windowEnd01: 1
-  evaluationIntervalSeconds: 0.25
+  windowStart01: 0.1
+  windowEnd01: 0.8
+  evaluationIntervalSeconds: 5
   eventPrefab: {fileID: 4342616253148699227, guid: be19139a53dc0334d8a9776e00e8e85e, type: 3}

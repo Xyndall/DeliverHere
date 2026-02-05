@@ -19,6 +19,10 @@ public class LevelFlowController : MonoBehaviour
     private void OnDisable()
     {
         SceneManager.sceneLoaded -= ClientSceneLoadedHandler;
+        if (levelLoader != null)
+        {
+            levelLoader.OnLevelUnloaded -= OnLevelUnloaded_Server;
+        }
     }
 
     private void Awake()
@@ -87,6 +91,68 @@ public class LevelFlowController : MonoBehaviour
                 if (GameManager.Instance != null)
                     GameManager.Instance.StartGame();
             }
+        }
+    }
+
+    /// <summary>
+    /// Server/host: on lose, unload current level and return players to hub spawn.
+    /// </summary>
+    public void ReturnPlayersToHub()
+    {
+        if (NetworkManager.Singleton != null && !NetworkManager.Singleton.IsServer)
+        {
+            Debug.LogWarning("[LevelFlowController] ReturnPlayersToHub must be called on the server/host.");
+            return;
+        }
+
+        if (levelLoader == null)
+        {
+            levelLoader = LevelLoader.Instance ?? FindFirstObjectByType<LevelLoader>();
+        }
+        if (levelLoader == null)
+        {
+            Debug.LogError("[LevelFlowController] No LevelLoader available to unload current level.");
+            // Still try to reposition players so they don't get stuck
+            GameManager.Instance?.StartCoroutine(ServerRepositionPlayersNextFrame());
+            return;
+        }
+
+        levelLoader.OnLevelUnloaded -= OnLevelUnloaded_Server; // ensure single subscription
+        levelLoader.OnLevelUnloaded += OnLevelUnloaded_Server;
+
+        Debug.Log("[LevelFlowController] Unloading current level and returning players to hub...");
+        levelLoader.UnloadCurrentLevel();
+    }
+
+    private void OnLevelUnloaded_Server(string sceneName)
+    {
+        levelLoader.OnLevelUnloaded -= OnLevelUnloaded_Server;
+
+        // Optional small wait
+        GameManager.Instance?.StartCoroutine(ServerRepositionPlayersNextFrame());
+    }
+
+    private IEnumerator ServerRepositionPlayersNextFrame()
+    {
+        // Allow one frame for objects to settle after unload
+        yield return null;
+
+        var netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+        if (netState != null)
+        {
+            // Begin a short handshake so clients are ready before teleport
+            netState.BeginClientReadyHandshake(() =>
+            {
+                GameManager.Instance?.PositionPlayersToSpawnPoints();
+                GameManager.Instance?.SetGameplayActive(false);
+                Debug.Log("[LevelFlowController] Players returned to hub spawn. Gameplay inactive.");
+            }, 3f);
+        }
+        else
+        {
+            GameManager.Instance?.PositionPlayersToSpawnPoints();
+            GameManager.Instance?.SetGameplayActive(false);
+            Debug.Log("[LevelFlowController] Players returned to hub spawn. Gameplay inactive.");
         }
     }
 

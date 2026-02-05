@@ -31,6 +31,14 @@ public class LevelLoader : NetworkBehaviour
     /// </summary>
     public event Action<string> OnLevelLoaded;
 
+    /// <summary>
+    /// Fired when the current level has finished unloading (standalone or server).
+    /// </summary>
+    public event Action<string> OnLevelUnloaded;
+
+    public bool HasCurrentLevel => !string.IsNullOrEmpty(currentLevel);
+    public string CurrentLevelName => currentLevel;
+
     public void LoadNextLevel()
     {
         if (Levels == null || Levels.Length == 0)
@@ -109,6 +117,61 @@ public class LevelLoader : NetworkBehaviour
         }
     }
 
+    /// <summary>
+    /// Unloads the current additive level (if any). Server uses Netcode scene manager; standalone uses SceneManager.
+    /// Triggers OnLevelUnloaded when done.
+    /// </summary>
+    public void UnloadCurrentLevel()
+    {
+        if (string.IsNullOrEmpty(currentLevel))
+        {
+            Debug.Log("[LevelLoader] No current level to unload.");
+            return;
+        }
+
+        bool isStandalone = NetworkManager.Singleton == null;
+
+        if (!isStandalone && !IsServer)
+        {
+            Debug.LogWarning("[LevelLoader] Only the server can unload levels in multiplayer.");
+            return;
+        }
+
+        var scene = SceneManager.GetSceneByName(currentLevel);
+        if (!scene.IsValid() || !scene.isLoaded)
+        {
+            Debug.Log($"[LevelLoader] Current level '{currentLevel}' not loaded or invalid; invoking unload callback anyway.");
+            TryInvokeLevelUnloaded(currentLevel);
+            currentLevel = null;
+            return;
+        }
+
+        if (!isStandalone)
+        {
+            var netSceneMgr = NetworkManager.Singleton?.SceneManager;
+            if (netSceneMgr != null)
+            {
+                netSceneMgr.OnUnloadEventCompleted -= OnNetcodeUnloadCompleted;
+                netSceneMgr.OnUnloadEventCompleted += OnNetcodeUnloadCompleted;
+                netSceneMgr.UnloadScene(scene);
+                Debug.Log($"[LevelLoader] Requesting Netcode unload for scene '{scene.name}'.");
+            }
+            else
+            {
+                // Fallback to local unload
+                SceneManager.sceneUnloaded -= SceneUnloadedHandler;
+                SceneManager.sceneUnloaded += SceneUnloadedHandler;
+                SceneManager.UnloadSceneAsync(scene);
+            }
+        }
+        else
+        {
+            SceneManager.sceneUnloaded -= SceneUnloadedHandler;
+            SceneManager.sceneUnloaded += SceneUnloadedHandler;
+            SceneManager.UnloadSceneAsync(scene);
+        }
+    }
+
     private void SceneLoadedHandler(Scene scene, LoadSceneMode mode)
     {
         if (!string.Equals(scene.name, currentLevel, StringComparison.Ordinal))
@@ -119,6 +182,18 @@ public class LevelLoader : NetworkBehaviour
 
         Debug.Log($"[LevelLoader] Scene '{scene.name}' loaded locally (standalone).");
         TryInvokeLevelLoaded(scene.name);
+    }
+
+    private void SceneUnloadedHandler(Scene scene)
+    {
+        // Unsubscribe immediately
+        SceneManager.sceneUnloaded -= SceneUnloadedHandler;
+
+        Debug.Log($"[LevelLoader] Scene '{scene.name}' unloaded locally.");
+        TryInvokeLevelUnloaded(scene.name);
+
+        if (string.Equals(scene.name, currentLevel, StringComparison.Ordinal))
+            currentLevel = null;
     }
 
     // Netcode: fired on server when a scene load operation completes across server and clients
@@ -144,11 +219,37 @@ public class LevelLoader : NetworkBehaviour
         TryInvokeLevelLoaded(sceneName);
     }
 
+    // Netcode: fired on server when a scene unload operation completes across server and clients
+    private void OnNetcodeUnloadCompleted(string sceneName, LoadSceneMode loadSceneMode, List<ulong> clientsCompleted, List<ulong> clientsTimedOut)
+    {
+        var netSceneMgr = NetworkManager.Singleton?.SceneManager;
+        if (netSceneMgr != null)
+            netSceneMgr.OnUnloadEventCompleted -= OnNetcodeUnloadCompleted;
+
+        Debug.Log($"[LevelLoader] Netcode unload completed for scene '{sceneName}' (timeouts: {clientsTimedOut?.Count ?? 0}).");
+        TryInvokeLevelUnloaded(sceneName);
+
+        if (string.Equals(sceneName, currentLevel, StringComparison.Ordinal))
+            currentLevel = null;
+    }
+
     private void TryInvokeLevelLoaded(string sceneName)
     {
         try
         {
             OnLevelLoaded?.Invoke(sceneName);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogException(ex);
+        }
+    }
+
+    private void TryInvokeLevelUnloaded(string sceneName)
+    {
+        try
+        {
+            OnLevelUnloaded?.Invoke(sceneName);
         }
         catch (Exception ex)
         {

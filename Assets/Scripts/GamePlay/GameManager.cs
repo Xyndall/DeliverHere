@@ -9,16 +9,15 @@ public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [Header("Lifecycle")]
-    [SerializeField] private bool dontDestroyOnLoad = true;
-
     [Header("References")]
     [SerializeField] private MoneyTargetManager moneyTargetManager;
-    [SerializeField] private bool autoFindMoneyTargetManager = true;
     [SerializeField] private GameUIController uiController;
-    [SerializeField] private bool autoFindUIController = true;
     [SerializeField] private GameManager gameManager;
     [SerializeField] private GameTimer gameTimer;
+
+    // New: persistent scene flow references (assign in inspector or auto-wire)
+    [SerializeField] private LevelLoader levelLoader;
+    [SerializeField] private LevelFlowController levelFlow;
 
     [Header("Package Spawning")]
     [SerializeField] private List<PackageSpawner> packageSpawners = new List<PackageSpawner>();
@@ -31,7 +30,15 @@ public class GameManager : MonoBehaviour
     [SerializeField] private List<Transform> playerSpawnPoints = new List<Transform>();
 
     public event Action OnWinCondition;
+    private Action<bool> _onDayEndedEvaluatedHandler;
+    private Action _onDayTimerAboutToExpireHandler;
     public bool IsGameplayActive { get; private set; }
+
+    // Add this method to allow external callers to change gameplay active state.
+    public void SetGameplayActive(bool active)
+    {
+        IsGameplayActive = active;
+    }
 
     // Expose spawn points read-only to other components.
     public IReadOnlyList<Transform> PlayerSpawnPoints => playerSpawnPoints;
@@ -45,7 +52,6 @@ public class GameManager : MonoBehaviour
     private bool endOfDayPopupShown = false;
 
     private NetworkGameState _netState;
-
     private bool IsServerOrStandalone =>
         NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
 
@@ -57,12 +63,7 @@ public class GameManager : MonoBehaviour
             return;
         }
         Instance = this;
-        if (dontDestroyOnLoad)
-            DontDestroyOnLoad(gameObject);
 
-        EnsureMoneyTargetReference();
-        EnsureUIReference();
-        EnsureSpawnPointReferences();
     }
 
     private void OnEnable()
@@ -104,57 +105,55 @@ public class GameManager : MonoBehaviour
     private void FindTimerAndNetState()
     {
         _netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
-        var timer = FindFirstObjectByType<GameTimer>();
-
+        var timer = gameTimer != null ? gameTimer : FindFirstObjectByType<GameTimer>();
         if (timer != null)
         {
-            // Prevent duplicate subscription
             UnsubscribeTimer();
 
-            timer.OnDayTimerAboutToExpire += () =>
+            _onDayTimerAboutToExpireHandler = () => { /* optional */ };
+            _onDayEndedEvaluatedHandler = (metQuota) =>
             {
-                // Pre-expiration hook if needed
-            };
-
-            timer.OnDayEndedEvaluated += (metQuota) =>
-            {
-                // Show summary popup locally
                 int earnedToday = GetCurrentMoney();
                 int newBanked = GetBankedMoney();
                 bool hostHasControl = NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
-                uiController?.ShowDayEndSummary(earnedToday, newBanked, dailyPackagesDelivered, metQuota, hostHasControl);
 
-                endOfDayPopupShown = true;
+                if (metQuota)
+                {
+                    uiController?.ShowDayEndSummary(earnedToday, newBanked, dailyPackagesDelivered, metQuota, hostHasControl);
+                    endOfDayPopupShown = true;
+                }
+                else
+                {
+                    endOfDayPopupShown = false;
+                }
+
                 IsGameplayActive = false;
-            };
-        }
 
+                if (IsServerOrStandalone && !metQuota)
+                {
+                    TriggerLoseCondition();
+                }
+            };
+
+            timer.OnDayTimerAboutToExpire += _onDayTimerAboutToExpireHandler;
+            timer.OnDayEndedEvaluated += _onDayEndedEvaluatedHandler;
+        }
         SyncAllUI();
     }
 
     private void UnsubscribeTimer()
     {
-        var timer = FindFirstObjectByType<GameTimer>();
+        var timer = gameTimer != null ? gameTimer : FindFirstObjectByType<GameTimer>();
         if (timer != null)
         {
-            // Note: to safely unsubscribe, store delegates if you add named handlers.
-            timer.OnDayEndedEvaluated -= (bool _) => { };
-            timer.OnDayTimerAboutToExpire -= () => { };
+            if (_onDayEndedEvaluatedHandler != null)
+                timer.OnDayEndedEvaluated -= _onDayEndedEvaluatedHandler;
+            if (_onDayTimerAboutToExpireHandler != null)
+                timer.OnDayTimerAboutToExpire -= _onDayTimerAboutToExpireHandler;
+            _onDayEndedEvaluatedHandler = null;
+            _onDayTimerAboutToExpireHandler = null;
         }
     }
-
-    private void EnsureMoneyTargetReference()
-    {
-        if (moneyTargetManager == null && autoFindMoneyTargetManager)
-            moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
-    }
-
-    private void EnsureUIReference()
-    {
-        if (uiController == null && autoFindUIController)
-            uiController = FindFirstObjectByType<GameUIController>();
-    }
-
 
     private void EnsureSpawnPointReferences()
     {
@@ -246,8 +245,6 @@ public class GameManager : MonoBehaviour
 
     public void StartGame()
     {
-        EnsureMoneyTargetReference();
-        EnsureUIReference();
         EnsureSpawnPointReferences();
         FindTimerAndNetState();
 
@@ -255,11 +252,8 @@ public class GameManager : MonoBehaviour
 
         if (IsServerOrStandalone)
         {
-            // Defer player positioning until clients report ready to avoid moving
-            // only the host’s player when clients aren’t fully spawned yet.
             if (_netState != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
             {
-                // Small timeout (e.g., 5s) to avoid hanging if a client never reports.
                 _netState.BeginClientReadyHandshake(() =>
                 {
                     PositionPlayersToSpawnPoints();
@@ -267,7 +261,6 @@ public class GameManager : MonoBehaviour
             }
             else
             {
-                // Standalone (no networking) – teleport immediately.
                 PositionPlayersToSpawnPoints();
             }
         }
@@ -287,12 +280,7 @@ public class GameManager : MonoBehaviour
         uiController.ShowHUD();
     }
 
-    /// <summary>
-    /// Find player NetworkObjects (PlayerMovement components) and teleport them to spawn points.
-    /// Uses the inspector-assigned spawn points or auto-found ones. Safe with CharacterController.
-    /// Runs on the server/host so positions will be authoritative and replicate to clients.
-    /// </summary>
-    private void PositionPlayersToSpawnPoints()
+    public void PositionPlayersToSpawnPoints()
     {
         EnsureSpawnPointReferences();
         if (playerSpawnPoints == null || playerSpawnPoints.Count == 0) return;
@@ -311,7 +299,6 @@ public class GameManager : MonoBehaviour
             var spawn = playerSpawnPoints[spawnIndex % playerSpawnPoints.Count];
             spawnIndex++;
 
-            // Host (server) can update transform immediately for its own view.
             var cc = pm.GetComponent<CharacterController>();
             var rb = pm.GetComponent<Rigidbody>();
             if (cc != null) cc.enabled = false;
@@ -323,7 +310,6 @@ public class GameManager : MonoBehaviour
             }
             if (cc != null) cc.enabled = true;
 
-            // Let the owner client (for non-host players) apply the move locally (owner-authoritative).
             _netState?.ServerRequestOwnerTeleport(netObj, spawn.position, spawn.rotation);
         }
 
@@ -353,7 +339,6 @@ public class GameManager : MonoBehaviour
     {
         if (!IsServerOrStandalone) return;
 
-        // Hide any stale summaries locally
         uiController.HideDayEndSummary();
         endOfDayPopupShown = false;
 
@@ -402,8 +387,6 @@ public class GameManager : MonoBehaviour
         currentDayTargetMoney = value;
     }
 
-    public int PreviewIncreaseForNextDay() => moneyTargetManager != null ? moneyTargetManager.PreviewIncreaseForNextDay() : 0;
-
     public int GetCurrentMoney() => moneyTargetManager != null ? moneyTargetManager.CurrentMoney : 0;
     public int GetBankedMoney() => moneyTargetManager != null ? moneyTargetManager.BankedMoney : 0;
     public int GetTargetMoney() => moneyTargetManager != null ? moneyTargetManager.TargetMoney : 0;
@@ -425,11 +408,18 @@ public class GameManager : MonoBehaviour
         if (endOfDayPopupShown) return;
         bool metQuota = amountAdded >= currentDayTargetMoney;
 
-        // Show local summary; if you need network broadcast, add a ClientRpc in NetworkGameState
-        uiController?.ShowDayEndSummary(amountAdded, newBanked, dailyPackagesDelivered, metQuota, IsServerOrStandalone);
+        // Only show summary if success
+        if (metQuota)
+        {
+            uiController?.ShowDayEndSummary(amountAdded, newBanked, dailyPackagesDelivered, metQuota, IsServerOrStandalone);
+            endOfDayPopupShown = true;
+        }
+        else
+        {
+            endOfDayPopupShown = false;
+        }
 
         dailyPackagesDelivered = 0;
-        endOfDayPopupShown = true;
     }
 
     private void HandleTargetChanged(int newTarget)
@@ -466,6 +456,79 @@ public class GameManager : MonoBehaviour
         uiController.ShowWinPanel();
         Debug.Log("[GameManager] Win condition met.");
     }
+
+    private void TriggerLoseCondition()
+    {
+        Debug.Log("[GameManager] Lose condition triggered — quota not met. Performing full reset and returning players to hub.");
+
+        // 1) Full reset of gameplay/run state
+        IsGameplayActive = false;
+        endOfDayPopupShown = false;
+        dailyPackagesDelivered = 0;
+        lastSpawnedDay = -1;
+
+        // Reset Money/Day/Target completely (day -> 0, earnings -> startingMoney, banked -> 0)
+        if (moneyTargetManager != null)
+        {
+            moneyTargetManager.ResetProgress();
+            currentDayTargetMoney = GetTargetMoney();
+            // Sync UI to reflect new baseline
+            uiController?.SetDay(GetCurrentDay());
+            uiController?.SetTarget(currentDayTargetMoney);
+            uiController?.SetDailyEarnings(GetCurrentMoney(), currentDayTargetMoney, GetProgress());
+            uiController?.SetBankedMoney(GetBankedMoney());
+        }
+
+        // 2) Network: mark game not started via server RPC (authoritative)
+        if (_netState == null)
+            _netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+
+        if (IsServerOrStandalone && _netState != null)
+        {
+            try
+            {
+                _netState.RequestEndGameServerRpc();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+        }
+
+        // 3) Hide gameplay HUD immediately
+        uiController?.HideHUD();
+        uiController?.HideDayEndSummary();
+        uiController?.HideWinPanel();
+
+        // 4) Server/host: unload level scenes and return players to hub spawn
+        if (!IsServerOrStandalone) return;
+
+        if (levelFlow != null)
+        {
+            levelFlow.ReturnPlayersToHub();
+            return;
+        }
+
+        // Fallback using cached levelLoader reference
+        if (levelLoader != null)
+        {
+            void OnUnloaded(string sceneName)
+            {
+                levelLoader.OnLevelUnloaded -= OnUnloaded;
+                PositionPlayersToSpawnPoints();
+            }
+            levelLoader.OnLevelUnloaded += OnUnloaded;
+            levelLoader.UnloadCurrentLevel();
+        }
+        else
+        {
+            PositionPlayersToSpawnPoints();
+        }
+    }
+
+    // Optional: setters to inject references at runtime if needed
+    public void SetLevelLoader(LevelLoader loader) => levelLoader = loader;
+    public void SetLevelFlow(LevelFlowController flow) => levelFlow = flow;
 
     public void SetUIController(GameUIController controller)
     {
