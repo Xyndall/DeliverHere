@@ -19,11 +19,6 @@ public class GameTimer : MonoBehaviour
     [SerializeField] private GameUIController uiController;
     [SerializeField] private bool autoFindUIController = true;
 
-    [Header("Debug (Inspector View)")]
-    [SerializeField] private float inspectorRemainingSeconds;
-    [SerializeField] private float inspectorProgress01;
-    [SerializeField] private string inspectorFormattedTime;
-
     // Runtime state
     private float remainingTime;
     private float totalTime;
@@ -81,8 +76,6 @@ public class GameTimer : MonoBehaviour
                 StartNewTimer();
             }
         }
-
-        UpdateInspectorDebug();
     }
 
     private void OnDisable()
@@ -126,7 +119,6 @@ public class GameTimer : MonoBehaviour
 
         uiController?.SetTimerVisible(true);
         PushTimerUI(); // Ensure text shows start value immediately
-        UpdateInspectorDebug();
     }
 
     private void Update()
@@ -136,15 +128,12 @@ public class GameTimer : MonoBehaviour
 
         if (IsServerOrStandalone)
         {
-            // Server/standalone: authoritative timer
-            if (!running) { UpdateInspectorDebug(); return; }
 
             remainingTime -= Time.deltaTime;
             if (remainingTime <= 0f)
             {
                 remainingTime = 0f;
                 PushTimerUI();
-                UpdateInspectorDebug();
                 OnTimeExpired();
                 return;
             }
@@ -152,8 +141,6 @@ public class GameTimer : MonoBehaviour
         }
         else
         {
-            // Client: render visuals from networked progress only
-            if (netState == null) { UpdateInspectorDebug(); return; }
             float t = Mathf.Clamp01(netState.TimerProgress);
 
             // Compute remaining seconds from normalized progress (0..1, where 1 == time over)
@@ -162,21 +149,12 @@ public class GameTimer : MonoBehaviour
 
             PushTimerUI();
         }
-
-        UpdateInspectorDebug();
     }
 
     private void PushTimerUI()
     {
         if (uiController == null) return;
         uiController.SetTimerSeconds(remainingTime);
-    }
-
-    private void UpdateInspectorDebug()
-    {
-        inspectorRemainingSeconds = RemainingTime;
-        inspectorProgress01 = Mathf.Clamp01(IsServerOrStandalone ? Normalized : (netState != null ? netState.TimerProgress : 0f));
-        inspectorFormattedTime = FormatTime(inspectorRemainingSeconds);
     }
 
     private static string FormatTime(float seconds)

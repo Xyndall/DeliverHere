@@ -4299,6 +4299,7 @@ GameObject:
   - component: {fileID: 1657870875}
   - component: {fileID: 1657870874}
   - component: {fileID: 1657870876}
+  - component: {fileID: 1657870877}
   m_Layer: 0
   m_Name: GameMangager
   m_TagString: Untagged
@@ -4408,9 +4409,19 @@ MonoBehaviour:
   autoAdvanceOnSuccess: 0
   uiController: {fileID: 726784823}
   autoFindUIController: 1
-  inspectorRemainingSeconds: 0
-  inspectorProgress01: 0
-  inspectorFormattedTime: 
+--- !u!114 &1657870877
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1657870872}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5fb88fe89de77ab44b297f670005451c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Network.PlayerReconnectHandler
+  ShowTopMostFoldoutHeaderGroup: 1
 --- !u!1 &1734071482
 GameObject:
   m_ObjectHideFlags: 0
