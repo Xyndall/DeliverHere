@@ -171,7 +171,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1396588585
+  GlobalObjectIdHash: 1729110523
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -304,6 +304,7 @@ MonoBehaviour:
   mediumScaleMultiplierRange: {x: 0.9, y: 1.2}
   largeScaleMultiplierRange: {x: 1.2, y: 1.4}
   body: {fileID: 2364863683543904165}
+  holdingState: {fileID: -8715937964813551339}
 --- !u!114 &8668353324425754610
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -324,7 +325,7 @@ MonoBehaviour:
   ignoreLayers:
     serializedVersion: 2
     m_Bits: 0
-  perColliderCooldownSeconds: 0.5
+  packageCooldownSeconds: 0.25
   scaleByContactCount: 0
   feedbackBroadcaster: {fileID: -2877603400309880228}
   textLocalOffset: {x: 0, y: 0.25, z: 0}

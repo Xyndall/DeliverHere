@@ -70,13 +70,16 @@ namespace DeliverHere.Items
         [Tooltip("If not set, will use GetComponent<Rigidbody>() or first child Rigidbody.")]
         [SerializeField] private Rigidbody body;
 
+        [Header("Holding / Shared Weight")]
+        [Tooltip("Optional: tracking component that knows how many players are currently holding this package.")]
+        [SerializeField] private HoldableHoldingState holdingState;
+
         // Replicated properties (networked runs)
         public readonly NetworkVariable<float> NetWeightKg = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         public readonly NetworkVariable<int> NetValue = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         public readonly NetworkVariable<float> NetFragility = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         public readonly NetworkVariable<PackageSize> NetSize = new NetworkVariable<PackageSize>(PackageSize.Medium, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         public readonly NetworkVariable<byte> NetColorIndex = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-        // New: replicated scale multiplier
         public readonly NetworkVariable<float> NetScaleMultiplier = new NetworkVariable<float>(1f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         // Local fallback values (offline runs)
@@ -86,6 +89,10 @@ namespace DeliverHere.Items
         private PackageSize localSize = PackageSize.Medium;
         private byte localColorIndex;
         private float localScaleMultiplier = 1f;
+
+        // Store the "base" unshared weight so we can divide it when holders change.
+        // For online games this mirrors NetWeightKg; for offline it mirrors localWeightKg.
+        private float originalWeightKg;
 
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -98,6 +105,7 @@ namespace DeliverHere.Items
         public float Fragility => UseNetValues ? NetFragility.Value : localFragility;
         public PackageSize Size => UseNetValues ? NetSize.Value : localSize;
         private float ScaleMultiplier => UseNetValues ? NetScaleMultiplier.Value : localScaleMultiplier;
+
         public Color Color
         {
             get
@@ -116,6 +124,10 @@ namespace DeliverHere.Items
             if (targetRenderer == null)
             {
                 targetRenderer = GetComponent<Renderer>() ?? GetComponentInChildren<Renderer>(true);
+            }
+            if (holdingState == null)
+            {
+                holdingState = GetComponent<HoldableHoldingState>() ?? GetComponentInChildren<HoldableHoldingState>(true);
             }
         }
 
@@ -136,13 +148,30 @@ namespace DeliverHere.Items
         {
             base.OnNetworkSpawn();
 
-            // Apply visuals/physics when values change (clients included)
-            NetWeightKg.OnValueChanged += (_, __) => ApplyAll();
+            // Listen for weight changes and re-apply physics/visuals
+            NetWeightKg.OnValueChanged += (_, __) =>
+            {
+                originalWeightKg = NetWeightKg.Value;
+                RecomputeSharedMass();
+            };
             NetValue.OnValueChanged += (_, __) => ApplyAll();
             NetFragility.OnValueChanged += (_, __) => ApplyAll();
             NetSize.OnValueChanged += (_, __) => ApplyAll();
             NetColorIndex.OnValueChanged += (_, __) => ApplyAll();
             NetScaleMultiplier.OnValueChanged += (_, __) => ApplyAll();
+
+            // Subscribe to holder count changes if the state exists
+            if (holdingState == null)
+            {
+                holdingState = GetComponent<HoldableHoldingState>() ?? GetComponentInChildren<HoldableHoldingState>(true);
+            }
+            if (holdingState != null)
+            {
+                holdingState.HoldersCount.OnValueChanged += OnHoldersCountChanged;
+            }
+
+            // Initial base weight
+            originalWeightKg = WeightKg;
 
             // Server: randomize AFTER spawn so NetworkVariables are initialized and replicate correctly
             if (IsServer && autoRandomizeOnSpawn)
@@ -151,8 +180,47 @@ namespace DeliverHere.Items
             }
             else
             {
-                ApplyAll();
+                RecomputeSharedMass();
             }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            base.OnNetworkDespawn();
+            if (holdingState != null)
+            {
+                holdingState.HoldersCount.OnValueChanged -= OnHoldersCountChanged;
+            }
+        }
+
+        private void OnHoldersCountChanged(int previous, int current)
+        {
+            // Whenever the number of holders changes, recompute the package rigidbody mass.
+            RecomputeSharedMass();
+        }
+
+        /// <summary>
+        /// Recompute the actual Rigidbody.mass based on the number of players holding this package.
+        /// </summary>
+        private void RecomputeSharedMass()
+        {
+            // Base weight comes from NetWeight/localWeight as randomized.
+            originalWeightKg = Mathf.Max(0.01f, WeightKg);
+
+            int holders = (holdingState != null) ? Mathf.Max(0, holdingState.CurrentCount) : 0;
+
+            float effectiveWeight;
+            if (holders <= 0)
+            {
+                // No one is holding it: full weight.
+                effectiveWeight = originalWeightKg;
+            }
+            else
+            {
+                effectiveWeight = originalWeightKg / holders;
+            }
+
+            ApplyPhysics(effectiveWeight);
         }
 
         [ContextMenu("Server Randomize (Play Mode)")]
@@ -204,7 +272,11 @@ namespace DeliverHere.Items
                 NetScaleMultiplier.Value = Mathf.Max(0.01f, scaleMult);
             }
 
+            originalWeightKg = weight;
+
+            // Recompute physics using holder count (if any)
             ApplyAll(weight, value, fragility, size, colorIndex, Mathf.Max(0.01f, scaleMult));
+            RecomputeSharedMass();
         }
 
         private float RandomWeightForSize(PackageSize size)
@@ -286,13 +358,17 @@ namespace DeliverHere.Items
 
         private void ApplyAll()
         {
-            ApplyAll(WeightKg, Value, Fragility, Size, UseNetValues ? NetColorIndex.Value : localColorIndex, ScaleMultiplier);
+            ApplyAll(WeightKg, Value, Fragility, Size,
+                UseNetValues ? NetColorIndex.Value : localColorIndex,
+                ScaleMultiplier);
         }
 
         private void ApplyAll(float weight, int value, float fragility, PackageSize size, byte colorIndex, float scaleMult)
         {
             ApplyVisuals(size, colorIndex, scaleMult);
-            ApplyPhysics(weight);
+            // Do not blindly write the base weight to physics here; let RecomputeSharedMass handle shared weight.
+            originalWeightKg = weight;
+            RecomputeSharedMass();
         }
 
         private void ApplyVisuals(PackageSize size, byte colorIndex, float scaleMult)

@@ -2,7 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using Unity.Netcode.Components;
 
-public class PlayerAnimation : MonoBehaviour
+public class PlayerAnimation : NetworkBehaviour
 {
     [Header("Parameters")]
     [SerializeField] private string locomotionParam = "MoveSpeed";   // 0 = idle, >0 = moving
@@ -34,23 +34,27 @@ public class PlayerAnimation : MonoBehaviour
             _animator = GetComponent<Animator>() ?? GetComponentInChildren<Animator>(true);
         }
 
-        _controller = GetComponent<CharacterController>();
-        _movement = GetComponent<PlayerMovement>();
-        _netAnimator = GetComponent<NetworkAnimator>();
-        _netObject = GetComponent<NetworkObject>();
+        _controller   = GetComponent<CharacterController>();
+        _movement     = GetComponent<PlayerMovement>();
+        _netAnimator  = GetComponent<NetworkAnimator>();
+        _netObject    = GetComponent<NetworkObject>();
     }
 
-    private void Start()
+    public override void OnNetworkSpawn()
     {
+        base.OnNetworkSpawn();
+
         _initialized = (_animator != null && _animator.runtimeAnimatorController != null);
         if (!_initialized)
         {
-            Debug.LogWarning($"{nameof(PlayerAnimation)}: Animator or Controller missing on {name}. NetworkAnimator will fail until assigned.");
+            Debug.LogWarning($"{nameof(PlayerAnimation)}: Animator or Controller missing on {name}.");
         }
     }
 
     private void Update()
     {
+        // Only the owner should drive animation parameters
+        if (!IsOwner) return;
         if (!_initialized || _animator == null || _controller == null) return;
 
         float dt = Time.deltaTime;
@@ -72,7 +76,8 @@ public class PlayerAnimation : MonoBehaviour
             _animator.ResetTrigger(jumpTrigger);
             _animator.SetTrigger(jumpTrigger);
 
-            if (_netAnimator != null && _netObject != null && _netObject.IsOwner)
+            // NetworkAnimator on the owner will replicate this trigger
+            if (_netAnimator != null)
             {
                 _netAnimator.SetTrigger(jumpTrigger);
             }
@@ -83,8 +88,6 @@ public class PlayerAnimation : MonoBehaviour
         // Sprint / walk state via bool
         bool isSprinting = _movement != null && _movement.IsSprinting;
         _animator.SetBool(sprintBool, isSprinting);
-
-        // NetworkAnimator automatically syncs parameter changes of this Animator;
-        // no need to set anything on _netAnimator.Animator directly.
+        // NetworkAnimator will automatically replicate parameter changes from this Animator
     }
 }

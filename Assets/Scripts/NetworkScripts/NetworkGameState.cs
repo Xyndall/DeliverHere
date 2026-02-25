@@ -4,6 +4,16 @@ using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 
+public enum GameState
+{
+    MainMenu,
+    Lobby,
+    Loading,
+    InGame,
+    Paused,
+    GameOver
+}
+
 public class NetworkGameState : NetworkBehaviour
 {
     public static NetworkGameState Instance { get; private set; }
@@ -13,6 +23,7 @@ public class NetworkGameState : NetworkBehaviour
     [SerializeField] private MoneyTargetManager moneyTargetManager;
     [SerializeField] private GameUIController uiController;
     [SerializeField] private LevelFlowController levelFlow;
+    [SerializeField] private UIStateManager uiState;
 
     public event Action<bool> OnGameStartedChangedEvent;
 
@@ -217,9 +228,15 @@ public class NetworkGameState : NetworkBehaviour
     public void RequestStartGameServerRpc()
     {
         if (gameStarted.Value) return;
+
+        // Tell UIStateManager we are entering the Loading state (server/host)
+        if (uiState != null)
+        {
+            uiState.SetGameState(GameState.Loading);
+        }
+
         gameStarted.Value = true;
 
-        
         levelFlow.StartLoadNextLevel();
 
         ServerPushSnapshot();

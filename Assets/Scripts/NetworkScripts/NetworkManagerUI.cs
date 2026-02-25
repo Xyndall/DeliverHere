@@ -15,6 +15,8 @@ public class NetworkManagerUI : MonoBehaviour
     [SerializeField] private TMP_Text joinCodeText;
     [SerializeField] private TMP_Text playerNameText;
 
+    public UIStateManager uiStateManager; // assign via inspector
+
     private void OnEnable()
     {
         if (hostButton != null) hostButton.onClick.AddListener(OnClickHost);
@@ -45,6 +47,12 @@ public class NetworkManagerUI : MonoBehaviour
             if (!string.IsNullOrEmpty(code))
             {
                 SetJoinCodeText(code);
+
+                // Move to Lobby or InGame, depending on your flow
+                if (uiStateManager != null)
+                {
+                    uiStateManager.SetGameState(GameState.Lobby);
+                }
             }
             else
             {
@@ -85,6 +93,11 @@ public class NetworkManagerUI : MonoBehaviour
         try
         {
             Relay.Instance.JoinRelay(code);
+
+            if (uiStateManager != null)
+            {
+                uiStateManager.SetGameState(GameState.Lobby);
+            }
         }
         catch (Exception ex)
         {
@@ -123,5 +136,6 @@ public class NetworkManagerUI : MonoBehaviour
         if (joinButton != null) joinButton.interactable = interactable;
         if (joinCodeInput != null) joinCodeInput.interactable = interactable;
     }
+
 
 }

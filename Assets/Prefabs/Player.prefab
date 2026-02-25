@@ -348,6 +348,8 @@ GameObject:
   - component: {fileID: 3549255160547916252}
   - component: {fileID: 8858736425540183297}
   - component: {fileID: 166322995082764211}
+  - component: {fileID: 4770098715712413576}
+  - component: {fileID: 1314525665084999406}
   m_Layer: 9
   m_Name: Player
   m_TagString: Untagged
@@ -449,6 +451,7 @@ MonoBehaviour:
   speedMultiplierAtMaxPenalty: 0.55
   rotateLerpMultiplierAtMaxPenalty: 0.4
   weightManager: {fileID: 8983411890034586755}
+  inputController: {fileID: 1314525665084999406}
 --- !u!54 &5082883330226292188
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -614,6 +617,7 @@ MonoBehaviour:
   maxHoldSeparation: 3
   autoDropDelay: 0.25
   postPickupGraceTime: 0.5
+  inputController: {fileID: 1314525665084999406}
 --- !u!114 &276092387163634943
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -789,6 +793,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e07e341c9d8467e4f995435afeed350e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimation
+  ShowTopMostFoldoutHeaderGroup: 1
   locomotionParam: MoveSpeed
   groundedParam: IsGrounded
   jumpTrigger: Jump
@@ -823,7 +828,41 @@ MonoBehaviour:
     TransitionDuration: 0.25
     TriggerNameHash: 125937960
     TransitionIndex: 2
+  - IsCrossFadeExit: 0
+    Layer: 0
+    OriginatingState: 1748754976
+    DestinationState: 1999428109
+    TransitionDuration: 0.25
+    TriggerNameHash: 125937960
+    TransitionIndex: 2
   m_Animator: {fileID: 6262845754777164797}
+--- !u!114 &4770098715712413576
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ab63ed0fcbcb7741b9e250e7747b882, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerOwner
+  ShowTopMostFoldoutHeaderGroup: 1
+  bodyRoot: {fileID: 6532124372841353834}
+--- !u!114 &1314525665084999406
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0a76a50d6db878847b9a39fbb79800ef, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerInputController
+  ShowTopMostFoldoutHeaderGroup: 1
 --- !u!1001 &540586581813028460
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -885,6 +924,10 @@ PrefabInstance:
       value: player (1)
       objectReference: {fileID: 0}
     - target: {fileID: 5866666021909216657, guid: 604832db20532d24f8564f68f69765eb, type: 3}
+      propertyPath: m_Avatar
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 604832db20532d24f8564f68f69765eb, type: 3}
       propertyPath: m_Controller
       value: 
       objectReference: {fileID: 9100000, guid: d3f0208e679bb664fae457d305d2203e, type: 2}
@@ -918,5 +961,10 @@ Animator:
 --- !u!4 &6454561832489723033 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -2444406315379408139, guid: 604832db20532d24f8564f68f69765eb, type: 3}
+  m_PrefabInstance: {fileID: 540586581813028460}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &6532124372841353834 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -2511240423080479738, guid: 604832db20532d24f8564f68f69765eb, type: 3}
   m_PrefabInstance: {fileID: 540586581813028460}
   m_PrefabAsset: {fileID: 0}

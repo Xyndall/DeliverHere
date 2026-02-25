@@ -15,7 +15,6 @@ public class GameUIController : MonoBehaviour
 
     [Header("HUD - Timer")]
     [SerializeField] private TMP_Text timerText; // display seconds
-    // [SerializeField] private Slider timerSlider; // removed: using text instead
 
     [Header("Panels")]
     [SerializeField] private GameObject winPanel;
@@ -29,12 +28,35 @@ public class GameUIController : MonoBehaviour
     [SerializeField] private Button nextDayButton;
     [SerializeField] private Button restartButton;
 
+    public UIStateManager uiStateManager; // assign
+
+    private bool isPaused;
+
+    // Reference to local player input (set by PlayerInputController)
+    private PlayerInputController _localPlayerInput;
 
     private void Awake()
     {
         HideHUD();
         HideDayEndSummary();
         HideWinPanel();
+    }
+
+    private void Update()
+    {
+        if (_localPlayerInput == null)
+            return;
+
+        if (_localPlayerInput.PausePressedThisFrame)
+        {
+            TogglePause();
+        }
+    }
+
+    // Called by the local PlayerInputController when it spawns / gains ownership
+    public void SetLocalPlayerInput(PlayerInputController input)
+    {
+        _localPlayerInput = input;
     }
 
     // Set button callbacks (called by GameManager after it sets itself up)
@@ -64,7 +86,6 @@ public class GameUIController : MonoBehaviour
     {
         if (currentMoneyText != null) currentMoneyText.text = $"Today: ${current}";
         if (targetMoneyText != null) targetMoneyText.text = $"Target: ${target}";
-        // Previously updated slider progress; now unused. If you still receive normalized progress, you can ignore or map to seconds elsewhere.
     }
     public void SetBankedMoney(int banked) { if (bankedMoneyText != null) bankedMoneyText.text = $"Banked: ${banked}"; }
 
@@ -95,12 +116,10 @@ public class GameUIController : MonoBehaviour
     public void HideWinPanel() { if (winPanel != null) winPanel.SetActive(false); }
 
     // ---- Timer UI ----
-    // New: set timer by seconds (rounded or mm:ss)
     public void SetTimerSeconds(float secondsRemaining)
     {
         if (timerText == null) return;
 
-        // Choose formatting: integer seconds or mm:ss. Here we use mm:ss.
         int totalSeconds = Mathf.Max(0, Mathf.FloorToInt(secondsRemaining));
         int minutes = totalSeconds / 60;
         int seconds = totalSeconds % 60;
@@ -113,4 +132,16 @@ public class GameUIController : MonoBehaviour
         timerText.gameObject.SetActive(visible);
     }
 
+    public void TogglePause()
+    {
+        isPaused = !isPaused;
+
+        if (uiStateManager != null)
+        {
+            uiStateManager.SetPaused(isPaused);
+            uiStateManager.SetGameState(isPaused ? GameState.Paused : GameState.InGame);
+        }
+
+        //Time.timeScale = isPaused ? 0f : 1f;
+    }
 }

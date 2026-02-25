@@ -84,9 +84,9 @@ public class PlayerHold : NetworkBehaviour
     [Tooltip("Mass (kg) at which boost reaches its minimum scaling.")]
     [SerializeField] private float massForMinThrowBoost = 15f;
     [Tooltip("Forward boost multiplier at or above massForMinThrowBoost (0-1).")]
-    [Range(0f,1f)][SerializeField] private float forwardBoostMultiplierAtMaxMass = 0.3f;
+    [Range(0f, 1f)] [SerializeField] private float forwardBoostMultiplierAtMaxMass = 0.3f;
     [Tooltip("Anchor velocity multiplier at or above massForMinThrowBoost (0-1).")]
-    [Range(0f,1f)][SerializeField] private float anchorVelMultiplierAtMaxMass = 0.5f;
+    [Range(0f, 1f)] [SerializeField] private float anchorVelMultiplierAtMaxMass = 0.5f;
 
     [Header("Auto-Drop (Distance)")]
     [Tooltip("Automatically drop if object drifts too far from player.")]
@@ -98,10 +98,9 @@ public class PlayerHold : NetworkBehaviour
     [Tooltip("Grace time after pickup before separation checks begin.")]
     [SerializeField] private float postPickupGraceTime = 0.5f;
 
-    // Input
-    private InputSystem_Actions _input;
-    private InputAction _interactAction;
-    private InputAction _extendAction;
+    [Header("Input")]
+    [Tooltip("Centralized input controller on this player.")]
+    [SerializeField] private PlayerInputController inputController;
 
     // Network sync (server authoritative)
     private NetworkVariable<NetworkObjectReference> _heldRef =
@@ -120,7 +119,6 @@ public class PlayerHold : NetworkBehaviour
     }
     public float? HeldMass => _heldBody != null ? (float?)_heldBody.mass : null;
 
-    // Added: expose the currently held Rigidbody so UI can query components (e.g., PackageProperties)
     public Rigidbody HeldBody => _heldBody;
 
     public Vector3 HoldForwardFlat => GetYawRotation() * Vector3.forward;
@@ -174,6 +172,7 @@ public class PlayerHold : NetworkBehaviour
             minHoldDistance, maxHoldDistance);
 
         _weightManager = GetComponent<PlayerWeightManager>();
+        if (inputController == null) inputController = GetComponent<PlayerInputController>();
     }
 
     public override void OnNetworkSpawn()
@@ -182,13 +181,9 @@ public class PlayerHold : NetworkBehaviour
         if (IsOwner && cameraTransform == null && Camera.main != null)
             cameraTransform = Camera.main.transform;
 
-        if (IsOwner)
-        {
-            InitInputIfNeeded();
-            EnableInput();
-        }
-
+        // Owner reads local input via PlayerInputController; this script just consumes it
         enabled = IsServer || IsOwner;
+
         EnsureAnchorExists();
         _heldRef.OnValueChanged += OnHeldRefChanged;
         OnHeldRefChanged(default, _heldRef.Value);
@@ -199,31 +194,21 @@ public class PlayerHold : NetworkBehaviour
         base.OnGainedOwnership();
         if (cameraTransform == null && Camera.main != null)
             cameraTransform = Camera.main.transform;
-        InitInputIfNeeded();
-        EnableInput();
+
+        if (inputController == null) inputController = GetComponent<PlayerInputController>();
         enabled = IsServer || IsOwner;
     }
 
     public override void OnLostOwnership()
     {
         base.OnLostOwnership();
-        if (!IsServer) DisableInput();
         enabled = IsServer || IsOwner;
     }
 
     private void OnEnable()
     {
-        if (IsOwner)
-        {
-            InitInputIfNeeded();
-            EnableInput();
-        }
         EnsureAnchorExists();
-    }
-
-    private void OnDisable()
-    {
-        if (IsOwner) DisableInput();
+        if (inputController == null) inputController = GetComponent<PlayerInputController>();
     }
 
     public override void OnDestroy()
@@ -233,7 +218,6 @@ public class PlayerHold : NetworkBehaviour
             _heldRef.OnValueChanged -= OnHeldRefChanged;
             if (IsServer && IsHolding) ServerDropHeldInternal();
             if (_anchorRb != null) Destroy(_anchorRb.gameObject);
-            _input?.Dispose();
         }
         finally { base.OnDestroy(); }
     }
@@ -241,17 +225,26 @@ public class PlayerHold : NetworkBehaviour
     private void Update()
     {
         if (!IsOwner) return;
+        if (inputController == null) return;
 
-        float axis = _extendAction != null ? _extendAction.ReadValue<float>() : 0f;
+        // Extend / retract hold distance via axis
+        float axis = inputController.ExtendInput;
         if (Mathf.Abs(axis) > 0.0001f)
         {
             float delta = distanceChangeSpeed * Time.deltaTime;
             _holdDistance = Mathf.Clamp(_holdDistance + axis * delta, minHoldDistance, maxHoldDistance);
         }
 
-        if (_interactAction != null && _interactAction.WasPressedThisFrame())
+        // Interact: pickup / drop toggle
+        if (inputController.InteractPressedThisFrame)
         {
-            if (IsHolding) RequestDropServerRpc();
+            Debug.Log($"[PlayerHold] Interact pressed. IsHolding={IsHolding}, IsOwner={IsOwner}, IsServer={IsServer}");
+
+
+            if (IsHolding)
+            {
+                RequestDropServerRpc();
+            }
             else
             {
                 Vector3 origin, dir;
@@ -365,7 +358,7 @@ public class PlayerHold : NetworkBehaviour
 
         if (_heldBody != null)
         {
-            // Subscribe to holder count changes to recompute shared mass locally
+            // We still listen to holder count so PlayerWeightManager sees new mass after sharing changes
             if (_holdingState != null)
             {
                 _holdingState.HoldersCount.OnValueChanged += OnHoldersCountChanged;
@@ -377,25 +370,29 @@ public class PlayerHold : NetworkBehaviour
 
     private void OnHoldersCountChanged(int previous, int current)
     {
+        // When holder count changes, PackageProperties will have updated Rigidbody.mass.
+        // Just push current mass into PlayerWeightManager.
         UpdateHeldMassForPlayer();
     }
 
     private void UpdateHeldMassForPlayer()
     {
         if (_weightManager == null) return;
+
         if (_heldBody == null)
         {
             _weightManager.SetHeldMass(null);
             return;
         }
-        int holders = (_holdingState != null) ? Mathf.Max(1, _holdingState.CurrentCount) : 1;
-        float sharedMass = _heldBody.mass / holders;
-        _weightManager.SetHeldMass(sharedMass);
+
+        // IMPORTANT: no more manual division here.
+        // PackageProperties already changed body.mass to "per-person" mass.
+        float currentMass = Mathf.Max(0f, _heldBody.mass);
+        _weightManager.SetHeldMass(currentMass);
     }
 
     private void ClearHeldLocalState()
     {
-        // Unsubscribe events
         if (_holdingState != null)
         {
             _holdingState.HoldersCount.OnValueChanged -= OnHoldersCountChanged;
@@ -407,7 +404,6 @@ public class PlayerHold : NetworkBehaviour
         _restoreCaptured = false;
         _exceededSeparationTime = 0f;
 
-        // Inform weight manager
         _weightManager?.SetHeldMass(null);
     }
 
@@ -494,10 +490,9 @@ public class PlayerHold : NetworkBehaviour
         _heldBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         _heldBody.isKinematic = false;
 
-        // After creating joint, ensure weight manager reflects current shared mass
+        // Do not call UpdateHeldMassForPlayer here based on any division, just use mass.
         UpdateHeldMassForPlayer();
 
-        // Separation timers
         _pickupTimestamp = Time.time;
         _exceededSeparationTime = 0f;
     }
@@ -537,7 +532,6 @@ public class PlayerHold : NetworkBehaviour
         _pickupTimestamp = Time.time;
         _exceededSeparationTime = 0f;
 
-        // Holder-count setup
         _holdingState = netObj.GetComponent<HoldableHoldingState>();
         if (_holdingState == null) _holdingState = netObj.gameObject.AddComponent<HoldableHoldingState>();
         _holdingState.ServerAddHolder();
@@ -574,7 +568,6 @@ public class PlayerHold : NetworkBehaviour
     {
         if (_heldBody == null) return;
 
-        // Decrement holders count on server
         if (_holdingState != null) _holdingState.ServerRemoveHolder();
 
         DestroyJoint();
@@ -597,10 +590,8 @@ public class PlayerHold : NetworkBehaviour
 
         var droppedBody = _heldBody;
 
-        // Clear local references and weight
         _weightManager?.SetHeldMass(null);
 
-        // Unsubscribe holder-count changes
         if (_holdingState != null)
         {
             _holdingState.HoldersCount.OnValueChanged -= OnHoldersCountChanged;
@@ -630,28 +621,6 @@ public class PlayerHold : NetworkBehaviour
     }
 
     public float ClampForwardMovement(float desiredForwardDelta) => desiredForwardDelta;
-
-    private void InitInputIfNeeded()
-    {
-        if (_input != null) return;
-        _input = new InputSystem_Actions();
-        _interactAction = _input.Player.Interact;
-        _extendAction = _input.Player.Extend;
-    }
-
-    private void EnableInput()
-    {
-        _input?.Enable();
-        _interactAction?.Enable();
-        _extendAction?.Enable();
-    }
-
-    private void DisableInput()
-    {
-        _extendAction?.Disable();
-        _interactAction?.Disable();
-        _input?.Disable();
-    }
 
 #if UNITY_EDITOR
     private void OnValidate()
@@ -695,7 +664,6 @@ public class PlayerHold : NetworkBehaviour
 
     public Transform AnchorTransform => _anchorRb != null ? _anchorRb.transform : null;
 
-    // Notify external systems (e.g., PlayerArms) when pickup/drop occur.
     public event Action<Rigidbody> PickedUp;
     public event Action<Rigidbody> Dropped;
 }

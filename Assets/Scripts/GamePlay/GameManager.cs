@@ -14,6 +14,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameUIController uiController;
     [SerializeField] private GameManager gameManager;
     [SerializeField] private GameTimer gameTimer;
+    [SerializeField] private UIStateManager uiStateManager;
 
     // New: persistent scene flow references (assign in inspector or auto-wire)
     [SerializeField] private LevelLoader levelLoader;
@@ -275,6 +276,11 @@ public class GameManager : MonoBehaviour
         endOfDayPopupShown = false;
 
         SyncAllUI();
+
+        // Leaving Loading -> entering InGame
+        if (uiStateManager != null)
+            uiStateManager.SetGameState(GameState.InGame);
+
         uiController.HideWinPanel();
         uiController.HideDayEndSummary();
         uiController.ShowHUD();
@@ -324,6 +330,11 @@ public class GameManager : MonoBehaviour
         dailyPackagesDelivered = 0;
         endOfDayPopupShown = false;
 
+        // High-level UI state: game is over / not in active gameplay
+        if (uiStateManager != null)
+            uiStateManager.SetGameState(GameState.Lobby);
+
+        // HUD details
         uiController.HideWinPanel();
         uiController.HideDayEndSummary();
         uiController.HideHUD();
@@ -438,6 +449,11 @@ public class GameManager : MonoBehaviour
         endOfDayPopupShown = false;
 
         IsGameplayActive = true;
+
+        // New day = back to InGame state
+        if (uiStateManager != null)
+            uiStateManager.SetGameState(GameState.InGame);
+
         uiController.HideDayEndSummary();
         uiController.ShowHUD();
 
