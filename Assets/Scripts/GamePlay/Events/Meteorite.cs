@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using Unity.Netcode;
 
 /// <summary>
 /// Simple falling meteorite that damages players on impact radius and then destroys itself.
@@ -71,6 +72,7 @@ public class Meteorite : MonoBehaviour
     private void Update()
     {
         if (landed) return;
+
         // Accelerate downward (transform-driven; collider can be trigger)
         verticalSpeed = Mathf.Max(-p.terminalVelocity, verticalSpeed - p.gravity * Time.deltaTime);
         transform.position += Vector3.up * verticalSpeed * Time.deltaTime;
@@ -110,7 +112,7 @@ public class Meteorite : MonoBehaviour
         // Stop trail
         if (trailVFX != null) trailVFX.Stop(true, ParticleSystemStopBehavior.StopEmitting);
 
-        // Delay, then destroy
+        // Delay, then destroy/despawn
         StartCoroutine(DestroyAfterDelay(p.landDestroyDelay));
     }
 
@@ -155,6 +157,19 @@ public class Meteorite : MonoBehaviour
     private IEnumerator DestroyAfterDelay(float delay)
     {
         yield return new WaitForSeconds(delay);
+
+        var netObj = GetComponent<NetworkObject>();
+        if (netObj != null && netObj.IsSpawned)
+        {
+            // Only the server/host can despawn spawned NetworkObjects.
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+            {
+                netObj.Despawn(true);
+            }
+
+            yield break;
+        }
+
         Destroy(gameObject);
     }
 

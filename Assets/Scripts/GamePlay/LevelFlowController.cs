@@ -1,10 +1,11 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
-using Unity.Netcode;
 using UnityEngine.SceneManagement;
+using Unity.Netcode;
 
-public class LevelFlowController : MonoBehaviour
+public partial class LevelFlowController : MonoBehaviour
 {
     [Tooltip("Seconds to wait for level load before timing out.")]
     [SerializeField] private float loadTimeoutSeconds = 10f;
@@ -159,21 +160,36 @@ public class LevelFlowController : MonoBehaviour
     // CLIENT: when any scene finishes loading locally, notify server that this client is ready.
     private void ClientSceneLoadedHandler(Scene scene, LoadSceneMode mode)
     {
-        // Only notify server when this instance is a client (not the headless server).
         if (NetworkManager.Singleton == null) return;
-        if (NetworkManager.Singleton.IsServer) return; // server doesn't report to itself
 
-        // Call the ServerRpc on NetworkGameState to report readiness
-        if (NetworkGameState.Instance != null)
+        // Server doesn't report to itself
+        if (NetworkManager.Singleton.IsServer) return;
+
+        // Defer the RPC until NGO is actually listening (client started and transport ready).
+        StartCoroutine(NotifyServerSceneLoadedWhenReady_Coroutine());
+    }
+
+    private IEnumerator NotifyServerSceneLoadedWhenReady_Coroutine()
+    {
+        const float timeoutSeconds = 10f;
+        float deadline = Time.realtimeSinceStartup + timeoutSeconds;
+
+        while (Time.realtimeSinceStartup < deadline)
         {
-            try
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsClient && nm.IsListening)
             {
-                NetworkGameState.Instance.ClientSceneLoadedServerRpc();
+                var state = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+                if (state != null && state.IsSpawned)
+                {
+                    state.ClientSceneLoadedServerRpc();
+                    yield break;
+                }
             }
-            catch (Exception ex)
-            {
-                Debug.LogException(ex);
-            }
+
+            yield return null; // wait a frame and retry
         }
+
+        Debug.LogWarning("[LevelFlowController] Timed out waiting for NetworkManager to listen; did not send ClientSceneLoadedServerRpc.");
     }
 }

@@ -14,6 +14,7 @@ public class PlayerMovement : NetworkBehaviour
     [SerializeField] private bool rotateToMove = true;
     [SerializeField] private float rotateLerp = 15f;
 
+
     [Header("Stamina")]
     [SerializeField] private float maxStamina = 100f;
     [SerializeField] private float sprintCostPerSecond = 22f;

@@ -36,7 +36,7 @@ public class PlayerInputController : NetworkBehaviour
             _actions.Enable();
 
             // Register with the local GameUIController
-            var ui = FindObjectOfType<GameUIController>();
+            var ui = FindAnyObjectByType<GameUIController>();
             if (ui != null)
             {
                 ui.SetLocalPlayerInput(this);
@@ -58,7 +58,7 @@ public class PlayerInputController : NetworkBehaviour
         }
         _actions.Enable();
 
-        var ui = FindObjectOfType<GameUIController>();
+        var ui = FindAnyObjectByType<GameUIController>();
         if (ui != null)
         {
             ui.SetLocalPlayerInput(this);

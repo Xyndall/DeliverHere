@@ -139,10 +139,16 @@ public class NetworkGameState : NetworkBehaviour
     }
 
     // Client -> Server: scene-loaded handshake
-    [ServerRpc(RequireOwnership = false)]
-    public void ClientSceneLoadedServerRpc(ServerRpcParams rpcParams = default)
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    public void ClientSceneLoadedServerRpc(RpcParams rpcParams = default)
     {
+        // If someone calls this when NGO isn't running locally, bail out quietly.
+        var nm = NetworkManager.Singleton;
+        if (nm == null || !nm.IsListening)
+            return;
+
         if (!IsServer) return;
+
         var clientId = rpcParams.Receive.SenderClientId;
         if (_clientsAwaiting == null) return;
 
@@ -213,7 +219,7 @@ public class NetworkGameState : NetworkBehaviour
 
         try
         {
-            callback.Invoke();
+            callback?.Invoke();
         }
         catch (Exception ex)
         {
@@ -224,7 +230,7 @@ public class NetworkGameState : NetworkBehaviour
     }
 
     // Start/End game requests
-    [ServerRpc(RequireOwnership = false)]
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     public void RequestStartGameServerRpc()
     {
         if (gameStarted.Value) return;
@@ -243,7 +249,7 @@ public class NetworkGameState : NetworkBehaviour
         HideDayEndSummaryClientRpc();
     }
 
-    [ServerRpc(RequireOwnership = false)]
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     public void RequestEndGameServerRpc()
     {
         if (!gameStarted.Value) return;
@@ -270,7 +276,6 @@ public class NetworkGameState : NetworkBehaviour
         if (timer != null) timerNorm = timer.Normalized;
         nvTimerProgress.Value = timerNorm;
     }
-
 
     private void ApplyAllToClientUI()
     {

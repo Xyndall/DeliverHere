@@ -1,11 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
 
-/// <summary>
-/// Centralized weight logic for players. Tracks body weight and held package mass,
-/// and provides movement constraints/multipliers based on total weight.
-/// Other systems (movement, stamina, etc.) should query this manager.
-/// </summary>
 [DisallowMultipleComponent]
 public class PlayerWeightManager : NetworkBehaviour
 {
@@ -15,6 +10,10 @@ public class PlayerWeightManager : NetworkBehaviour
     [Tooltip("Equipment/clothing carried by default (kg).")]
     [SerializeField] private float baseEquipmentMassKg = 5f;
 
+    [Header("Arm Strength")]
+    [Tooltip("How much held mass (kg) the player can handle at near-full effectiveness.")]
+    [SerializeField] private float armStrengthKg = 15f;
+
     [Header("Held Mass")]
     [Tooltip("Smoothing for changes in held mass to avoid sudden spikes.")]
     [SerializeField] private float heldMassSmoothTime = 0.12f;
@@ -22,14 +21,15 @@ public class PlayerWeightManager : NetworkBehaviour
     [Header("Movement Scaling")]
     [Tooltip("Speed multiplier at 0 extra weight (should be 1).")]
     [SerializeField] private float speedMultiplierAtMin = 1f;
-    [Tooltip("Speed multiplier at or above maxSlowdownMassKg extra weight.")]
-    [Range(0.2f, 1f)] [SerializeField] private float speedMultiplierAtMax = 0.55f;
-    [Tooltip("Extra mass (kg) needed to reach max slowdown from min. E.g., 10kg -> max slowdown at +10kg.")]
-    [SerializeField] private float maxSlowdownMassKg = 10f;
+
+    [Tooltip("Minimum speed multiplier when extremely overloaded (0..1).")]
+    [Range(0.0f, 1f)]
+    [SerializeField] private float speedMultiplierWhenOverloaded = 0.05f;
 
     [Header("Turn Scaling")]
-    [Tooltip("Turn responsiveness multiplier at or above maxSlowdownMassKg.")]
-    [Range(0.1f, 1f)] [SerializeField] private float rotateLerpMultiplierAtMax = 0.4f;
+    [Tooltip("Turn responsiveness multiplier when extremely overloaded (0..1).")]
+    [Range(0.1f, 1f)]
+    [SerializeField] private float rotateLerpMultiplierWhenOverloaded = 0.25f;
 
     [Header("Movement Limits")]
     [Tooltip("Total mass (player + equipment + held) above which jumping is disabled.")]
@@ -37,31 +37,45 @@ public class PlayerWeightManager : NetworkBehaviour
     [Tooltip("Total mass above which sprinting is disabled.")]
     [SerializeField] private float maxMassForSprintKg = 110f;
 
-    // Networked exposure if needed by UI/remote effects
+    [Header("Lift Tuning")]
+    [Tooltip("Load ratio where lifting begins to noticeably fail. 1 = held mass equals arm strength.")]
+    [SerializeField] private float liftStartLoadRatio = 0.85f;
+
+    [Tooltip("Load ratio where lifting is near impossible.")]
+    [SerializeField] private float liftEndLoadRatio = 1.50f;
+
+    [Tooltip("Smoothing time (seconds) for lift effect, prevents sudden changes.")]
+    [SerializeField] private float liftEffectSmoothTime = 0.10f;
+
     public NetworkVariable<float> TotalMassKg { get; private set; }
         = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
     public float BaseMassKg => Mathf.Max(0f, baseBodyMassKg + baseEquipmentMassKg);
 
-    // Held mass tracked/smoothed locally by the owning client
     private float _heldMassTargetKg;
     private float _heldMassSmoothedKg;
     private float _heldMassVel;
 
+    private float _liftEffectSmoothed01 = 1f;
+    private float _liftEffectVel;
+
     private void Awake()
     {
-        // Initialize total mass to base
-        TotalMassKg.Value = BaseMassKg;
+        _heldMassTargetKg = 0f;
+        _heldMassSmoothedKg = 0f;
+        _heldMassVel = 0f;
+        _liftEffectSmoothed01 = 1f;
+        _liftEffectVel = 0f;
     }
 
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
-        // Owner controls their own weight; others just read the network variable
+
         enabled = IsOwner;
-        if (enabled)
+
+        if (IsOwner)
         {
-            // Ensure sane initial value
             TotalMassKg.Value = BaseMassKg;
         }
     }
@@ -70,63 +84,97 @@ public class PlayerWeightManager : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // Smooth held mass for nicer feel
+        // Smooth held mass first
         _heldMassSmoothedKg = Mathf.SmoothDamp(_heldMassSmoothedKg, _heldMassTargetKg, ref _heldMassVel, heldMassSmoothTime);
 
-        // Update TotalMass
+        // Now compute/smooth lift effect using the updated held mass
+        float targetLift = ComputeLiftEffect01Raw();
+        _liftEffectSmoothed01 = Mathf.SmoothDamp(_liftEffectSmoothed01, targetLift, ref _liftEffectVel, liftEffectSmoothTime);
+
         float total = BaseMassKg + Mathf.Max(0f, _heldMassSmoothedKg);
         TotalMassKg.Value = total;
     }
 
-    /// <summary>
-    /// Provide the current held mass (kg). Pass null or negative to indicate no held mass.
-    /// </summary>
     public void SetHeldMass(float? heldMassKg)
     {
         _heldMassTargetKg = Mathf.Max(0f, heldMassKg ?? 0f);
     }
 
     /// <summary>
-    /// 0..1 weight fraction relative to slowdown range. 0 at 0 extra mass, 1 at or above maxSlowdownMassKg extra mass.
+    /// 0..1 based on how overloaded the player is relative to armStrengthKg.
+    /// 1 = easy/light, ~0 = extremely heavy.
     /// </summary>
-    private float GetPenalty01()
+    public float GetArmEffectiveness01()
     {
-        float extraMass = Mathf.Max(0f, _heldMassSmoothedKg);
-        if (maxSlowdownMassKg <= 0.0001f) return 1f;
-        return Mathf.Clamp01(extraMass / maxSlowdownMassKg);
+        float strength = Mathf.Max(0.01f, armStrengthKg);
+        float held = Mathf.Max(0f, _heldMassSmoothedKg);
+
+        float load = held / strength; // 1 == "at strength"
+        // Smooth curve: 1 at load=0, 0.5 at load=1, ~0.2 at load=2, ~0.06 at load=4
+        float effectiveness = 1f / (1f + load * load);
+        return Mathf.Clamp01(effectiveness);
     }
 
-    /// <summary>
-    /// Speed multiplier based on current held mass only (does not alter base speeds directly).
-    /// </summary>
-    public float GetSpeedMultiplier()
-    {
-        float t = GetPenalty01();
-        return Mathf.Lerp(speedMultiplierAtMin, speedMultiplierAtMax, t);
-    }
+    public float GetSpeedMultiplier() => 1f;
+    public float GetRotateLerpMultiplier() => 1f;
 
-    /// <summary>
-    /// Rotate responsiveness multiplier based on held mass only.
-    /// </summary>
-    public float GetRotateLerpMultiplier()
-    {
-        float t = GetPenalty01();
-        return Mathf.Lerp(1f, rotateLerpMultiplierAtMax, t);
-    }
-
-    /// <summary>
-    /// Whether the player can jump at current total mass.
-    /// </summary>
     public bool CanJump()
     {
         return TotalMassKg.Value <= maxMassForJumpKg + 0.0001f;
     }
 
-    /// <summary>
-    /// Whether the player can sprint at current total mass.
-    /// </summary>
     public bool CanSprint()
     {
         return TotalMassKg.Value <= maxMassForSprintKg + 0.0001f;
     }
+
+    public float ArmStrengthKg => Mathf.Max(0.01f, armStrengthKg);
+
+    public float GetLoadRatio()
+    {
+        float strength = ArmStrengthKg;
+        // IMPORTANT: use the *smoothed* held mass so it doesn't flicker between modes.
+        float held = Mathf.Max(0f, _heldMassSmoothedKg);
+        return held / strength;
+    }
+    public float GetLiftEffect01()
+    {
+        return Mathf.Clamp01(_liftEffectSmoothed01);
+    }
+
+    private float ComputeLiftEffect01Raw()
+    {
+        float load = GetLoadRatio();
+
+        // If liftStart==liftEnd it becomes a step; prevent that.
+        float a = Mathf.Min(liftStartLoadRatio, liftEndLoadRatio - 0.0001f);
+        float b = Mathf.Max(liftEndLoadRatio, a + 0.0001f);
+
+        // t=0 when load<=a (easy lift), t=1 when load>=b (no lift)
+        float t = Mathf.InverseLerp(a, b, load);
+
+        // Smooth falloff instead of sudden cliff
+        float smooth = t * t * (3f - 2f * t); // SmoothStep
+
+        // effect=1 at easy, 0 at impossible
+        return 1f - smooth;
+    }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        baseBodyMassKg = Mathf.Max(0f, baseBodyMassKg);
+        baseEquipmentMassKg = Mathf.Max(0f, baseEquipmentMassKg);
+        armStrengthKg = Mathf.Max(0.01f, armStrengthKg);
+
+        heldMassSmoothTime = Mathf.Max(0f, heldMassSmoothTime);
+
+        speedMultiplierAtMin = Mathf.Clamp(speedMultiplierAtMin, 0f, 2f);
+        speedMultiplierWhenOverloaded = Mathf.Clamp01(speedMultiplierWhenOverloaded);
+        rotateLerpMultiplierWhenOverloaded = Mathf.Clamp(rotateLerpMultiplierWhenOverloaded, 0.1f, 1f);
+
+        maxMassForJumpKg = Mathf.Max(0f, maxMassForJumpKg);
+        maxMassForSprintKg = Mathf.Max(maxMassForJumpKg, maxMassForSprintKg);
+    }
+#endif
 }

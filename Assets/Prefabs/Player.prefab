@@ -134,6 +134,7 @@ MonoBehaviour:
   m_VerticalAlignment: 512
   m_textAlignment: 65535
   m_characterSpacing: 0
+  m_characterHorizontalScale: 1
   m_wordSpacing: 0
   m_lineSpacing: 0
   m_lineSpacingMax: 0
@@ -588,6 +589,10 @@ MonoBehaviour:
   pickupCastRadius: 0.12
   pickupRange: 3
   massForMaxSlowdown: 10
+  maxLiftableMassKg: 20
+  jointStrengthMaxMassKg: 20
+  jointStrengthScaleAtMaxMass: 0.25
+  minJointStrengthScale: 0.08
   linearSpringBase: 1000
   linearSpringPerKg: 40
   linearDamper: 100
@@ -669,7 +674,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6903841455120555681}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f0a9b229e310f0a4d83b7131bd4006a0, type: 3}
   m_Name: 
@@ -696,11 +701,11 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   baseBodyMassKg: 75
   baseEquipmentMassKg: 5
+  armStrengthKg: 15
   heldMassSmoothTime: 0.12
   speedMultiplierAtMin: 1
-  speedMultiplierAtMax: 0.55
-  maxSlowdownMassKg: 10
-  rotateLerpMultiplierAtMax: 0.4
+  speedMultiplierWhenOverloaded: 0.05
+  rotateLerpMultiplierWhenOverloaded: 0.25
   maxMassForJumpKg: 95
   maxMassForSprintKg: 110
 --- !u!114 &6973779642205995826
@@ -813,6 +818,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.Components.NetworkAnimator
   ShowTopMostFoldoutHeaderGroup: 1
+  NetworkAnimatorExpanded: 0
+  AuthorityMode: 0
+  m_Animator: {fileID: 6262845754777164797}
   TransitionStateInfoList:
   - IsCrossFadeExit: 0
     Layer: 0
@@ -835,7 +843,25 @@ MonoBehaviour:
     TransitionDuration: 0.25
     TriggerNameHash: 125937960
     TransitionIndex: 2
-  m_Animator: {fileID: 6262845754777164797}
+  AnimatorParameterEntries:
+    ParameterEntries:
+    - name: MoveSpeed
+      NameHash: 526065662
+      Synchronize: 1
+      ParameterType: 1
+    - name: IsGrounded
+      NameHash: 507951781
+      Synchronize: 1
+      ParameterType: 4
+    - name: Jump
+      NameHash: 125937960
+      Synchronize: 1
+      ParameterType: 9
+    - name: IsSprinting
+      NameHash: -980523212
+      Synchronize: 1
+      ParameterType: 4
+  AnimatorParametersExpanded: 0
 --- !u!114 &4770098715712413576
 MonoBehaviour:
   m_ObjectHideFlags: 0
