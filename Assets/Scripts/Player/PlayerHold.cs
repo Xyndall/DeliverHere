@@ -155,6 +155,7 @@ public class PlayerHold : NetworkBehaviour
     private struct HeldRestore
     {
         public bool UseGravity;
+        public bool IsKinematic;
         public float Drag;
         public float AngularDrag;
         public RigidbodyInterpolation Interp;
@@ -200,9 +201,14 @@ public class PlayerHold : NetworkBehaviour
         if (IsOwner && cameraTransform == null && Camera.main != null)
             cameraTransform = Camera.main.transform;
 
-        enabled = IsServer || IsOwner;
+        // IMPORTANT:
+        // Do NOT disable this component for observers.
+        // Observers must still receive _heldRef updates and run OnHeldRefChanged to apply
+        // local-only Rigidbody settings (gravity/drag/etc.) for visuals.
+        enabled = true;
 
         EnsureAnchorExists();
+
         _heldRef.OnValueChanged += OnHeldRefChanged;
         OnHeldRefChanged(default, _heldRef.Value);
     }
@@ -261,7 +267,17 @@ public class PlayerHold : NetworkBehaviour
 
     private void FixedUpdate()
     {
-        float liftEffect01 = (_weightManager != null) ? _weightManager.GetLiftEffect01() : 1f;
+        float liftEffect01 = 1f;
+
+        if (_weightManager != null)
+        {
+            // Owner uses local (lowest latency).
+            // Server uses replicated value for client-owned players.
+            if (IsOwner)
+                liftEffect01 = _weightManager.GetLiftEffect01();
+            else
+                liftEffect01 = _weightManager.LiftEffect01.Value;
+        }
 
         if (_anchorRb != null)
         {
@@ -356,6 +372,9 @@ public class PlayerHold : NetworkBehaviour
 
     private void OnHeldRefChanged(NetworkObjectReference previous, NetworkObjectReference current)
     {
+        // Observers still need an anchor for local computations and safe access.
+        EnsureAnchorExists();
+
         if (!current.TryGet(out NetworkObject netObj))
         {
             ClearHeldLocalState();
@@ -368,6 +387,27 @@ public class PlayerHold : NetworkBehaviour
         _anchorRampElapsed = 0f;
         _prevAnchorPos = _anchorRb.position;
         _sag01 = 0f;
+
+        // Capture BEFORE mutating local-only Rigidbody properties. Do this on every peer.
+        if (_heldBody != null && !_restoreCaptured)
+        {
+            _restore = new HeldRestore
+            {
+                UseGravity = _heldBody.useGravity,
+                IsKinematic = _heldBody.isKinematic,
+                Drag = _heldBody.linearDamping,
+                AngularDrag = _heldBody.angularDamping,
+                Interp = _heldBody.interpolation,
+                CollisionMode = _heldBody.collisionDetectionMode
+            };
+            _restoreCaptured = true;
+        }
+
+        // Apply "held" physics locally on EVERY peer (Rigidbody settings don't network-sync).
+        if (_heldBody != null)
+        {
+            ApplyHeldPhysicsLocal();
+        }
 
         if (IsServer && _heldBody != null)
         {
@@ -383,6 +423,43 @@ public class PlayerHold : NetworkBehaviour
             UpdateHeldMassForPlayer();
             PickedUp?.Invoke(_heldBody);
         }
+    }
+
+    private void ApplyHeldPhysicsLocal()
+    {
+        if (_heldBody == null) return;
+
+        // Server simulates. Clients should not run competing physics when using server-authoritative NetworkTransform.
+        bool isNetworked = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
+        bool isServer = NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
+
+        _heldBody.useGravity = true;
+
+        if (boostDragWhileHeld)
+        {
+            _heldBody.linearDamping = Mathf.Max(_heldBody.linearDamping, heldDrag);
+            _heldBody.angularDamping = Mathf.Max(_heldBody.angularDamping, heldAngularDrag);
+        }
+
+        _heldBody.maxAngularVelocity = Mathf.Max(_heldBody.maxAngularVelocity, 100f);
+        _heldBody.interpolation = RigidbodyInterpolation.Interpolate;
+        _heldBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+        // Key line:
+        // Non-server clients => kinematic to avoid local physics diverging from server snapshots.
+        _heldBody.isKinematic = isNetworked && !isServer ? true : false;
+    }
+
+    private void RestoreHeldPhysicsLocalIfCaptured()
+    {
+        if (_heldBody == null || !_restoreCaptured) return;
+
+        _heldBody.isKinematic = _restore.IsKinematic;
+        _heldBody.useGravity = _restore.UseGravity;
+        _heldBody.linearDamping = _restore.Drag;
+        _heldBody.angularDamping = _restore.AngularDrag;
+        _heldBody.interpolation = _restore.Interp;
+        _heldBody.collisionDetectionMode = _restore.CollisionMode;
     }
 
     private void OnHoldersCountChanged(int previous, int current)
@@ -413,6 +490,9 @@ public class PlayerHold : NetworkBehaviour
 
         _holdingState = null;
 
+        // Restore on clients (and server) when the reference clears.
+        RestoreHeldPhysicsLocalIfCaptured();
+
         _heldBody = null;
         DestroyJoint();
 
@@ -428,6 +508,8 @@ public class PlayerHold : NetworkBehaviour
         DestroyJoint();
         if (_heldBody == null || _anchorRb == null) return;
 
+        // NOTE: restore capture is also done in OnHeldRefChanged for all peers,
+        // but keep this as a server-safety net.
         if (!_restoreCaptured)
         {
             _restore = new HeldRestore
@@ -497,7 +579,13 @@ public class PlayerHold : NetworkBehaviour
 
         float armScale = 1f;
         if (_weightManager != null)
-            armScale = Mathf.Clamp01(_weightManager.GetArmEffectiveness01());
+        {
+            // Owner: use local computed (lowest latency).
+            // Server/observers: use replicated value so server-authoritative strength matches the owning client’s stats.
+            armScale = IsOwner
+                ? Mathf.Clamp01(_weightManager.GetArmEffectiveness01())
+                : Mathf.Clamp01(_weightManager.ArmEffectiveness01.Value);
+        }
 
         // Prevent fully-zero drives (stability)
         armScale = Mathf.Clamp(armScale, minJointStrengthScale, 1f);
@@ -566,9 +654,9 @@ public class PlayerHold : NetworkBehaviour
 
         var netObj = rb.GetComponent<NetworkObject>();
         if (netObj == null) return;
-
-        if (!netObj.IsOwner)
-            netObj.ChangeOwnership(OwnerClientId);
+        //might not need idk????
+        //if (!netObj.IsOwner)
+        //    netObj.ChangeOwnership(OwnerClientId);
 
         _heldBody = rb;
         _heldRef.Value = new NetworkObjectReference(netObj);
@@ -619,7 +707,7 @@ public class PlayerHold : NetworkBehaviour
 
         DestroyJoint();
 
-        _heldBody.isKinematic = false;
+        _heldBody.isKinematic = _restore.IsKinematic;
         _heldBody.useGravity = alwaysEnableGravityOnDrop ? true : _restore.UseGravity;
         _heldBody.linearDamping = _restore.Drag;
         _heldBody.angularDamping = _restore.AngularDrag;

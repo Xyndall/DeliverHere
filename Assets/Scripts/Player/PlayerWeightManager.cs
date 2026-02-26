@@ -50,6 +50,13 @@ public class PlayerWeightManager : NetworkBehaviour
     public NetworkVariable<float> TotalMassKg { get; private set; }
         = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
+    // NEW: replicate the computed lift effect to the server/others.
+    public NetworkVariable<float> LiftEffect01 { get; private set; }
+        = new NetworkVariable<float>(1f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+
+    public NetworkVariable<float> ArmEffectiveness01 { get; private set; }
+        = new NetworkVariable<float>(1f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+
     public float BaseMassKg => Mathf.Max(0f, baseBodyMassKg + baseEquipmentMassKg);
 
     private float _heldMassTargetKg;
@@ -77,6 +84,8 @@ public class PlayerWeightManager : NetworkBehaviour
         if (IsOwner)
         {
             TotalMassKg.Value = BaseMassKg;
+            LiftEffect01.Value = 1f;
+            ArmEffectiveness01.Value = 1f;
         }
     }
 
@@ -84,15 +93,17 @@ public class PlayerWeightManager : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // Smooth held mass first
         _heldMassSmoothedKg = Mathf.SmoothDamp(_heldMassSmoothedKg, _heldMassTargetKg, ref _heldMassVel, heldMassSmoothTime);
 
-        // Now compute/smooth lift effect using the updated held mass
         float targetLift = ComputeLiftEffect01Raw();
         _liftEffectSmoothed01 = Mathf.SmoothDamp(_liftEffectSmoothed01, targetLift, ref _liftEffectVel, liftEffectSmoothTime);
 
         float total = BaseMassKg + Mathf.Max(0f, _heldMassSmoothedKg);
         TotalMassKg.Value = total;
+        ArmEffectiveness01.Value = Mathf.Clamp01(GetArmEffectiveness01());
+        // NEW: push lift to server/others
+        LiftEffect01.Value = Mathf.Clamp01(_liftEffectSmoothed01);
+        
     }
 
     public void SetHeldMass(float? heldMassKg)

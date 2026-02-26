@@ -7,6 +7,10 @@ public class PlayerInputController : NetworkBehaviour
 {
     private InputSystem_Actions _actions;
 
+    // NEW: input lock (e.g., during Loading)
+    private bool _inputLocked;
+    private NetworkGameState _netState;
+
     // Public, read-only input state for other scripts
     public Vector2 Move { get; private set; }
     public bool SprintHeld { get; private set; }
@@ -41,6 +45,8 @@ public class PlayerInputController : NetworkBehaviour
             {
                 ui.SetLocalPlayerInput(this);
             }
+
+            BindToNetworkGameState();
         }
         else
         {
@@ -52,10 +58,12 @@ public class PlayerInputController : NetworkBehaviour
     {
         base.OnGainedOwnership();
         enabled = true;
+
         if (_actions == null)
         {
             _actions = new InputSystem_Actions();
         }
+
         _actions.Enable();
 
         var ui = FindAnyObjectByType<GameUIController>();
@@ -63,11 +71,16 @@ public class PlayerInputController : NetworkBehaviour
         {
             ui.SetLocalPlayerInput(this);
         }
+
+        BindToNetworkGameState();
+        ApplyInputLock(); // ensure current lock state is applied immediately
     }
 
     public override void OnLostOwnership()
     {
         base.OnLostOwnership();
+        UnbindFromNetworkGameState();
+
         enabled = false;
         _actions?.Disable();
     }
@@ -76,6 +89,8 @@ public class PlayerInputController : NetworkBehaviour
     {
         try
         {
+            UnbindFromNetworkGameState();
+
             if (_actions != null)
             {
                 _actions.Dispose();
@@ -88,10 +103,70 @@ public class PlayerInputController : NetworkBehaviour
         }
     }
 
+    // NEW: public API (optional) if you want to force lock input from elsewhere too
+    public void SetInputLocked(bool locked)
+    {
+        if (_inputLocked == locked) return;
+        _inputLocked = locked;
+        ApplyInputLock();
+        ClearFrameInputs();
+    }
+
+    private void BindToNetworkGameState()
+    {
+        if (!IsOwner) return;
+
+        _netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+        if (_netState == null) return;
+
+        _netState.OnLocalGameStateChanged -= OnLocalGameStateChanged;
+        _netState.OnLocalGameStateChanged += OnLocalGameStateChanged;
+
+        // Apply immediately to whatever state we joined into (late join / host)
+        OnLocalGameStateChanged(_netState.LocalGameState);
+    }
+
+    private void UnbindFromNetworkGameState()
+    {
+        if (_netState == null) return;
+        _netState.OnLocalGameStateChanged -= OnLocalGameStateChanged;
+        _netState = null;
+    }
+
+    private void OnLocalGameStateChanged(GameState state)
+    {
+        // Lock input during Loading (and optionally GameOver/MainMenu if you want)
+        SetInputLocked(state == GameState.Loading);
+    }
+
+    private void ApplyInputLock()
+    {
+        if (!IsOwner || _actions == null) return;
+
+        if (_inputLocked)
+            _actions.Disable();
+        else
+            _actions.Enable();
+    }
+
+    private void ClearFrameInputs()
+    {
+        Move = Vector2.zero;
+        SprintHeld = false;
+        ExtendInput = 0f;
+
+        JumpPressedThisFrame = false;
+        InteractPressedThisFrame = false;
+        PausePressedThisFrame = false;
+    }
+
     private void Update()
     {
-        if (!IsOwner || _actions == null)
+        if (!IsOwner || _actions == null || _inputLocked)
+        {
+            ClearFrameInputs();
             return;
+        }
 
         // Continuous inputs
         Move = _actions.Player.Move.ReadValue<Vector2>();

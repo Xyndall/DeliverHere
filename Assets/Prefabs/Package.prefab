@@ -98,6 +98,7 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!65 &5754050862341631209
 BoxCollider:
@@ -171,7 +172,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1729110523
+  GlobalObjectIdHash: 1396588585
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -317,14 +318,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1bd17860d20ab754f93de8f108a1a117, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PackageDamageSystem
-  minDamageSpeed: 3.5
+  minDamageSpeed: 1
   damagePerSpeed: 2
   fragilityMultiplier: 1
   maxDamagePerHit: 50
   minDamageAmount: 10
   ignoreLayers:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 512
   packageCooldownSeconds: 0.25
   scaleByContactCount: 0
   feedbackBroadcaster: {fileID: -2877603400309880228}

@@ -9,6 +9,11 @@ public partial class LevelFlowController : MonoBehaviour
 {
     [Tooltip("Seconds to wait for level load before timing out.")]
     [SerializeField] private float loadTimeoutSeconds = 10f;
+
+    // NEW: how long to keep showing loading AFTER teleport (lets transforms settle)
+    [Tooltip("Extra seconds to wait after teleporting players before starting gameplay.")]
+    [SerializeField] private float postTeleportStartDelaySeconds = 0.25f;
+
     [SerializeField] private LevelLoader levelLoader;
 
     private void OnEnable()
@@ -74,7 +79,7 @@ public partial class LevelFlowController : MonoBehaviour
         // Optional small wait to allow a frame for spawned objects / NetworkObjects to settle
         yield return null;
 
-        // Server/host: begin client-ready handshake, then start the game
+        // Server/host: wait for clients to be ready, THEN position players, THEN start gameplay.
         if (NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer)
         {
             var netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
@@ -82,17 +87,39 @@ public partial class LevelFlowController : MonoBehaviour
             {
                 netState.BeginClientReadyHandshake(() =>
                 {
-                    Debug.Log("[LevelFlowController] All clients ready (or timeout) — starting game on server.");
-                    if (GameManager.Instance != null)
-                        GameManager.Instance.StartGame();
+                    Debug.Log("[LevelFlowController] All clients ready (or timeout) — positioning players...");
+
+                    // Ensure timer doesn't tick while we teleport/settle.
+                    GameManager.Instance?.SetGameplayActive(false);
+
+                    // Teleport players to spawn points in the newly loaded level.
+                    GameManager.Instance?.PositionPlayersToSpawnPoints();
+
+                    // Finish loading after a short delay (or at least a frame)
+                    StartCoroutine(FinishLoadingAndStartGame_Coroutine());
                 }, loadTimeoutSeconds);
             }
             else
             {
-                if (GameManager.Instance != null)
-                    GameManager.Instance.StartGame();
+                // No net state: still position first, then start.
+                GameManager.Instance?.SetGameplayActive(false);
+                GameManager.Instance?.PositionPlayersToSpawnPoints();
+                StartCoroutine(FinishLoadingAndStartGame_Coroutine());
             }
         }
+    }
+
+    private IEnumerator FinishLoadingAndStartGame_Coroutine()
+    {
+        // Let teleport RPCs / owner-authoritative transforms apply.
+        yield return null;
+
+        if (postTeleportStartDelaySeconds > 0f)
+            yield return new WaitForSeconds(postTeleportStartDelaySeconds);
+
+        // NOW start the game (gameplay active + timer ticking + UI state)
+        if (GameManager.Instance != null)
+            GameManager.Instance.StartGame();
     }
 
     /// <summary>

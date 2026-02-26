@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using DeliverHere.GamePlay;
 
 public class GameManager : MonoBehaviour
@@ -44,9 +43,6 @@ public class GameManager : MonoBehaviour
     // Expose spawn points read-only to other components.
     public IReadOnlyList<Transform> PlayerSpawnPoints => playerSpawnPoints;
 
-    private InputSystem_Actions _input;
-    private InputAction _pauseAction;
-
     private int lastSpawnedDay = -1;
     private int dailyPackagesDelivered = 0;
     private int currentDayTargetMoney = 0;
@@ -64,7 +60,6 @@ public class GameManager : MonoBehaviour
             return;
         }
         Instance = this;
-
     }
 
     private void OnEnable()
@@ -75,15 +70,6 @@ public class GameManager : MonoBehaviour
 
         IsGameplayActive = false;
 
-        if (_input == null)
-            _input = new InputSystem_Actions();
-
-        _pauseAction = _input.Player.Pause;
-        _pauseAction.performed += OnPausePerformed;
-
-        _input.Enable();
-        _pauseAction.Enable();
-
         uiController?.HideHUD();
         uiController?.ConfigureDayEndButtons(HostAdvanceToNextDay, HostRestartRun);
     }
@@ -92,14 +78,6 @@ public class GameManager : MonoBehaviour
     {
         UnsubscribeFromMoneyTarget();
         UnsubscribeTimer();
-
-        if (_pauseAction != null)
-            _pauseAction.performed -= OnPausePerformed;
-
-        _input?.Disable();
-        _input?.Dispose();
-        _input = null;
-        _pauseAction = null;
     }
 
     // Find timer and net state
@@ -255,6 +233,9 @@ public class GameManager : MonoBehaviour
         {
             if (_netState != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
             {
+                // NEW: end Loading for everyone when we actually start gameplay
+                _netState.ServerSetGameState(GameState.InGame);
+
                 _netState.BeginClientReadyHandshake(() =>
                 {
                     PositionPlayersToSpawnPoints();
@@ -307,13 +288,16 @@ public class GameManager : MonoBehaviour
 
             var cc = pm.GetComponent<CharacterController>();
             var rb = pm.GetComponent<Rigidbody>();
+
             if (cc != null) cc.enabled = false;
             pm.transform.SetPositionAndRotation(spawn.position, spawn.rotation);
-            if (rb != null)
+
+            if (rb != null && !rb.isKinematic)
             {
                 rb.linearVelocity = Vector3.zero;
                 rb.angularVelocity = Vector3.zero;
             }
+
             if (cc != null) cc.enabled = true;
 
             _netState?.ServerRequestOwnerTeleport(netObj, spawn.position, spawn.rotation);
@@ -366,15 +350,6 @@ public class GameManager : MonoBehaviour
         lastSpawnedDay = -1;
         endOfDayPopupShown = false;
         moneyTargetManager?.AdvanceDay();
-    }
-
-    private void OnPausePerformed(InputAction.CallbackContext ctx) => ToggleCursorVisibility();
-
-    public void ToggleCursorVisibility()
-    {
-        bool show = !Cursor.visible;
-        Cursor.visible = show;
-        Cursor.lockState = show ? CursorLockMode.None : CursorLockMode.Locked;
     }
 
     public void AddMoney(int amount) => moneyTargetManager.AddMoney(amount);

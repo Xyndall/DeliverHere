@@ -27,7 +27,19 @@ public class NetworkGameState : NetworkBehaviour
 
     public event Action<bool> OnGameStartedChangedEvent;
 
+    // NEW: local state exposure for client-side systems (input, cameras, etc.)
+    public event Action<GameState> OnLocalGameStateChanged;
+    public GameState LocalGameState => nvGameState.Value;
+
     private readonly NetworkVariable<bool> gameStarted = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    // NEW: replicate high-level UI/game flow state to all clients
+    private readonly NetworkVariable<GameState> nvGameState = new NetworkVariable<GameState>(
+        GameState.MainMenu, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    // NEW: replicate pause flag (separate from state to match UIStateManager API)
+    private readonly NetworkVariable<bool> nvPaused = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private readonly NetworkVariable<int> nvCurrentMoney = new NetworkVariable<int>(
@@ -64,7 +76,6 @@ public class NetworkGameState : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-
         // Bind UI updates on clients
         nvCurrentMoney.OnValueChanged += (_, v) => uiController.SetDailyEarnings(v, nvTargetMoney.Value, nvProgress.Value);
         nvBankedMoney.OnValueChanged += (_, v) => uiController.SetBankedMoney(v);
@@ -83,20 +94,24 @@ public class NetworkGameState : NetworkBehaviour
             uiController.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, v);
         };
 
-        // NEW: toggle HUD locally on clients when gameStarted changes
+        // NEW: drive UIStateManager from replicated state
+        nvGameState.OnValueChanged += (_, s) =>
+        {
+            ApplyUiStateToLocal(s, nvPaused.Value);
+            OnLocalGameStateChanged?.Invoke(s);
+        };
+        nvPaused.OnValueChanged += (_, p) => ApplyUiStateToLocal(nvGameState.Value, p);
+
+        // Toggle HUD locally on clients when gameStarted changes
         gameStarted.OnValueChanged += (_, started) =>
         {
             OnGameStartedChangedEvent?.Invoke(started);
             if (!IsServer)
             {
                 if (started)
-                {
-                    GameManager.Instance?.StartGame();    // shows HUD on clients
-                }
+                    GameManager.Instance?.StartGame();
                 else
-                {
-                    GameManager.Instance?.EndGame();      // hides HUD on clients
-                }
+                    GameManager.Instance?.EndGame();
             }
         };
 
@@ -108,20 +123,26 @@ public class NetworkGameState : NetworkBehaviour
         else
         {
             ApplyAllToClientUI();
-            // Ensure correct HUD visibility for late-joiners
-            if (gameStarted.Value)
-                GameManager.Instance?.StartGame();
-            else
-                GameManager.Instance?.EndGame();
+            ApplyUiStateToLocal(nvGameState.Value, nvPaused.Value);
         }
+
+        // Ensure local listeners (like PlayerInputController) see the initial state too
+        OnLocalGameStateChanged?.Invoke(nvGameState.Value);
     }
 
+    private void ApplyUiStateToLocal(GameState state, bool paused)
+    {
+        if (uiState == null)
+            return;
+
+        uiState.SetGameState(state);
+        uiState.SetPaused(paused);
+    }
 
     private void Update()
     {
         if (!IsServer) return;
 
-        // Keep server-side state synced to clients
         if (moneyTargetManager == null)
             moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
 
@@ -131,7 +152,6 @@ public class NetworkGameState : NetworkBehaviour
         nvCurrentDay.Value = moneyTargetManager != null ? moneyTargetManager.CurrentDay : nvCurrentDay.Value;
         nvProgress.Value = moneyTargetManager != null ? moneyTargetManager.Progress : nvProgress.Value;
 
-        // Timer progress from GameTimer
         float timerNorm = 0f;
         var timer = FindFirstObjectByType<GameTimer>();
         if (timer != null) timerNorm = timer.Normalized;
@@ -235,11 +255,9 @@ public class NetworkGameState : NetworkBehaviour
     {
         if (gameStarted.Value) return;
 
-        // Tell UIStateManager we are entering the Loading state (server/host)
-        if (uiState != null)
-        {
-            uiState.SetGameState(GameState.Loading);
-        }
+        // Server sets replicated state => clients will show Loading too
+        nvPaused.Value = false;
+        nvGameState.Value = GameState.Loading;
 
         gameStarted.Value = true;
 
@@ -253,7 +271,12 @@ public class NetworkGameState : NetworkBehaviour
     public void RequestEndGameServerRpc()
     {
         if (!gameStarted.Value) return;
+
         gameStarted.Value = false;
+
+        nvPaused.Value = false;
+        nvGameState.Value = GameState.Lobby;
+
         gameManager?.EndGame();
         ServerPushSnapshot();
         HideDayEndSummaryClientRpc();
@@ -359,5 +382,12 @@ public class NetworkGameState : NetworkBehaviour
         };
 
         ApplyPlayerTeleportClientRpc(playerNetObj.NetworkObjectId, position, rotation, rpcParams);
+    }
+
+    public void ServerSetGameState(GameState state, bool paused = false)
+    {
+        if (!IsServer) return;
+        nvPaused.Value = paused;
+        nvGameState.Value = state;
     }
 }

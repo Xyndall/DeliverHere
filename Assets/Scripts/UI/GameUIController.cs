@@ -136,6 +136,12 @@ public class GameUIController : MonoBehaviour
     {
         isPaused = !isPaused;
 
+        // Cursor behavior:
+        // - Paused   => cursor visible + unlocked
+        // - Unpaused => cursor hidden + locked
+        Cursor.visible = isPaused;
+        Cursor.lockState = isPaused ? CursorLockMode.None : CursorLockMode.Locked;
+
         if (uiStateManager != null)
         {
             uiStateManager.SetPaused(isPaused);
