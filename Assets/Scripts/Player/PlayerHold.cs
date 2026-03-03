@@ -114,11 +114,18 @@ public class PlayerHold : NetworkBehaviour
     [Tooltip("Extra downward force applied while held when heavy (helps it feel like gravity wins).")]
     [SerializeField] private float extraDownForceAtZeroLift = 120f;
 
+    [Header("Network Anchor Pose (Owner -> Server)")]
+    [Tooltip("How often the owner sends the desired anchor pose to the server (Hz). Higher = more responsive, more bandwidth.")]
+    [SerializeField] private float anchorPoseSendRateHz = 30f;
+    [Tooltip("Minimum distance change before sending another pose (meters).")]
+    [SerializeField] private float anchorPoseMinPosDelta = 0.0025f;
+    [Tooltip("Minimum rotation change before sending another pose (degrees).")]
+    [SerializeField] private float anchorPoseMinRotDeltaDeg = 0.5f;
+
     [Header("Input")]
     [Tooltip("Centralized input controller on this player.")]
     [SerializeField] private PlayerInputController inputController;
 
-    // Network sync (server authoritative)
     private readonly NetworkVariable<NetworkObjectReference> _heldRef =
         new NetworkVariable<NetworkObjectReference>(default,
             NetworkVariableReadPermission.Everyone,
@@ -133,23 +140,29 @@ public class PlayerHold : NetworkBehaviour
         ? Vector3.Distance(_heldBody.position, _anchorRb.position)
         : 0f;
 
+    [SerializeField] private float massForMaxSlowdown = 10f;
+    public float ControlPenalty01
+    {
+        get
+        {
+            if (_heldBody == null || massForMaxSlowdown <= 0.01f) return 0f;
+            return Mathf.Clamp01(_heldBody.mass / massForMaxSlowdown);
+        }
+    }
+
     private float _holdDistance;
     private Rigidbody _heldBody;
 
-    // Anchor (kinematic)
     private Rigidbody _anchorRb;
     private ConfigurableJoint _joint;
     private float _anchorRampElapsed;
 
-    // Anchor velocity (for release)
     private Vector3 _prevAnchorPos;
     private Vector3 _anchorVel;
 
-    // Auto-drop timers
     private float _pickupTimestamp;
     private float _exceededSeparationTime;
 
-    // Dynamic sag (0..1)
     private float _sag01;
 
     private struct HeldRestore
@@ -170,16 +183,15 @@ public class PlayerHold : NetworkBehaviour
 
     public event Action<Rigidbody> PickedUp;
     public event Action<Rigidbody> Dropped;
-    [SerializeField] private float massForMaxSlowdown = 10f;
 
-    public float ControlPenalty01
-    {
-        get
-        {
-            if (_heldBody == null || massForMaxSlowdown <= 0.01f) return 0f;
-            return Mathf.Clamp01(_heldBody.mass / massForMaxSlowdown);
-        }
-    }
+    // Owner->Server anchor pose state
+    private double _nextAnchorPoseSendTime;
+    private Vector3 _lastSentAnchorPos;
+    private Quaternion _lastSentAnchorRot;
+
+    // Server uses latest received pose
+    private Vector3 _serverDesiredAnchorPos;
+    private Quaternion _serverDesiredAnchorRot = Quaternion.identity;
 
     private void Awake()
     {
@@ -201,10 +213,6 @@ public class PlayerHold : NetworkBehaviour
         if (IsOwner && cameraTransform == null && Camera.main != null)
             cameraTransform = Camera.main.transform;
 
-        // IMPORTANT:
-        // Do NOT disable this component for observers.
-        // Observers must still receive _heldRef updates and run OnHeldRefChanged to apply
-        // local-only Rigidbody settings (gravity/drag/etc.) for visuals.
         enabled = true;
 
         EnsureAnchorExists();
@@ -268,92 +276,141 @@ public class PlayerHold : NetworkBehaviour
     private void FixedUpdate()
     {
         float liftEffect01 = 1f;
-
         if (_weightManager != null)
         {
-            // Owner uses local (lowest latency).
-            // Server uses replicated value for client-owned players.
             if (IsOwner)
                 liftEffect01 = _weightManager.GetLiftEffect01();
             else
                 liftEffect01 = _weightManager.LiftEffect01.Value;
         }
 
-        if (_anchorRb != null)
-        {
-            Quaternion yawRot = GetYawRotation();
+        EnsureAnchorExists();
 
-            float targetDist = _holdDistance;
-            if (IsHolding && anchorRampTime > 0f && _anchorRampElapsed < anchorRampTime)
+        // Compute desired anchor pose (always)
+        Quaternion yawRot = GetYawRotation();
+
+        float targetDist = _holdDistance;
+        if (IsHolding && anchorRampTime > 0f && _anchorRampElapsed < anchorRampTime)
+        {
+            _anchorRampElapsed += Time.fixedDeltaTime;
+            float t = Mathf.Clamp01(_anchorRampElapsed / anchorRampTime);
+            targetDist = Mathf.Lerp(0f, _holdDistance, t);
+        }
+
+        float sagTarget01 = 1f - Mathf.Clamp01(liftEffect01);
+        _sag01 = Mathf.MoveTowards(_sag01, sagTarget01, sagLerpSpeed * Time.fixedDeltaTime);
+
+        float sagMeters = _sag01 * maxSagMeters;
+        Vector3 local = new Vector3(localHoldOffset.x, localHoldOffset.y - sagMeters, targetDist);
+
+        Vector3 desiredAnchorPos = handsRoot.position + yawRot * local;
+        Quaternion desiredAnchorRot = yawRot;
+
+        // Update anchor velocity (used for release)
+        _anchorVel = (desiredAnchorPos - _prevAnchorPos) / Mathf.Max(1e-5f, Time.fixedDeltaTime);
+        _prevAnchorPos = desiredAnchorPos;
+
+        // Owner: send desired pose to server (throttled)
+        if (IsOwner && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer)
+        {
+            TrySendAnchorPoseToServer(desiredAnchorPos, desiredAnchorRot);
+        }
+
+        // Server: apply latest received desired pose (or if host, use local)
+        if (IsServer)
+        {
+            if (IsOwner)
             {
-                _anchorRampElapsed += Time.fixedDeltaTime;
-                float t = Mathf.Clamp01(_anchorRampElapsed / anchorRampTime);
-                targetDist = Mathf.Lerp(0f, _holdDistance, t);
+                // Host: no RPC needed, just use local computed pose.
+                _serverDesiredAnchorPos = desiredAnchorPos;
+                _serverDesiredAnchorRot = desiredAnchorRot;
             }
 
-            float sagTarget01 = 1f - Mathf.Clamp01(liftEffect01);
-            _sag01 = Mathf.MoveTowards(_sag01, sagTarget01, sagLerpSpeed * Time.fixedDeltaTime);
-
-            float sagMeters = _sag01 * maxSagMeters;
-            Vector3 local = new Vector3(localHoldOffset.x, localHoldOffset.y - sagMeters, targetDist);
-
-            Vector3 newAnchorPos = handsRoot.position + yawRot * local;
-            _anchorVel = (newAnchorPos - _prevAnchorPos) / Mathf.Max(1e-5f, Time.fixedDeltaTime);
-            _prevAnchorPos = newAnchorPos;
-
-            _anchorRb.position = newAnchorPos;
-            _anchorRb.rotation = yawRot;
+            _anchorRb.position = _serverDesiredAnchorPos;
+            _anchorRb.rotation = _serverDesiredAnchorRot;
+        }
+        else
+        {
+            // Clients: keep local anchor in sync for local computations (doesn't affect server physics).
+            _anchorRb.position = desiredAnchorPos;
+            _anchorRb.rotation = desiredAnchorRot;
         }
 
         if (!IsHolding || _heldBody == null)
             return;
 
         // Server-only: mutate physics / apply forces
-        if (IsServer)
+        if (!IsServer)
+            return;
+
+        if (_joint != null)
+            ApplyJointStrengthForMass(_heldBody.mass);
+
+        if (!_heldBody.useGravity)
+            _heldBody.useGravity = true;
+
+        if (extraDownForceAtZeroLift > 0f)
         {
-            if (_joint != null)
-                ApplyJointStrengthForMass(_heldBody.mass);
+            float extra = (1f - Mathf.Clamp01(liftEffect01)) * extraDownForceAtZeroLift;
+            if (extra > 0f)
+                _heldBody.AddForce(Vector3.down * extra, ForceMode.Force);
+        }
 
-            // Gravity always ON while held
-            if (!_heldBody.useGravity)
-                _heldBody.useGravity = true;
-
-            if (extraDownForceAtZeroLift > 0f)
+        if (enableAutoDropOnDistance)
+        {
+            float sincePickup = Time.time - _pickupTimestamp;
+            if (sincePickup >= postPickupGraceTime)
             {
-                float extra = (1f - Mathf.Clamp01(liftEffect01)) * extraDownForceAtZeroLift;
-                if (extra > 0f)
-                    _heldBody.AddForce(Vector3.down * extra, ForceMode.Force);
-            }
-
-            // Distance-based auto drop
-            if (enableAutoDropOnDistance)
-            {
-                float sincePickup = Time.time - _pickupTimestamp;
-                if (sincePickup >= postPickupGraceTime)
+                if (CurrentSeparation > maxHoldSeparation)
                 {
-                    if (CurrentSeparation > maxHoldSeparation)
+                    _exceededSeparationTime += Time.fixedDeltaTime;
+                    if (_exceededSeparationTime >= autoDropDelay)
                     {
-                        _exceededSeparationTime += Time.fixedDeltaTime;
-                        if (_exceededSeparationTime >= autoDropDelay)
-                        {
-                            ServerDropHeldInternal();
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        _exceededSeparationTime = 0f;
+                        ServerDropHeldInternal();
+                        return;
                     }
                 }
+                else
+                {
+                    _exceededSeparationTime = 0f;
+                }
             }
-
-            if (maxLinearSpeed > 0f && _heldBody.linearVelocity.magnitude > maxLinearSpeed)
-                _heldBody.linearVelocity = _heldBody.linearVelocity.normalized * maxLinearSpeed;
-
-            float maxOmegaRad = Mathf.Deg2Rad * Mathf.Max(30f, maxAngularSpeedDeg);
-            if (_heldBody.angularVelocity.magnitude > maxOmegaRad)
-                _heldBody.angularVelocity = _heldBody.angularVelocity.normalized * maxOmegaRad;
         }
+
+        if (maxLinearSpeed > 0f && _heldBody.linearVelocity.magnitude > maxLinearSpeed)
+            _heldBody.linearVelocity = _heldBody.linearVelocity.normalized * maxLinearSpeed;
+
+        float maxOmegaRad = Mathf.Deg2Rad * Mathf.Max(30f, maxAngularSpeedDeg);
+        if (_heldBody.angularVelocity.magnitude > maxOmegaRad)
+            _heldBody.angularVelocity = _heldBody.angularVelocity.normalized * maxOmegaRad;
+    }
+
+    private void TrySendAnchorPoseToServer(Vector3 pos, Quaternion rot)
+    {
+        float hz = Mathf.Max(1f, anchorPoseSendRateHz);
+        double now = NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalTime.Time : Time.timeAsDouble;
+
+        if (now < _nextAnchorPoseSendTime)
+            return;
+
+        float posDelta = Vector3.Distance(pos, _lastSentAnchorPos);
+        float rotDelta = Quaternion.Angle(rot, _lastSentAnchorRot);
+
+        if (posDelta < anchorPoseMinPosDelta && rotDelta < anchorPoseMinRotDeltaDeg)
+            return;
+
+        _nextAnchorPoseSendTime = now + (1.0 / hz);
+        _lastSentAnchorPos = pos;
+        _lastSentAnchorRot = rot;
+
+        SubmitAnchorPoseServerRpc(pos, rot);
+    }
+
+    [ServerRpc]
+    private void SubmitAnchorPoseServerRpc(Vector3 pos, Quaternion rot)
+    {
+        _serverDesiredAnchorPos = pos;
+        _serverDesiredAnchorRot = rot;
     }
 
     private void EnsureAnchorExists()
@@ -367,12 +424,17 @@ public class PlayerHold : NetworkBehaviour
         _anchorRb.isKinematic = true;
         _anchorRb.collisionDetectionMode = CollisionDetectionMode.Discrete;
         _anchorRb.interpolation = RigidbodyInterpolation.None;
+
         _prevAnchorPos = _anchorRb.position;
+        _serverDesiredAnchorPos = _anchorRb.position;
+        _serverDesiredAnchorRot = _anchorRb.rotation;
+
+        _lastSentAnchorPos = _anchorRb.position;
+        _lastSentAnchorRot = _anchorRb.rotation;
     }
 
     private void OnHeldRefChanged(NetworkObjectReference previous, NetworkObjectReference current)
     {
-        // Observers still need an anchor for local computations and safe access.
         EnsureAnchorExists();
 
         if (!current.TryGet(out NetworkObject netObj))
@@ -388,7 +450,10 @@ public class PlayerHold : NetworkBehaviour
         _prevAnchorPos = _anchorRb.position;
         _sag01 = 0f;
 
-        // Capture BEFORE mutating local-only Rigidbody properties. Do this on every peer.
+        _nextAnchorPoseSendTime = 0;
+        _lastSentAnchorPos = _anchorRb.position;
+        _lastSentAnchorRot = _anchorRb.rotation;
+
         if (_heldBody != null && !_restoreCaptured)
         {
             _restore = new HeldRestore
@@ -403,7 +468,6 @@ public class PlayerHold : NetworkBehaviour
             _restoreCaptured = true;
         }
 
-        // Apply "held" physics locally on EVERY peer (Rigidbody settings don't network-sync).
         if (_heldBody != null)
         {
             ApplyHeldPhysicsLocal();
@@ -429,7 +493,6 @@ public class PlayerHold : NetworkBehaviour
     {
         if (_heldBody == null) return;
 
-        // Server simulates. Clients should not run competing physics when using server-authoritative NetworkTransform.
         bool isNetworked = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
         bool isServer = NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
 
@@ -445,8 +508,7 @@ public class PlayerHold : NetworkBehaviour
         _heldBody.interpolation = RigidbodyInterpolation.Interpolate;
         _heldBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
-        // Key line:
-        // Non-server clients => kinematic to avoid local physics diverging from server snapshots.
+        // On non-server clients, keep kinematic to avoid fighting server snapshots
         _heldBody.isKinematic = isNetworked && !isServer ? true : false;
     }
 
@@ -490,7 +552,6 @@ public class PlayerHold : NetworkBehaviour
 
         _holdingState = null;
 
-        // Restore on clients (and server) when the reference clears.
         RestoreHeldPhysicsLocalIfCaptured();
 
         _heldBody = null;
@@ -507,21 +568,6 @@ public class PlayerHold : NetworkBehaviour
     {
         DestroyJoint();
         if (_heldBody == null || _anchorRb == null) return;
-
-        // NOTE: restore capture is also done in OnHeldRefChanged for all peers,
-        // but keep this as a server-safety net.
-        if (!_restoreCaptured)
-        {
-            _restore = new HeldRestore
-            {
-                UseGravity = _heldBody.useGravity,
-                Drag = _heldBody.linearDamping,
-                AngularDrag = _heldBody.angularDamping,
-                Interp = _heldBody.interpolation,
-                CollisionMode = _heldBody.collisionDetectionMode
-            };
-            _restoreCaptured = true;
-        }
 
         var cj = _heldBody.gameObject.AddComponent<ConfigurableJoint>();
         cj.autoConfigureConnectedAnchor = false;
@@ -580,14 +626,11 @@ public class PlayerHold : NetworkBehaviour
         float armScale = 1f;
         if (_weightManager != null)
         {
-            // Owner: use local computed (lowest latency).
-            // Server/observers: use replicated value so server-authoritative strength matches the owning client’s stats.
             armScale = IsOwner
                 ? Mathf.Clamp01(_weightManager.GetArmEffectiveness01())
                 : Mathf.Clamp01(_weightManager.ArmEffectiveness01.Value);
         }
 
-        // Prevent fully-zero drives (stability)
         armScale = Mathf.Clamp(armScale, minJointStrengthScale, 1f);
 
         float combinedScale = strengthScale * armScale;
@@ -639,7 +682,6 @@ public class PlayerHold : NetworkBehaviour
     [ServerRpc]
     private void RequestPickupServerRpc(Vector3 origin, Vector3 dir, float requestedHoldDistance)
     {
-        // Already holding something
         if (_heldRef.Value.TryGet(out _))
             return;
 
@@ -654,9 +696,6 @@ public class PlayerHold : NetworkBehaviour
 
         var netObj = rb.GetComponent<NetworkObject>();
         if (netObj == null) return;
-        //might not need idk????
-        //if (!netObj.IsOwner)
-        //    netObj.ChangeOwnership(OwnerClientId);
 
         _heldBody = rb;
         _heldRef.Value = new NetworkObjectReference(netObj);
@@ -796,6 +835,10 @@ public class PlayerHold : NetworkBehaviour
         maxSagMeters = Mathf.Max(0f, maxSagMeters);
         sagLerpSpeed = Mathf.Max(0.01f, sagLerpSpeed);
         extraDownForceAtZeroLift = Mathf.Max(0f, extraDownForceAtZeroLift);
+
+        anchorPoseSendRateHz = Mathf.Clamp(anchorPoseSendRateHz, 1f, 60f);
+        anchorPoseMinPosDelta = Mathf.Max(0f, anchorPoseMinPosDelta);
+        anchorPoseMinRotDeltaDeg = Mathf.Max(0f, anchorPoseMinRotDeltaDeg);
     }
 #endif
 }

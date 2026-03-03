@@ -103,7 +103,6 @@ public class PlayerWeightManager : NetworkBehaviour
         ArmEffectiveness01.Value = Mathf.Clamp01(GetArmEffectiveness01());
         // NEW: push lift to server/others
         LiftEffect01.Value = Mathf.Clamp01(_liftEffectSmoothed01);
-        
     }
 
     public void SetHeldMass(float? heldMassKg)
@@ -126,8 +125,19 @@ public class PlayerWeightManager : NetworkBehaviour
         return Mathf.Clamp01(effectiveness);
     }
 
-    public float GetSpeedMultiplier() => 1f;
-    public float GetRotateLerpMultiplier() => 1f;
+    public float GetSpeedMultiplier()
+    {
+        // Use arm effectiveness as the driver: 1 when light, -> 0 when overloaded.
+        float t = 1f - Mathf.Clamp01(GetArmEffectiveness01());
+        return Mathf.Lerp(speedMultiplierAtMin, speedMultiplierWhenOverloaded, t);
+    }
+
+    public float GetRotateLerpMultiplier()
+    {
+        // Keep turn responsive when lightly loaded, reduce it under heavy load.
+        float t = 1f - Mathf.Clamp01(GetArmEffectiveness01());
+        return Mathf.Lerp(1f, rotateLerpMultiplierWhenOverloaded, t);
+    }
 
     public bool CanJump()
     {
@@ -148,6 +158,7 @@ public class PlayerWeightManager : NetworkBehaviour
         float held = Mathf.Max(0f, _heldMassSmoothedKg);
         return held / strength;
     }
+
     public float GetLiftEffect01()
     {
         return Mathf.Clamp01(_liftEffectSmoothed01);
