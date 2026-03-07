@@ -25,6 +25,12 @@ public class NetworkGameState : NetworkBehaviour
     [SerializeField] private LevelFlowController levelFlow;
     [SerializeField] private UIStateManager uiState;
 
+    [Header("Default / Hub Spawn (NOT level spawns)")]
+    [Tooltip("Where players are positioned when returning to lobby / on loss. Server-authoritative.")]
+    [SerializeField] private Transform defaultSpawnPoint;
+
+    public Transform DefaultSpawnPoint => defaultSpawnPoint;
+
     public event Action<bool> OnGameStartedChangedEvent;
 
     // NEW: local state exposure for client-side systems (input, cameras, etc.)
@@ -72,6 +78,36 @@ public class NetworkGameState : NetworkBehaviour
             return;
         }
         Instance = this;
+    }
+
+    /// <summary>
+    /// Server-authoritative: teleports all spawned players to the configured default spawn point.
+    /// Intended for "return to lobby" / loss flow. Does not use GameManager spawn points.
+    /// </summary>
+    public void ServerPositionAllPlayersToDefaultSpawn()
+    {
+        if (!IsServer) return;
+
+        if (defaultSpawnPoint == null)
+        {
+            Debug.LogWarning("[NetworkGameState] DefaultSpawnPoint is not assigned; cannot reposition players.");
+            return;
+        }
+
+        // PlayerMovement is the authoritative "player object" in this project.
+        var players = FindObjectsByType<PlayerMovement>(FindObjectsSortMode.None);
+        foreach (var pm in players)
+        {
+            if (pm == null) continue;
+
+            var netObj = pm.GetComponent<NetworkObject>();
+            if (netObj == null || !netObj.IsSpawned) continue;
+
+            // Owner-authoritative transform: ask the owning client to apply the teleport.
+            ServerRequestOwnerTeleport(netObj, defaultSpawnPoint.position, defaultSpawnPoint.rotation);
+        }
+
+        Debug.Log($"[NetworkGameState] Teleported players to default spawn '{defaultSpawnPoint.name}'.");
     }
 
     public override void OnNetworkSpawn()
@@ -277,9 +313,21 @@ public class NetworkGameState : NetworkBehaviour
         nvPaused.Value = false;
         nvGameState.Value = GameState.Lobby;
 
+        var players = FindObjectsByType<PlayerUpgradableStats>(FindObjectsSortMode.None);
+        foreach (var stats in players)
+        {
+            if (stats == null) continue;
+            if (!stats.IsSpawned) continue;
+            stats.ServerResetToDefaults();
+        }
+
+        // Also clear saved reconnect snapshots so reconnecting in lobby doesn't restore run upgrades.
+        PlayerUpgradableStats.ServerClearAllSnapshots();
+
         gameManager?.EndGame();
         ServerPushSnapshot();
         HideDayEndSummaryClientRpc();
+        ServerPositionAllPlayersToDefaultSpawn();
     }
 
     // Snapshot helpers

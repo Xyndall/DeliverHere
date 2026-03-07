@@ -351,6 +351,7 @@ GameObject:
   - component: {fileID: 166322995082764211}
   - component: {fileID: 4770098715712413576}
   - component: {fileID: 1314525665084999406}
+  - component: {fileID: -7515118946062083735}
   m_Layer: 9
   m_Name: Player
   m_TagString: Untagged
@@ -411,7 +412,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 363287109
+  GlobalObjectIdHash: 209272834
   InScenePlacedSourceGlobalObjectIdHash: 209272834
   DeferredDespawnTick: 0
   Ownership: 1
@@ -447,7 +448,9 @@ MonoBehaviour:
   sprintCostPerSecond: 22
   regenPerSecond: 15
   regenDelay: 0.75
+  jumpCost: 18
   cameraTransform: {fileID: 0}
+  upgradableStats: {fileID: 0}
   playerHold: {fileID: 1258810096796857199}
   speedMultiplierAtMaxPenalty: 0.55
   rotateLerpMultiplierAtMaxPenalty: 0.4
@@ -583,16 +586,12 @@ MonoBehaviour:
   minHoldDistance: 0.8
   maxHoldDistance: 0.8
   distanceChangeSpeed: 10
+  upgradableStats: {fileID: 0}
   pickupMask:
     serializedVersion: 2
     m_Bits: 64
   pickupCastRadius: 0.12
   pickupRange: 3
-  massForMaxSlowdown: 10
-  maxLiftableMassKg: 20
-  jointStrengthMaxMassKg: 20
-  jointStrengthScaleAtMaxMass: 0.25
-  minJointStrengthScale: 0.08
   linearSpringBase: 1000
   linearSpringPerKg: 40
   linearDamper: 100
@@ -600,13 +599,15 @@ MonoBehaviour:
   angularSpring: 600
   angularDamper: 120
   angularMaxForce: 0
+  jointStrengthMaxMassKg: 20
+  jointStrengthScaleAtMaxMass: 0.25
+  minJointStrengthScale: 0.08
   enableProjection: 1
   projectionDistance: 0.03
   projectionAngle: 5
   maxLinearSpeed: 5
   maxAngularSpeedDeg: 180
   anchorRampTime: 0.18
-  disableGravityWhileHeld: 1
   boostDragWhileHeld: 0
   heldDrag: 2.5
   heldAngularDrag: 3
@@ -622,7 +623,14 @@ MonoBehaviour:
   maxHoldSeparation: 3
   autoDropDelay: 0.25
   postPickupGraceTime: 0.5
+  maxSagMeters: 1.1
+  sagLerpSpeed: 8
+  extraDownForceAtZeroLift: 120
+  anchorPoseSendRateHz: 60
+  anchorPoseMinPosDelta: 0
+  anchorPoseMinRotDeltaDeg: 0
   inputController: {fileID: 1314525665084999406}
+  massForMaxSlowdown: 10
 --- !u!114 &276092387163634943
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -702,12 +710,16 @@ MonoBehaviour:
   baseBodyMassKg: 75
   baseEquipmentMassKg: 5
   armStrengthKg: 15
+  upgradableStats: {fileID: 0}
   heldMassSmoothTime: 0.12
   speedMultiplierAtMin: 1
   speedMultiplierWhenOverloaded: 0.05
   rotateLerpMultiplierWhenOverloaded: 0.25
   maxMassForJumpKg: 95
   maxMassForSprintKg: 110
+  liftStartLoadRatio: 0.85
+  liftEndLoadRatio: 1.5
+  liftEffectSmoothTime: 0.1
 --- !u!114 &6973779642205995826
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -786,6 +798,7 @@ MonoBehaviour:
   maxHealth: 100
   currentHealth: 0
   damageCooldownSeconds: 0.5
+  upgradableStats: {fileID: 0}
 --- !u!114 &8858736425540183297
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -889,6 +902,34 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerInputController
   ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &-7515118946062083735
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a8c610129601e8446b3f6eaa8ba1d023, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerUpgradableStats
+  ShowTopMostFoldoutHeaderGroup: 1
+  baseWalkSpeed: 4.5
+  baseRunSpeed: 7.5
+  baseJumpHeight: 1.4
+  baseMaxHealth: 100
+  baseArmStrengthKg: 15
+  initialMoveSpeedMultiplier: 1
+  initialJumpHeightMultiplier: 1
+  initialMaxHealthMultiplier: 1
+  initialArmStrengthMultiplier: 1
+  initialStaminaMaxMultiplier: 1
+  initialStaminaEfficiencyMultiplier: 1
+  initialCarryCapacityMultiplier: 1
+  initialHoldAndThrowMultiplier: 1
+  minMultiplier: 0.25
+  maxMultiplier: 5
 --- !u!1001 &540586581813028460
 PrefabInstance:
   m_ObjectHideFlags: 0

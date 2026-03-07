@@ -6,7 +6,7 @@ using UnityEngine.InputSystem;
 [DisallowMultipleComponent]
 public class PlayerMovement : NetworkBehaviour
 {
-    [Header("Movement")]
+    [Header("Movement (defaults if no PlayerUpgradableStats present)")]
     [SerializeField] private float walkSpeed = 4.5f;
     [SerializeField] private float runSpeed = 7.5f;
     [SerializeField] private float gravity = -20f;
@@ -14,16 +14,21 @@ public class PlayerMovement : NetworkBehaviour
     [SerializeField] private bool rotateToMove = true;
     [SerializeField] private float rotateLerp = 15f;
 
-
     [Header("Stamina")]
     [SerializeField] private float maxStamina = 100f;
     [SerializeField] private float sprintCostPerSecond = 22f;
     [SerializeField] private float regenPerSecond = 15f;
     [SerializeField] private float regenDelay = 0.75f;
+    [Tooltip("Stamina cost paid when jumping.")]
+    [SerializeField] private float jumpCost = 18f;
 
     [Header("References")]
     [Tooltip("Optional. If null, will use Camera.main.")]
     [SerializeField] private Transform cameraTransform;
+
+    [Header("Upgradable Stats")]
+    [Tooltip("If assigned/present, movement values will be read from here.")]
+    [SerializeField] private PlayerUpgradableStats upgradableStats;
 
     [Header("Arm Reach/Load Penalty")]
     [Tooltip("Optional. If present, movement will be penalized when playerHold are extended or when holding weight.")]
@@ -46,6 +51,9 @@ public class PlayerMovement : NetworkBehaviour
 
     public bool IsSprinting { get; private set; }
 
+    // Exposed for UI
+    public float CurrentMaxStamina { get; private set; }
+
     private CharacterController _controller;
     private Vector3 _verticalVel;
     private float _regenCooldown;
@@ -56,6 +64,7 @@ public class PlayerMovement : NetworkBehaviour
         if (playerHold == null) playerHold = GetComponent<PlayerHold>();
         if (weightManager == null) weightManager = GetComponent<PlayerWeightManager>();
         if (inputController == null) inputController = GetComponent<PlayerInputController>();
+        if (upgradableStats == null) upgradableStats = GetComponent<PlayerUpgradableStats>();
     }
 
     public override void OnNetworkSpawn()
@@ -104,11 +113,26 @@ public class PlayerMovement : NetworkBehaviour
         Vector2 move = inputController.Move;
         bool hasMove = move.sqrMagnitude > 0.0001f;
 
+        float resolvedWalkSpeed = upgradableStats != null ? upgradableStats.WalkSpeed : walkSpeed;
+        float resolvedRunSpeed = upgradableStats != null ? upgradableStats.RunSpeed : runSpeed;
+        float resolvedJumpHeight = upgradableStats != null ? upgradableStats.JumpHeight : jumpHeight;
+
+        float staminaMaxMult = upgradableStats != null ? upgradableStats.StaminaMaxMultiplier : 1f;
+        float staminaEffMult = upgradableStats != null ? Mathf.Max(0.01f, upgradableStats.StaminaEfficiencyMultiplier) : 1f;
+
+        float resolvedMaxStamina = Mathf.Max(1f, maxStamina * staminaMaxMult);
+        float resolvedSprintCostPerSecond = Mathf.Max(0f, sprintCostPerSecond / staminaEffMult);
+        float resolvedRegenPerSecond = Mathf.Max(0f, regenPerSecond * staminaEffMult);
+
+        CurrentMaxStamina = resolvedMaxStamina;
+
+        Stamina.Value = Mathf.Clamp(Stamina.Value, 0f, resolvedMaxStamina);
+
         bool staminaAllowsSprint = Stamina.Value > 0.01f;
         bool weightAllowsSprint = weightManager == null || weightManager.CanSprint();
         bool wantsSprint = inputController.SprintHeld && hasMove && staminaAllowsSprint && weightAllowsSprint;
 
-        float baseSpeed = wantsSprint ? runSpeed : walkSpeed;
+        float baseSpeed = wantsSprint ? resolvedRunSpeed : resolvedWalkSpeed;
         float speed = baseSpeed;
 
         float rotateLerpCurrent = rotateLerp;
@@ -165,7 +189,16 @@ public class PlayerMovement : NetworkBehaviour
         bool canJumpByWeight = weightManager == null || weightManager.CanJump();
         if (grounded && canJumpByWeight && inputController.JumpPressedThisFrame)
         {
-            _verticalVel.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            if (jumpCost <= 0f || Stamina.Value >= jumpCost)
+            {
+                _verticalVel.y = Mathf.Sqrt(resolvedJumpHeight * -2f * gravity);
+
+                if (jumpCost > 0f)
+                {
+                    Stamina.Value = Mathf.Max(0f, Stamina.Value - jumpCost);
+                    _regenCooldown = regenDelay;
+                }
+            }
         }
 
         _verticalVel.y += gravity * dt;
@@ -177,13 +210,13 @@ public class PlayerMovement : NetworkBehaviour
 
         if (wantsSprint)
         {
-            Stamina.Value = Mathf.Max(0f, Stamina.Value - sprintCostPerSecond * dt);
+            Stamina.Value = Mathf.Max(0f, Stamina.Value - resolvedSprintCostPerSecond * dt);
             _regenCooldown = regenDelay;
         }
         else
         {
             if (_regenCooldown > 0f) _regenCooldown -= dt;
-            else Stamina.Value = Mathf.Min(maxStamina, Stamina.Value + regenPerSecond * dt);
+            else Stamina.Value = Mathf.Min(resolvedMaxStamina, Stamina.Value + resolvedRegenPerSecond * dt);
         }
 
         IsSprinting = wantsSprint;
@@ -200,6 +233,7 @@ public class PlayerMovement : NetworkBehaviour
         regenDelay = Mathf.Max(0f, regenDelay);
         jumpHeight = Mathf.Max(0.1f, jumpHeight);
         gravity = Mathf.Min(-0.1f, gravity);
+        jumpCost = Mathf.Max(0f, jumpCost);
 
         speedMultiplierAtMaxPenalty = Mathf.Clamp(speedMultiplierAtMaxPenalty, 0.2f, 1f);
         rotateLerpMultiplierAtMaxPenalty = Mathf.Clamp(rotateLerpMultiplierAtMaxPenalty, 0.1f, 1f);

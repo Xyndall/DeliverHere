@@ -16,6 +16,9 @@ public class GameUIController : MonoBehaviour
     [Header("HUD - Timer")]
     [SerializeField] private TMP_Text timerText; // display seconds
 
+    [Header("HUD - Stamina")]
+    [SerializeField] private Slider staminaSlider;
+
     [Header("Panels")]
     [SerializeField] private GameObject winPanel;
     [SerializeField] private GameObject dayEndSummaryPanel;
@@ -32,31 +35,54 @@ public class GameUIController : MonoBehaviour
 
     private bool isPaused;
 
-    // Reference to local player input (set by PlayerInputController)
     private PlayerInputController _localPlayerInput;
+    private PlayerMovement _localPlayerMovement;
 
     private void Awake()
     {
         HideHUD();
         HideDayEndSummary();
         HideWinPanel();
+
+        if (staminaSlider != null)
+        {
+            staminaSlider.minValue = 0f;
+            staminaSlider.maxValue = 1f;
+            staminaSlider.value = 1f;
+        }
     }
 
     private void Update()
     {
-        if (_localPlayerInput == null)
-            return;
-
-        if (_localPlayerInput.PausePressedThisFrame)
+        if (_localPlayerInput != null && _localPlayerInput.PausePressedThisFrame)
         {
             TogglePause();
         }
+
+        UpdateStaminaBar();
     }
 
-    // Called by the local PlayerInputController when it spawns / gains ownership
     public void SetLocalPlayerInput(PlayerInputController input)
     {
         _localPlayerInput = input;
+
+        // Assume input controller lives on the same player object as movement.
+        _localPlayerMovement = input != null ? input.GetComponent<PlayerMovement>() : null;
+    }
+
+    private void UpdateStaminaBar()
+    {
+        if (staminaSlider == null) return;
+
+        if (_localPlayerMovement == null)
+        {
+            staminaSlider.value = 0f;
+            return;
+        }
+
+        float max = Mathf.Max(1f, _localPlayerMovement.CurrentMaxStamina);
+        float current = Mathf.Clamp(_localPlayerMovement.Stamina.Value, 0f, max);
+        staminaSlider.value = current / max;
     }
 
     // Set button callbacks (called by GameManager after it sets itself up)
@@ -103,7 +129,7 @@ public class GameUIController : MonoBehaviour
             quotaStatusText.color = metQuota ? Color.green : Color.red;
         }
 
-        if (nextDayButton != null) nextDayButton.gameObject.SetActive(hostHasControl);
+        if (nextDayButton != null) nextDayButton.gameObject.SetActive(hostHasControl && metQuota);
         if (restartButton != null) restartButton.gameObject.SetActive(hostHasControl);
     }
 

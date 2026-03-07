@@ -34,6 +34,9 @@ public class GameManager : MonoBehaviour
     private Action _onDayTimerAboutToExpireHandler;
     public bool IsGameplayActive { get; private set; }
 
+    // NEW: if true, we ended the day with failure and are waiting for host to close/restart.
+    private bool _pendingLossReturnToLobby;
+
     // Add this method to allow external callers to change gameplay active state.
     public void SetGameplayActive(bool active)
     {
@@ -96,22 +99,31 @@ public class GameManager : MonoBehaviour
                 int newBanked = GetBankedMoney();
                 bool hostHasControl = NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
 
-                if (metQuota)
+                IsGameplayActive = false;
+
+                // We are showing the end-of-day overlay; if it's a loss, we wait for host action
+                _pendingLossReturnToLobby = !metQuota;
+
+                // Put UI into a non-gameplay state so HUD/pause logic won't fight the panel
+                if (IsServerOrStandalone && _netState != null)
                 {
-                    uiController?.ShowDayEndSummary(earnedToday, newBanked, dailyPackagesDelivered, metQuota, hostHasControl);
-                    endOfDayPopupShown = true;
+                    _netState.ServerSetGameState(GameState.GameOver, paused: false);
+                }
+
+                // Show summary for BOTH success and failure, for ALL clients.
+                if (IsServerOrStandalone && _netState != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
+                {
+                    _netState.ShowDayEndSummaryClientRpc(earnedToday, newBanked, dailyPackagesDelivered, metQuota);
                 }
                 else
                 {
-                    endOfDayPopupShown = false;
+                    uiController?.ShowDayEndSummary(earnedToday, newBanked, dailyPackagesDelivered, metQuota, hostHasControl);
                 }
 
-                IsGameplayActive = false;
+                endOfDayPopupShown = true;
 
-                if (IsServerOrStandalone && !metQuota)
-                {
-                    TriggerLoseCondition();
-                }
+                // IMPORTANT: Do NOT call TriggerLoseCondition() here.
+                // We want the popup to remain visible; host click will send everyone to lobby.
             };
 
             timer.OnDayTimerAboutToExpire += _onDayTimerAboutToExpireHandler;
@@ -334,6 +346,10 @@ public class GameManager : MonoBehaviour
     {
         if (!IsServerOrStandalone) return;
 
+        // If the day ended in failure, "Next Day" should not do anything.
+        if (_pendingLossReturnToLobby)
+            return;
+
         uiController.HideDayEndSummary();
         endOfDayPopupShown = false;
 
@@ -344,6 +360,15 @@ public class GameManager : MonoBehaviour
     {
         if (!IsServerOrStandalone) return;
 
+        // If we lost, Restart should return everyone to lobby (end game).
+        if (_pendingLossReturnToLobby)
+        {
+            _pendingLossReturnToLobby = false;
+            TriggerLoseCondition();
+            return;
+        }
+
+        // Otherwise it's a normal "restart run" behavior on success.
         uiController.HideDayEndSummary();
         ResetRun();
         dailyPackagesDelivered = 0;
@@ -422,6 +447,7 @@ public class GameManager : MonoBehaviour
         currentDayTargetMoney = GetTargetMoney();
         dailyPackagesDelivered = 0;
         endOfDayPopupShown = false;
+        _pendingLossReturnToLobby = false;
 
         IsGameplayActive = true;
 
@@ -457,6 +483,7 @@ public class GameManager : MonoBehaviour
         endOfDayPopupShown = false;
         dailyPackagesDelivered = 0;
         lastSpawnedDay = -1;
+        _pendingLossReturnToLobby = false;
 
         // Reset Money/Day/Target completely (day -> 0, earnings -> startingMoney, banked -> 0)
         if (moneyTargetManager != null)

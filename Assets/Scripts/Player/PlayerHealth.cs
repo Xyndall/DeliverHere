@@ -15,15 +15,37 @@ public class PlayerHealth : MonoBehaviour, IPlayerDamageable
     [Header("Damage Cooldown")]
     [SerializeField] private float damageCooldownSeconds = 0.5f;
 
+    [Header("Upgradable Stats")]
+    [SerializeField] private PlayerUpgradableStats upgradableStats;
+
     // Fired exactly once per death before respawn handling.
     public event Action<PlayerHealth> OnDied;
 
     private float _nextDamageAllowedTime = 0f;
 
+    private int ResolvedMaxHealth => upgradableStats != null ? upgradableStats.MaxHealth : maxHealth;
+
     private void Awake()
     {
-        currentHealth = maxHealth;
+        if (upgradableStats == null) upgradableStats = GetComponent<PlayerUpgradableStats>();
+
+        currentHealth = ResolvedMaxHealth;
         _nextDamageAllowedTime = 0f;
+
+        if (upgradableStats != null)
+            upgradableStats.OnStatsChanged += OnStatsChanged;
+    }
+
+    private void OnDestroy()
+    {
+        if (upgradableStats != null)
+            upgradableStats.OnStatsChanged -= OnStatsChanged;
+    }
+
+    private void OnStatsChanged(PlayerUpgradableStats stats)
+    {
+        int newMax = ResolvedMaxHealth;
+        currentHealth = Mathf.Clamp(currentHealth, 0, newMax);
     }
 
     public void ApplyDamage(int amount, Vector3 hitPoint)
@@ -33,8 +55,6 @@ public class PlayerHealth : MonoBehaviour, IPlayerDamageable
         // Short cooldown: ignore damage until allowed again
         if (Time.time < _nextDamageAllowedTime)
         {
-            // Optional: uncomment if you want to log throttled hits
-            // Debug.Log($"{gameObject.name} damage ignored due to cooldown. Next allowed: {_nextDamageAllowedTime - Time.time:0.00}s");
             return;
         }
 
@@ -55,7 +75,7 @@ public class PlayerHealth : MonoBehaviour, IPlayerDamageable
 
         // For now: immediate respawn at a spawn point and restore health.
         RespawnAtSpawnPoint();
-        currentHealth = maxHealth;
+        currentHealth = ResolvedMaxHealth;
 
         // Reset cooldown to allow immediate post-respawn damage if needed
         _nextDamageAllowedTime = Time.time + damageCooldownSeconds;

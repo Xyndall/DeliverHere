@@ -17,6 +17,9 @@ public class PlayerHold : NetworkBehaviour
     [SerializeField] private float maxHoldDistance = 2.2f;
     [SerializeField] private float distanceChangeSpeed = 2f;
 
+    [Header("Upgradable Stats")]
+    [SerializeField] private PlayerUpgradableStats upgradableStats;
+
     [Header("Pickup")]
     [SerializeField] private LayerMask pickupMask = ~0;
     [SerializeField] private float pickupCastRadius = 0.15f;
@@ -123,7 +126,6 @@ public class PlayerHold : NetworkBehaviour
     [SerializeField] private float anchorPoseMinRotDeltaDeg = 0.5f;
 
     [Header("Input")]
-    [Tooltip("Centralized input controller on this player.")]
     [SerializeField] private PlayerInputController inputController;
 
     private readonly NetworkVariable<NetworkObjectReference> _heldRef =
@@ -204,7 +206,17 @@ public class PlayerHold : NetworkBehaviour
 
         _weightManager = GetComponent<PlayerWeightManager>();
         if (inputController == null) inputController = GetComponent<PlayerInputController>();
+        if (upgradableStats == null) upgradableStats = GetComponent<PlayerUpgradableStats>();
     }
+
+    private float HoldThrowMult => upgradableStats != null ? Mathf.Max(0.01f, upgradableStats.HoldAndThrowMultiplier) : 1f;
+
+    private float ResolvedMaxHoldDistance => maxHoldDistance * HoldThrowMult;
+    private float ResolvedDistanceChangeSpeed => distanceChangeSpeed * HoldThrowMult;
+
+    private float ResolvedReleaseForwardBoost => releaseForwardBoost * HoldThrowMult;
+    private float ResolvedMaxReleaseSpeed => maxReleaseSpeed * HoldThrowMult;
+    private float ResolvedReleaseAnchorVelScale => releaseAnchorVelScale * Mathf.Lerp(1f, 1.35f, Mathf.Clamp01(HoldThrowMult - 1f));
 
     public override void OnNetworkSpawn()
     {
@@ -244,8 +256,8 @@ public class PlayerHold : NetworkBehaviour
         float axis = inputController.ExtendInput;
         if (Mathf.Abs(axis) > 0.0001f)
         {
-            float delta = distanceChangeSpeed * Time.deltaTime;
-            _holdDistance = Mathf.Clamp(_holdDistance + axis * delta, minHoldDistance, maxHoldDistance);
+            float delta = ResolvedDistanceChangeSpeed * Time.deltaTime;
+            _holdDistance = Mathf.Clamp(_holdDistance + axis * delta, minHoldDistance, ResolvedMaxHoldDistance);
         }
 
         if (!inputController.InteractPressedThisFrame)
@@ -729,11 +741,13 @@ public class PlayerHold : NetworkBehaviour
         float anchorScale = Mathf.Lerp(1f, anchorVelMultiplierAtMaxMass, t);
         float forwardScale = Mathf.Lerp(1f, forwardBoostMultiplierAtMaxMass, t);
 
-        releaseVel += _anchorVel * releaseAnchorVelScale * anchorScale;
-        releaseVel += forward * releaseForwardBoost * forwardScale;
+        // Apply combined upgrade multipliers (simple)
+        releaseVel += _anchorVel * ResolvedReleaseAnchorVelScale * anchorScale;
+        releaseVel += forward * ResolvedReleaseForwardBoost * forwardScale;
 
-        if (maxReleaseSpeed > 0f && releaseVel.sqrMagnitude > maxReleaseSpeed * maxReleaseSpeed)
-            releaseVel = releaseVel.normalized * maxReleaseSpeed;
+        float clamp = ResolvedMaxReleaseSpeed;
+        if (clamp > 0f && releaseVel.sqrMagnitude > clamp * clamp)
+            releaseVel = releaseVel.normalized * clamp;
 
         ServerDropHeldInternal(releaseVel);
     }

@@ -1,25 +1,22 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
 namespace DeliverHere.Network
 {
-    /// <summary>
-    /// Server-authoritative reconnect handler:
-    /// - Tracks client disconnects / connects.
-    /// - On (re)connect, teleports player to a spawn point and pushes current game UI snapshot.
-    /// - Keeps HUD visibility consistent with GameManager.IsGameplayActive.
-    /// </summary>
     [DisallowMultipleComponent]
     public class PlayerReconnectHandler : NetworkBehaviour
     {
         private GameManager _gm;
         private NetworkGameState _netState;
 
-        // Cache last known spawn index assignment for clients (optional simple round-robin)
-        private int _nextSpawnIndex = 0;
-        private readonly Dictionary<ulong, int> _clientSpawnIndex = new();
+        [Header("Join Teleport")]
+        [Tooltip("Seconds to wait for the player's NetworkObject to spawn after connect.")]
+        [SerializeField] private float waitForPlayerSpawnTimeoutSeconds = 5f;
+
+        private readonly Dictionary<ulong, Coroutine> _pending = new();
 
         private void Awake()
         {
@@ -31,34 +28,40 @@ namespace DeliverHere.Network
         {
             if (!IsServer) return;
 
-            // Subscribe to Netcode client lifecycle
             NetworkManager.OnClientConnectedCallback += OnClientConnected;
             NetworkManager.OnClientDisconnectCallback += OnClientDisconnected;
         }
 
         public override void OnDestroy()
         {
-            // Unsubscribe safely and call base
             if (NetworkManager != null)
             {
                 NetworkManager.OnClientConnectedCallback -= OnClientConnected;
                 NetworkManager.OnClientDisconnectCallback -= OnClientDisconnected;
             }
 
+            foreach (var kvp in _pending)
+            {
+                if (kvp.Value != null)
+                    StopCoroutine(kvp.Value);
+            }
+            _pending.Clear();
+
             base.OnDestroy();
         }
 
         private void OnClientDisconnected(ulong clientId)
         {
-            // Cleanup any cached mapping if desired
-            _clientSpawnIndex.Remove(clientId);
+            if (_pending.TryGetValue(clientId, out var co) && co != null)
+                StopCoroutine(co);
+
+            _pending.Remove(clientId);
         }
 
         private void OnClientConnected(ulong clientId)
         {
             if (!IsServer) return;
 
-            // 1) Ensure references
             if (_gm == null) _gm = GameManager.Instance ?? FindFirstObjectByType<GameManager>();
             if (_netState == null) _netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
             if (_gm == null || _netState == null)
@@ -67,61 +70,71 @@ namespace DeliverHere.Network
                 return;
             }
 
-            // 2) Find the player's NetworkObject (owner-authoritative PlayerMovement)
-            var players = FindObjectsByType<PlayerMovement>(FindObjectsSortMode.None);
-            NetworkObject ownedPlayerNetObj = null;
-            foreach (var pm in players)
+            if (_pending.TryGetValue(clientId, out var existing) && existing != null)
+                StopCoroutine(existing);
+
+            _pending[clientId] = StartCoroutine(WaitForPlayerThenTeleportAndSync(clientId));
+        }
+
+        private IEnumerator WaitForPlayerThenTeleportAndSync(ulong clientId)
+        {
+            float deadline = Time.realtimeSinceStartup + Mathf.Max(0.1f, waitForPlayerSpawnTimeoutSeconds);
+
+            NetworkObject playerNetObj = null;
+
+            while (Time.realtimeSinceStartup < deadline)
             {
-                if (pm == null) continue;
-                var netObj = pm.GetComponent<NetworkObject>();
-                if (netObj != null && netObj.IsSpawned && netObj.OwnerClientId == clientId)
+                if (NetworkManager != null &&
+                    NetworkManager.ConnectedClients != null &&
+                    NetworkManager.ConnectedClients.TryGetValue(clientId, out var cc) &&
+                    cc != null &&
+                    cc.PlayerObject != null)
                 {
-                    ownedPlayerNetObj = netObj;
+                    playerNetObj = cc.PlayerObject;
                     break;
                 }
+
+                yield return null;
             }
 
-            // 3) Determine a spawn transform
-            var spawnPoints = _gm.PlayerSpawnPoints;
-            Transform spawn = null;
-            if (spawnPoints != null && spawnPoints.Count > 0)
+            _pending.Remove(clientId);
+
+            if (playerNetObj == null)
             {
-                int index;
-                if (!_clientSpawnIndex.TryGetValue(clientId, out index))
-                {
-                    index = _nextSpawnIndex % spawnPoints.Count;
-                    _clientSpawnIndex[clientId] = index;
-                    _nextSpawnIndex++;
-                }
-
-                // Prefer active spawn; fallback to index rotation
-                var active = new List<Transform>();
-                foreach (var t in spawnPoints)
-                {
-                    if (t != null && t.gameObject.activeInHierarchy) active.Add(t);
-                }
-                var source = active.Count > 0 ? active : spawnPoints;
-                spawn = source[index % source.Count];
+                Debug.LogWarning($"[PlayerReconnectHandler] Timed out waiting for player object for client {clientId}; cannot teleport.");
+                yield break;
             }
-            if (spawn == null) spawn = _gm.transform;
 
-            // 4) Teleport the player (if we found them)
-            if (ownedPlayerNetObj != null)
+            // If gameplay is already active, DO NOT hub-teleport here.
+            // StartGame/PositionPlayersToSpawnPoints is responsible for the game-start teleport.
+            if (_netState != null && _netState.LocalGameState == GameState.InGame)
             {
-                try
+                PushSnapshotToClient(clientId);
+
+                SetHudVisibilityClientRpc(_gm.IsGameplayActive, new ClientRpcParams
                 {
-                    _netState.ServerRequestOwnerTeleport(ownedPlayerNetObj, spawn.position, spawn.rotation);
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogException(ex);
-                }
+                    Send = new ClientRpcSendParams
+                    {
+                        TargetClientIds = new[] { clientId }
+                    }
+                });
+
+                yield break;
             }
 
-            // 5) Push gameplay/UI snapshot to the reconnecting client
+            // Teleport after spawn to hub/default spawn (Lobby/Loading/etc.)
+            var spawn = _netState.DefaultSpawnPoint != null ? _netState.DefaultSpawnPoint : _netState.transform;
+            try
+            {
+                _netState.ServerRequestOwnerTeleport(playerNetObj, spawn.position, spawn.rotation);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+
             PushSnapshotToClient(clientId);
 
-            // 6) Ensure HUD visibility matches current gameplay state for this client
             SetHudVisibilityClientRpc(_gm.IsGameplayActive, new ClientRpcParams
             {
                 Send = new ClientRpcSendParams
@@ -133,7 +146,6 @@ namespace DeliverHere.Network
 
         private void PushSnapshotToClient(ulong clientId)
         {
-            // Gather current game values
             var currentMoney = _gm.GetCurrentMoney();
             var targetMoney = _gm.GetTargetMoney();
             var bankedMoney = _gm.GetBankedMoney();
@@ -152,7 +164,6 @@ namespace DeliverHere.Network
         [ClientRpc]
         private void ApplyUiSnapshotClientRpc(int currentMoney, int targetMoney, int bankedMoney, int day, float progress, ClientRpcParams clientRpcParams = default)
         {
-            // Client-side UI sync. This runs on the reconnecting client.
             var gm = GameManager.Instance ?? FindFirstObjectByType<GameManager>();
             var ui = gm != null ? GetUi(gm) : null;
             if (gm == null || ui == null) return;
@@ -186,7 +197,6 @@ namespace DeliverHere.Network
 
         private GameUIController GetUi(GameManager gm)
         {
-            // GameManager already maintains the UIController; use it if present
             var uiField = typeof(GameManager).GetField("uiController", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
             var ui = uiField?.GetValue(gm) as GameUIController;
             if (ui == null) ui = FindFirstObjectByType<GameUIController>();
