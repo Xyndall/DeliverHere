@@ -106,11 +106,8 @@ namespace DeliverHere.Network
             }
 
             // If gameplay is already active, DO NOT hub-teleport here.
-            // StartGame/PositionPlayersToSpawnPoints is responsible for the game-start teleport.
             if (_netState != null && _netState.LocalGameState == GameState.InGame)
             {
-                PushSnapshotToClient(clientId);
-
                 SetHudVisibilityClientRpc(_gm.IsGameplayActive, new ClientRpcParams
                 {
                     Send = new ClientRpcSendParams
@@ -133,8 +130,8 @@ namespace DeliverHere.Network
                 Debug.LogException(ex);
             }
 
-            PushSnapshotToClient(clientId);
-
+            // Money/target/day UI is now driven from MoneyTargetManager NetworkVariables.
+            // We only ensure HUD visibility state for the reconnecting client.
             SetHudVisibilityClientRpc(_gm.IsGameplayActive, new ClientRpcParams
             {
                 Send = new ClientRpcSendParams
@@ -142,36 +139,6 @@ namespace DeliverHere.Network
                     TargetClientIds = new[] { clientId }
                 }
             });
-        }
-
-        private void PushSnapshotToClient(ulong clientId)
-        {
-            var currentMoney = _gm.GetCurrentMoney();
-            var targetMoney = _gm.GetTargetMoney();
-            var bankedMoney = _gm.GetBankedMoney();
-            var day = _gm.GetCurrentDay();
-            var progress = _gm.GetProgress();
-
-            ApplyUiSnapshotClientRpc(currentMoney, targetMoney, bankedMoney, day, progress, new ClientRpcParams
-            {
-                Send = new ClientRpcSendParams
-                {
-                    TargetClientIds = new[] { clientId }
-                }
-            });
-        }
-
-        [ClientRpc]
-        private void ApplyUiSnapshotClientRpc(int currentMoney, int targetMoney, int bankedMoney, int day, float progress, ClientRpcParams clientRpcParams = default)
-        {
-            var gm = GameManager.Instance ?? FindFirstObjectByType<GameManager>();
-            var ui = gm != null ? GetUi(gm) : null;
-            if (gm == null || ui == null) return;
-
-            ui.SetDay(day);
-            ui.SetTarget(targetMoney);
-            ui.SetDailyEarnings(currentMoney, targetMoney, progress);
-            ui.SetBankedMoney(bankedMoney);
         }
 
         [ClientRpc]

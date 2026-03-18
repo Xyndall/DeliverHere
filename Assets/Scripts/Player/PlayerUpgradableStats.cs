@@ -205,7 +205,7 @@ public class PlayerUpgradableStats : NetworkBehaviour
         ApplyUpgradeServerRpc(type, addDeltaMultiplier);
     }
 
-    [ServerRpc(RequireOwnership = true)]
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Owner)]
     private void ApplyUpgradeServerRpc(UpgradeType type, float addDeltaMultiplier)
     {
         ServerApplyUpgradeInternal(type, addDeltaMultiplier);

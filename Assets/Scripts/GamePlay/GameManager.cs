@@ -4,7 +4,7 @@ using Unity.Netcode;
 using UnityEngine;
 using DeliverHere.GamePlay;
 
-public class GameManager : MonoBehaviour
+public class GameManager : NetworkBehaviour
 {
     public static GameManager Instance { get; private set; }
 
@@ -15,7 +15,6 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameTimer gameTimer;
     [SerializeField] private UIStateManager uiStateManager;
 
-    // New: persistent scene flow references (assign in inspector or auto-wire)
     [SerializeField] private LevelLoader levelLoader;
     [SerializeField] private LevelFlowController levelFlow;
 
@@ -64,6 +63,71 @@ public class GameManager : MonoBehaviour
         }
         Instance = this;
     }
+
+    // -------------------- NEW: Client -> Server money routing --------------------
+
+    public void AddMoney(int amount)
+    {
+        if (moneyTargetManager == null) return;
+
+        if (IsServerOrStandalone)
+        {
+            moneyTargetManager.AddMoney(amount);
+            return;
+        }
+
+        RequestAddMoneyServerRpc(amount);
+    }
+
+    public void RemoveMoney(int amount)
+    {
+        if (moneyTargetManager == null) return;
+
+        if (IsServerOrStandalone)
+        {
+            moneyTargetManager.RemoveMoney(amount);
+            return;
+        }
+
+        RequestRemoveMoneyServerRpc(amount);
+    }
+
+    public bool SpendBanked(int amount)
+    {
+        if (moneyTargetManager == null) return false;
+
+        if (IsServerOrStandalone)
+        {
+            return moneyTargetManager.SpendBanked(amount);
+        }
+
+        // Client can't know the result synchronously; treat as "requested".
+        RequestSpendBankedServerRpc(amount);
+        return true;
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void RequestAddMoneyServerRpc(int amount)
+    {
+        if (moneyTargetManager == null) return;
+        moneyTargetManager.AddMoney(amount);
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void RequestRemoveMoneyServerRpc(int amount)
+    {
+        if (moneyTargetManager == null) return;
+        moneyTargetManager.RemoveMoney(amount);
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void RequestSpendBankedServerRpc(int amount)
+    {
+        if (moneyTargetManager == null) return;
+        moneyTargetManager.SpendBanked(amount);
+    }
+
+    // ---------------------------------------------------------------------------
 
     private void OnEnable()
     {
@@ -377,9 +441,6 @@ public class GameManager : MonoBehaviour
         moneyTargetManager?.AdvanceDay();
     }
 
-    public void AddMoney(int amount) => moneyTargetManager.AddMoney(amount);
-    public void RemoveMoney(int amount) => moneyTargetManager.RemoveMoney(amount);
-    public bool SpendBanked(int amount) => moneyTargetManager != null && moneyTargetManager.SpendBanked(amount);
     public void AdvanceDay() => moneyTargetManager.AdvanceDay();
     public void AdvanceDays(int days) => moneyTargetManager?.AdvanceDays(days);
 

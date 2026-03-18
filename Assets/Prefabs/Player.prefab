@@ -24,8 +24,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1375582362789782630}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.048430204, y: -0.0000002381388, z: 0.000000011546545, w: 0.99882656}
-  m_LocalPosition: {x: 0, y: 0.05861371, z: 1.7656429}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.2, z: 1.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -342,7 +342,6 @@ GameObject:
   - component: {fileID: 1258810096796857199}
   - component: {fileID: 276092387163634943}
   - component: {fileID: 2250398095121221054}
-  - component: {fileID: 2317586595272727960}
   - component: {fileID: 8983411890034586755}
   - component: {fileID: 6973779642205995826}
   - component: {fileID: 1475519795983829273}
@@ -352,6 +351,7 @@ GameObject:
   - component: {fileID: 4770098715712413576}
   - component: {fileID: 1314525665084999406}
   - component: {fileID: -7515118946062083735}
+  - component: {fileID: 5444711449975326875}
   m_Layer: 9
   m_Name: Player
   m_TagString: Untagged
@@ -450,7 +450,7 @@ MonoBehaviour:
   regenDelay: 0.75
   jumpCost: 18
   cameraTransform: {fileID: 0}
-  upgradableStats: {fileID: 0}
+  upgradableStats: {fileID: -7515118946062083735}
   playerHold: {fileID: 1258810096796857199}
   speedMultiplierAtMaxPenalty: 0.55
   rotateLerpMultiplierAtMaxPenalty: 0.4
@@ -586,7 +586,7 @@ MonoBehaviour:
   minHoldDistance: 0.8
   maxHoldDistance: 0.8
   distanceChangeSpeed: 10
-  upgradableStats: {fileID: 0}
+  upgradableStats: {fileID: -7515118946062083735}
   pickupMask:
     serializedVersion: 2
     m_Bits: 64
@@ -675,25 +675,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &2317586595272727960
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6903841455120555681}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f0a9b229e310f0a4d83b7131bd4006a0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PlayerArms
-  playerHold: {fileID: 1258810096796857199}
-  defaultLocalOffset: {x: 0, y: -0.15, z: 0}
-  handHorizontalSeparation: 0.25
-  verticalOffset: 0
-  holdIKWeight: 1
-  blendSpeed: 6
-  applyRotation: 1
 --- !u!114 &8983411890034586755
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -710,7 +691,7 @@ MonoBehaviour:
   baseBodyMassKg: 75
   baseEquipmentMassKg: 5
   armStrengthKg: 15
-  upgradableStats: {fileID: 0}
+  upgradableStats: {fileID: -7515118946062083735}
   heldMassSmoothTime: 0.12
   speedMultiplierAtMin: 1
   speedMultiplierWhenOverloaded: 0.05
@@ -798,7 +779,7 @@ MonoBehaviour:
   maxHealth: 100
   currentHealth: 0
   damageCooldownSeconds: 0.5
-  upgradableStats: {fileID: 0}
+  upgradableStats: {fileID: -7515118946062083735}
 --- !u!114 &8858736425540183297
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -834,28 +815,7 @@ MonoBehaviour:
   NetworkAnimatorExpanded: 0
   AuthorityMode: 0
   m_Animator: {fileID: 6262845754777164797}
-  TransitionStateInfoList:
-  - IsCrossFadeExit: 0
-    Layer: 0
-    OriginatingState: 507162704
-    DestinationState: 1999428109
-    TransitionDuration: 0.25
-    TriggerNameHash: 125937960
-    TransitionIndex: 0
-  - IsCrossFadeExit: 0
-    Layer: 0
-    OriginatingState: 1744665739
-    DestinationState: 1999428109
-    TransitionDuration: 0.25
-    TriggerNameHash: 125937960
-    TransitionIndex: 2
-  - IsCrossFadeExit: 0
-    Layer: 0
-    OriginatingState: 1748754976
-    DestinationState: 1999428109
-    TransitionDuration: 0.25
-    TriggerNameHash: 125937960
-    TransitionIndex: 2
+  TransitionStateInfoList: []
   AnimatorParameterEntries:
     ParameterEntries:
     - name: MoveSpeed
@@ -930,6 +890,26 @@ MonoBehaviour:
   initialHoldAndThrowMultiplier: 1
   minMultiplier: 0.25
   maxMultiplier: 5
+--- !u!114 &5444711449975326875
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09c4d9aa330268746b81437b272f290b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerUpgradeInteractor
+  ShowTopMostFoldoutHeaderGroup: 1
+  cameraTransform: {fileID: 0}
+  pickupMask:
+    serializedVersion: 2
+    m_Bits: 1024
+  pickupCastRadius: 0.12
+  pickupRange: 3
+  showUiPrompt: 1
 --- !u!1001 &540586581813028460
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -999,6 +979,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 9100000, guid: d3f0208e679bb664fae457d305d2203e, type: 2}
     - target: {fileID: 5866666021909216657, guid: 604832db20532d24f8564f68f69765eb, type: 3}
+      propertyPath: m_CullingMode
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 604832db20532d24f8564f68f69765eb, type: 3}
       propertyPath: m_ApplyRootMotion
       value: 0
       objectReference: {fileID: 0}
@@ -1008,13 +992,44 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -3052476751237913372, guid: 604832db20532d24f8564f68f69765eb, type: 3}
       insertIndex: -1
       addedObject: {fileID: 6549395347151475205}
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 604832db20532d24f8564f68f69765eb, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 5391487942581311530}
   m_SourcePrefab: {fileID: 100100000, guid: 604832db20532d24f8564f68f69765eb, type: 3}
 --- !u!4 &2873971828818311 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 604832db20532d24f8564f68f69765eb, type: 3}
   m_PrefabInstance: {fileID: 540586581813028460}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &811181677895473981 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 604832db20532d24f8564f68f69765eb, type: 3}
+  m_PrefabInstance: {fileID: 540586581813028460}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &5391487942581311530
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 811181677895473981}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f0a9b229e310f0a4d83b7131bd4006a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerArms
+  playerHold: {fileID: 1258810096796857199}
+  gripCenterName: GripCenter
+  leftGripName: LeftGrip
+  rightGripName: RightGrip
+  defaultLocalOffset: {x: 0, y: -0.15, z: 0}
+  handHorizontalSeparation: 0.25
+  verticalOffset: 0
+  holdIKWeight: 1
+  blendSpeed: 8
+  applyRotation: 1
+  logMissingAnimatorIKSupport: 1
 --- !u!4 &5918820834442314376 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -3052476751237913372, guid: 604832db20532d24f8564f68f69765eb, type: 3}

@@ -1,7 +1,8 @@
 using System;
+using Unity.Netcode;
 using UnityEngine;
 
-public class MoneyTargetManager : MonoBehaviour
+public class MoneyTargetManager : NetworkBehaviour
 {
     public enum GrowthMode
     {
@@ -35,14 +36,15 @@ public class MoneyTargetManager : MonoBehaviour
     [Tooltip("Hard cap for TargetMoney after increases. 0 means no cap.")]
     [SerializeField] private int maxTargetMoneyCap = 0;
 
-    // Daily earnings (resets each day)
-    private int currentMoney;
+    // Replicated money values (server authoritative)
+    private readonly NetworkVariable<int> nvCurrentMoney =
+        new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    // Cumulative money carried across days for spending
-    private int bankedMoney;
+    private readonly NetworkVariable<int> nvBankedMoney =
+        new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private bool targetReached;
-    private int currentDay; // Day counter, starts at 0 on Awake. First AdvanceDay() -> day 1.
+    private int currentDay; // Still local/server-driven in this class (NetworkGameState mirrors it anyway)
 
     // Cache of the initial target to restore on ResetProgress
     private int initialTargetMoney;
@@ -70,9 +72,9 @@ public class MoneyTargetManager : MonoBehaviour
         }
     }
 
-    public int CurrentMoney => currentMoney;
-    public int BankedMoney => bankedMoney;
-    public float Progress => targetMoney <= 0 ? 1f : Mathf.Clamp01((float)currentMoney / targetMoney);
+    public int CurrentMoney => nvCurrentMoney.Value;
+    public int BankedMoney => nvBankedMoney.Value;
+    public float Progress => targetMoney <= 0 ? 1f : Mathf.Clamp01((float)CurrentMoney / targetMoney);
     public bool IsTargetReached => targetReached;
     public int CurrentDay => currentDay;
 
@@ -80,12 +82,46 @@ public class MoneyTargetManager : MonoBehaviour
     {
         // Cache the initial configured target before any resets
         initialTargetMoney = targetMoney;
+    }
 
-        ResetProgress();
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+
+        nvCurrentMoney.OnValueChanged += OnNvCurrentMoneyChanged;
+        nvBankedMoney.OnValueChanged += OnNvBankedMoneyChanged;
+
+        // Push initial state to listeners (useful for late join + UI init)
+        OnMoneyChanged?.Invoke(nvCurrentMoney.Value);
+        OnBankedMoneyChanged?.Invoke(nvBankedMoney.Value);
+
+        // Only the server should run initial reset to avoid clients attempting to write server-only NVs.
+        if (IsServer)
+            ResetProgress();
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        nvCurrentMoney.OnValueChanged -= OnNvCurrentMoneyChanged;
+        nvBankedMoney.OnValueChanged -= OnNvBankedMoneyChanged;
+
+        base.OnNetworkDespawn();
+    }
+
+    private void OnNvCurrentMoneyChanged(int previous, int current)
+    {
+        OnMoneyChanged?.Invoke(current);
+        EvaluateTargetReached();
+    }
+
+    private void OnNvBankedMoneyChanged(int previous, int current)
+    {
+        OnBankedMoneyChanged?.Invoke(current);
     }
 
     public void AddMoney(int amount)
     {
+        if (!IsServer) return;
         if (amount == 0) return;
 
         if (amount < 0)
@@ -94,29 +130,28 @@ public class MoneyTargetManager : MonoBehaviour
             return;
         }
 
-        long sum = (long)currentMoney + amount;
+        long sum = (long)nvCurrentMoney.Value + amount;
         int newValue = (int)Mathf.Clamp(sum, 0, int.MaxValue);
 
-        if (newValue == currentMoney) return;
+        if (newValue == nvCurrentMoney.Value) return;
 
-        currentMoney = newValue;
-        OnMoneyChanged?.Invoke(currentMoney);
-        EvaluateTargetReached();
+        nvCurrentMoney.Value = newValue;
+        // Events fire through OnValueChanged callback.
     }
 
     public void RemoveMoney(int amount)
     {
+        if (!IsServer) return;
         if (amount <= 0) return;
 
-        int newValue = Mathf.Max(0, currentMoney - amount);
+        int newValue = Mathf.Max(0, nvCurrentMoney.Value - amount);
         bool wasReached = targetReached;
 
-        if (newValue == currentMoney) return;
+        if (newValue == nvCurrentMoney.Value) return;
 
-        currentMoney = newValue;
-        OnMoneyChanged?.Invoke(currentMoney);
+        nvCurrentMoney.Value = newValue;
 
-        if (wasReached && currentMoney < targetMoney)
+        if (wasReached && nvCurrentMoney.Value < targetMoney)
         {
             targetReached = false;
         }
@@ -124,47 +159,46 @@ public class MoneyTargetManager : MonoBehaviour
 
     public bool SpendBanked(int amount)
     {
+        if (!IsServer) return false;
         if (amount <= 0) return false;
-        if (bankedMoney < amount) return false;
+        if (nvBankedMoney.Value < amount) return false;
 
-        bankedMoney -= amount;
-        OnBankedMoneyChanged?.Invoke(bankedMoney);
+        nvBankedMoney.Value -= amount;
         return true;
     }
 
     public void SetMoney(int value)
     {
-        int newValue = Mathf.Max(0, value);
-        if (newValue == currentMoney) return;
+        if (!IsServer) return;
 
-        currentMoney = newValue;
-        OnMoneyChanged?.Invoke(currentMoney);
-        EvaluateTargetReached();
+        int newValue = Mathf.Max(0, value);
+        if (newValue == nvCurrentMoney.Value) return;
+
+        nvCurrentMoney.Value = newValue;
     }
 
     public void SetBankedMoney(int value)
     {
-        int newValue = Mathf.Max(0, value);
-        if (newValue == bankedMoney) return;
+        if (!IsServer) return;
 
-        bankedMoney = newValue;
-        OnBankedMoneyChanged?.Invoke(bankedMoney);
+        int newValue = Mathf.Max(0, value);
+        if (newValue == nvBankedMoney.Value) return;
+
+        nvBankedMoney.Value = newValue;
     }
 
     public void ResetProgress()
     {
+        if (!IsServer) return;
+
         // Restore target to its initial configured value first
         TargetMoney = initialTargetMoney;
 
-        // Reset earnings/banked/day state
-        currentMoney = Mathf.Max(0, startingMoney);
-        bankedMoney = 0;
+        nvCurrentMoney.Value = Mathf.Max(0, startingMoney);
+        nvBankedMoney.Value = 0;
+
         targetReached = false;
         currentDay = 0;
-
-        // Notify listeners for UI sync
-        OnMoneyChanged?.Invoke(currentMoney);
-        OnBankedMoneyChanged?.Invoke(bankedMoney);
 
         EvaluateTargetReached();
     }
@@ -176,21 +210,23 @@ public class MoneyTargetManager : MonoBehaviour
 
     public void AdvanceDays(int days)
     {
+        if (!IsServer) return;
         if (days <= 0) return;
 
         for (int i = 0; i < days; i++)
         {
-            if (currentMoney > 0)
+            if (nvCurrentMoney.Value > 0)
             {
-                long sum = (long)bankedMoney + currentMoney;
-                bankedMoney = (int)Mathf.Clamp(sum, 0, int.MaxValue);
-                OnDailyEarningsBanked?.Invoke(bankedMoney, currentMoney);
-                OnBankedMoneyChanged?.Invoke(bankedMoney);
+                long sum = (long)nvBankedMoney.Value + nvCurrentMoney.Value;
+                nvBankedMoney.Value = (int)Mathf.Clamp(sum, 0, int.MaxValue);
+
+                OnDailyEarningsBanked?.Invoke(nvBankedMoney.Value, nvCurrentMoney.Value);
+                // OnBankedMoneyChanged fires via NV callback.
             }
 
-            currentMoney = 0;
+            nvCurrentMoney.Value = 0;
             targetReached = false;
-            OnMoneyChanged?.Invoke(currentMoney);
+            // OnMoneyChanged fires via NV callback.
 
             currentDay++;
 
@@ -257,12 +293,12 @@ public class MoneyTargetManager : MonoBehaviour
 
     private void EvaluateTargetReached()
     {
-        if (!targetReached && (targetMoney == 0 || currentMoney >= targetMoney))
+        if (!targetReached && (targetMoney == 0 || nvCurrentMoney.Value >= targetMoney))
         {
             targetReached = true;
             OnTargetReached?.Invoke();
         }
-        else if (targetReached && currentMoney < targetMoney)
+        else if (targetReached && nvCurrentMoney.Value < targetMoney)
         {
             targetReached = false;
         }

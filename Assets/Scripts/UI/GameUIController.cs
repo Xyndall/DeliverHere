@@ -19,6 +19,9 @@ public class GameUIController : MonoBehaviour
     [Header("HUD - Stamina")]
     [SerializeField] private Slider staminaSlider;
 
+    [Header("HUD - Interaction Prompt (Upgrades)")]
+    [SerializeField] private TMP_Text upgradePromptText;
+
     [Header("Panels")]
     [SerializeField] private GameObject winPanel;
     [SerializeField] private GameObject dayEndSummaryPanel;
@@ -43,6 +46,7 @@ public class GameUIController : MonoBehaviour
         HideHUD();
         HideDayEndSummary();
         HideWinPanel();
+        ClearUpgradePrompt();
 
         if (staminaSlider != null)
         {
@@ -84,6 +88,27 @@ public class GameUIController : MonoBehaviour
         float current = Mathf.Clamp(_localPlayerMovement.Stamina.Value, 0f, max);
         staminaSlider.value = current / max;
     }
+
+    // NEW: upgrade prompt UI ---------------------------------------------
+
+    public void SetUpgradePrompt(string text)
+    {
+        if (upgradePromptText == null) return;
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            upgradePromptText.gameObject.SetActive(false);
+            upgradePromptText.text = "";
+            return;
+        }
+
+        upgradePromptText.gameObject.SetActive(true);
+        upgradePromptText.text = text;
+    }
+
+    public void ClearUpgradePrompt() => SetUpgradePrompt(null);
+
+    // -------------------------------------------------------------------
 
     // Set button callbacks (called by GameManager after it sets itself up)
     public void ConfigureDayEndButtons(System.Action onNextDay, System.Action onRestart)
@@ -162,9 +187,6 @@ public class GameUIController : MonoBehaviour
     {
         isPaused = !isPaused;
 
-        // Cursor behavior:
-        // - Paused   => cursor visible + unlocked
-        // - Unpaused => cursor hidden + locked
         Cursor.visible = isPaused;
         Cursor.lockState = isPaused ? CursorLockMode.None : CursorLockMode.Locked;
 

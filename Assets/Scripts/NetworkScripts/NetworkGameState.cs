@@ -33,31 +33,25 @@ public class NetworkGameState : NetworkBehaviour
 
     public event Action<bool> OnGameStartedChangedEvent;
 
-    // NEW: local state exposure for client-side systems (input, cameras, etc.)
+    // Local state exposure for client-side systems (input, cameras, etc.)
     public event Action<GameState> OnLocalGameStateChanged;
     public GameState LocalGameState => nvGameState.Value;
 
     private readonly NetworkVariable<bool> gameStarted = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    // NEW: replicate high-level UI/game flow state to all clients
+    // Replicate high-level UI/game flow state to all clients
     private readonly NetworkVariable<GameState> nvGameState = new NetworkVariable<GameState>(
         GameState.MainMenu, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    // NEW: replicate pause flag (separate from state to match UIStateManager API)
+    // Replicate pause flag
     private readonly NetworkVariable<bool> nvPaused = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    private readonly NetworkVariable<int> nvCurrentMoney = new NetworkVariable<int>(
-        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-    private readonly NetworkVariable<int> nvBankedMoney = new NetworkVariable<int>(
-        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-    private readonly NetworkVariable<int> nvTargetMoney = new NetworkVariable<int>(
-        0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    // Keep day + timer replicated here (money is replicated by MoneyTargetManager)
     private readonly NetworkVariable<int> nvCurrentDay = new NetworkVariable<int>(
         0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-    private readonly NetworkVariable<float> nvProgress = new NetworkVariable<float>(
-        0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
     private readonly NetworkVariable<float> nvTimerProgress = new NetworkVariable<float>(
         0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
@@ -112,25 +106,22 @@ public class NetworkGameState : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        // Bind UI updates on clients
-        nvCurrentMoney.OnValueChanged += (_, v) => uiController.SetDailyEarnings(v, nvTargetMoney.Value, nvProgress.Value);
-        nvBankedMoney.OnValueChanged += (_, v) => uiController.SetBankedMoney(v);
-        nvTargetMoney.OnValueChanged += (_, v) =>
-        {
-            uiController.SetTarget(v);
-            uiController.SetDailyEarnings(nvCurrentMoney.Value, v, nvProgress.Value);
-        };
+        base.OnNetworkSpawn();
+
+        // Money UI is driven by MoneyTargetManager NetworkVariables + events (Option B)
+        BindMoneyUi();
+
+        // Day UI
         nvCurrentDay.OnValueChanged += (_, v) =>
         {
-            uiController.SetDay(v);
-            uiController.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, nvProgress.Value);
-        };
-        nvProgress.OnValueChanged += (_, v) =>
-        {
-            uiController.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, v);
+            uiController?.SetDay(v);
+            if (moneyTargetManager != null && uiController != null)
+            {
+                uiController.SetDailyEarnings(moneyTargetManager.CurrentMoney, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
+            }
         };
 
-        // NEW: drive UIStateManager from replicated state
+        // Drive UIStateManager from replicated state
         nvGameState.OnValueChanged += (_, s) =>
         {
             ApplyUiStateToLocal(s, nvPaused.Value);
@@ -151,19 +142,81 @@ public class NetworkGameState : NetworkBehaviour
             }
         };
 
-        // Push initial snapshot
-        if (IsServer)
-        {
-            ServerPushSnapshot();
-        }
-        else
+        // Push initial local state event so systems see current state on spawn
+        OnLocalGameStateChanged?.Invoke(nvGameState.Value);
+
+        // Client UI initial push (server doesn't need this; it already has the objects)
+        if (!IsServer)
         {
             ApplyAllToClientUI();
             ApplyUiStateToLocal(nvGameState.Value, nvPaused.Value);
         }
+        else
+        {
+            ServerPushSnapshot();
+        }
+    }
 
-        // Ensure local listeners (like PlayerInputController) see the initial state too
-        OnLocalGameStateChanged?.Invoke(nvGameState.Value);
+    public override void OnNetworkDespawn()
+    {
+        try
+        {
+            if (moneyTargetManager != null)
+            {
+                moneyTargetManager.OnMoneyChanged -= OnMoneyChangedUi;
+                moneyTargetManager.OnBankedMoneyChanged -= OnBankedMoneyChangedUi;
+                moneyTargetManager.OnTargetChanged -= OnTargetChangedUi;
+            }
+        }
+        finally
+        {
+            base.OnNetworkDespawn();
+        }
+    }
+
+    private void BindMoneyUi()
+    {
+        if (uiController == null)
+            uiController = FindFirstObjectByType<GameUIController>();
+
+        if (moneyTargetManager == null)
+            moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
+
+        if (uiController == null || moneyTargetManager == null)
+            return;
+
+        // Avoid duplicate subscription
+        moneyTargetManager.OnMoneyChanged -= OnMoneyChangedUi;
+        moneyTargetManager.OnBankedMoneyChanged -= OnBankedMoneyChangedUi;
+        moneyTargetManager.OnTargetChanged -= OnTargetChangedUi;
+
+        moneyTargetManager.OnMoneyChanged += OnMoneyChangedUi;
+        moneyTargetManager.OnBankedMoneyChanged += OnBankedMoneyChangedUi;
+        moneyTargetManager.OnTargetChanged += OnTargetChangedUi;
+
+        // Initial push
+        uiController.SetDay(moneyTargetManager.CurrentDay);
+        uiController.SetTarget(moneyTargetManager.TargetMoney);
+        uiController.SetDailyEarnings(moneyTargetManager.CurrentMoney, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
+        uiController.SetBankedMoney(moneyTargetManager.BankedMoney);
+    }
+
+    private void OnMoneyChangedUi(int current)
+    {
+        if (uiController == null || moneyTargetManager == null) return;
+        uiController.SetDailyEarnings(current, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
+    }
+
+    private void OnBankedMoneyChangedUi(int banked)
+    {
+        uiController?.SetBankedMoney(banked);
+    }
+
+    private void OnTargetChangedUi(int target)
+    {
+        if (uiController == null || moneyTargetManager == null) return;
+        uiController.SetTarget(target);
+        uiController.SetDailyEarnings(moneyTargetManager.CurrentMoney, target, moneyTargetManager.Progress);
     }
 
     private void ApplyUiStateToLocal(GameState state, bool paused)
@@ -182,11 +235,7 @@ public class NetworkGameState : NetworkBehaviour
         if (moneyTargetManager == null)
             moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
 
-        nvCurrentMoney.Value = moneyTargetManager != null ? moneyTargetManager.CurrentMoney : nvCurrentMoney.Value;
-        nvBankedMoney.Value = moneyTargetManager != null ? moneyTargetManager.BankedMoney : nvBankedMoney.Value;
-        nvTargetMoney.Value = moneyTargetManager != null ? moneyTargetManager.TargetMoney : nvTargetMoney.Value;
         nvCurrentDay.Value = moneyTargetManager != null ? moneyTargetManager.CurrentDay : nvCurrentDay.Value;
-        nvProgress.Value = moneyTargetManager != null ? moneyTargetManager.Progress : nvProgress.Value;
 
         float timerNorm = 0f;
         var timer = FindFirstObjectByType<GameTimer>();
@@ -194,11 +243,32 @@ public class NetworkGameState : NetworkBehaviour
         nvTimerProgress.Value = timerNorm;
     }
 
+    private void ServerPushSnapshot()
+    {
+        if (!IsServer) return;
+
+        if (moneyTargetManager == null)
+            moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
+
+        nvCurrentDay.Value = moneyTargetManager != null ? moneyTargetManager.CurrentDay : 0;
+
+        float timerNorm = 0f;
+        var timer = FindFirstObjectByType<GameTimer>();
+        if (timer != null) timerNorm = timer.Normalized;
+        nvTimerProgress.Value = timerNorm;
+    }
+
+    private void ApplyAllToClientUI()
+    {
+        BindMoneyUi();
+        uiController?.SetDay(nvCurrentDay.Value);
+        uiController?.SetTimerVisible(true);
+    }
+
     // Client -> Server: scene-loaded handshake
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     public void ClientSceneLoadedServerRpc(RpcParams rpcParams = default)
     {
-        // If someone calls this when NGO isn't running locally, bail out quietly.
         var nm = NetworkManager.Singleton;
         if (nm == null || !nm.IsListening)
             return;
@@ -291,7 +361,6 @@ public class NetworkGameState : NetworkBehaviour
     {
         if (gameStarted.Value) return;
 
-        // Server sets replicated state => clients will show Loading too
         nvPaused.Value = false;
         nvGameState.Value = GameState.Loading;
 
@@ -321,41 +390,12 @@ public class NetworkGameState : NetworkBehaviour
             stats.ServerResetToDefaults();
         }
 
-        // Also clear saved reconnect snapshots so reconnecting in lobby doesn't restore run upgrades.
         PlayerUpgradableStats.ServerClearAllSnapshots();
 
         gameManager?.EndGame();
         ServerPushSnapshot();
         HideDayEndSummaryClientRpc();
         ServerPositionAllPlayersToDefaultSpawn();
-    }
-
-    // Snapshot helpers
-    private void ServerPushSnapshot()
-    {
-        if (moneyTargetManager == null)
-            moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
-
-        nvCurrentMoney.Value = moneyTargetManager != null ? moneyTargetManager.CurrentMoney : 0;
-        nvBankedMoney.Value = moneyTargetManager != null ? moneyTargetManager.BankedMoney : 0;
-        nvTargetMoney.Value = moneyTargetManager != null ? moneyTargetManager.TargetMoney : 0;
-        nvCurrentDay.Value = moneyTargetManager != null ? moneyTargetManager.CurrentDay : 0;
-        nvProgress.Value = moneyTargetManager != null ? moneyTargetManager.Progress : 0f;
-
-        float timerNorm = 0f;
-        var timer = FindFirstObjectByType<GameTimer>();
-        if (timer != null) timerNorm = timer.Normalized;
-        nvTimerProgress.Value = timerNorm;
-    }
-
-    private void ApplyAllToClientUI()
-    {
-        uiController.SetDay(nvCurrentDay.Value);
-        uiController.SetTarget(nvTargetMoney.Value);
-        uiController.SetDailyEarnings(nvCurrentMoney.Value, nvTargetMoney.Value, nvProgress.Value);
-        uiController.SetBankedMoney(nvBankedMoney.Value);
-        // Keep timer visible; GameTimer will drive seconds on clients
-        uiController.SetTimerVisible(true);
     }
 
     // Optional: UI summary RPCs (kept for compatibility)
@@ -369,7 +409,7 @@ public class NetworkGameState : NetworkBehaviour
     [ClientRpc]
     public void HideDayEndSummaryClientRpc()
     {
-        uiController.HideDayEndSummary();
+        uiController?.HideDayEndSummary();
     }
 
     [ClientRpc]
@@ -380,13 +420,11 @@ public class NetworkGameState : NetworkBehaviour
         var spawnMgr = NetworkManager.Singleton?.SpawnManager;
         if (spawnMgr != null)
         {
-            // Current NGO exposes a dictionary of spawned objects keyed by NetworkObjectId
             spawnMgr.SpawnedObjects.TryGetValue(networkObjectId, out netObj);
         }
 
         if (netObj == null)
         {
-            // Fallback: slow, but safe if called rarely
             foreach (var candidate in FindObjectsByType<NetworkObject>(FindObjectsSortMode.None))
             {
                 if (candidate.NetworkObjectId == networkObjectId)

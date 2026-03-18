@@ -1,58 +1,95 @@
 using UnityEngine;
+using System;
 
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Animator))]
 public class PlayerArms : MonoBehaviour
 {
     [Header("References")]
+    [Tooltip("If null, will search up the hierarchy (child model -> root player object).")]
     [SerializeField] private PlayerHold playerHold;
-    [Tooltip("Optional explicit grip center override when package lacks markers.")]
+
+    [Header("Grip Marker Names (on package prefab)")]
+    [SerializeField] private string gripCenterName = "GripCenter";
+    [SerializeField] private string leftGripName = "LeftGrip";
+    [SerializeField] private string rightGripName = "RightGrip";
+
+    [Header("Fallback (when markers are missing)")]
+    [Tooltip("Offset applied in the package's LOCAL space when only a center point is available.")]
     [SerializeField] private Vector3 defaultLocalOffset = new Vector3(0f, -0.15f, 0f);
     [Tooltip("Horizontal spacing between hands when only a center point is available.")]
     [SerializeField] private float handHorizontalSeparation = 0.25f;
-    [Tooltip("Vertical alignment offset added to package center.")]
+    [Tooltip("Extra vertical offset added to computed bounds center (meters).")]
     [SerializeField] private float verticalOffset = 0.0f;
 
     [Header("IK Weights")]
+    [Range(0f, 1f)]
     [SerializeField] private float holdIKWeight = 1f;
-    [SerializeField] private float blendSpeed = 6f;
+    [SerializeField] private float blendSpeed = 8f;
 
     [Header("Rotation")]
-    [Tooltip("Should hands rotate to match grip orientation?")]
+    [Tooltip("Rotate hands to match grip orientation/center orientation.")]
     [SerializeField] private bool applyRotation = true;
 
+    [Header("Debug")]
+    [SerializeField] private bool logMissingAnimatorIKSupport = false;
+
     private Animator _anim;
+
     private float _currentWeight;
     private Rigidbody _currentHeld;
 
-    // Cached grip points (if found)
+    // Grip points (prefer explicit)
     private Transform _gripCenter;
     private Transform _leftGrip;
     private Transform _rightGrip;
 
+    // Runtime fallback helper (if no GripCenter exists)
+    private Transform _runtimeGripCenter;
+
     private void Awake()
     {
         _anim = GetComponent<Animator>();
+
         if (playerHold == null)
-            playerHold = GetComponentInParent<PlayerHold>();
+            playerHold = GetComponentInParent<PlayerHold>(true);
+
+        if (logMissingAnimatorIKSupport && _anim != null && !_anim.isHuman)
+        {
+            Debug.LogWarning($"{nameof(PlayerArms)} expects a Humanoid rig for IK. '{name}' Animator is not humanoid.");
+        }
     }
 
     private void OnEnable()
     {
-        if (playerHold != null)
-        {
-            playerHold.PickedUp += OnPickedUp;
-            playerHold.Dropped += OnDropped;
-        }
+        Bind();
     }
 
     private void OnDisable()
     {
-        if (playerHold != null)
-        {
-            playerHold.PickedUp -= OnPickedUp;
-            playerHold.Dropped -= OnDropped;
-        }
+        Unbind();
+        CleanupRuntimeGripCenter();
+    }
+
+    private void Bind()
+    {
+        if (playerHold == null)
+            playerHold = GetComponentInParent<PlayerHold>(true);
+
+        if (playerHold == null)
+            return;
+
+        playerHold.PickedUp += OnPickedUp;
+        playerHold.Dropped += OnDropped;
+    }
+
+    private void Unbind()
+    {
+        if (playerHold == null)
+            return;
+
+        playerHold.PickedUp -= OnPickedUp;
+        playerHold.Dropped -= OnDropped;
     }
 
     private void OnPickedUp(Rigidbody rb)
@@ -65,88 +102,113 @@ public class PlayerArms : MonoBehaviour
     {
         _currentHeld = null;
         _gripCenter = _leftGrip = _rightGrip = null;
+        CleanupRuntimeGripCenter();
+    }
+
+    private void CleanupRuntimeGripCenter()
+    {
+        if (_runtimeGripCenter == null)
+            return;
+
+        Destroy(_runtimeGripCenter.gameObject);
+        _runtimeGripCenter = null;
     }
 
     private void ResolveGripPoints(Transform package)
     {
         _gripCenter = _leftGrip = _rightGrip = null;
-        if (package == null) return;
+        CleanupRuntimeGripCenter();
 
-        // Try named children
+        if (package == null)
+            return;
+
+        // Look for markers by name (case-insensitive).
         foreach (Transform t in package.GetComponentsInChildren<Transform>(true))
         {
-            string n = t.name;
-            if (n.Equals("GripCenter", System.StringComparison.OrdinalIgnoreCase)) _gripCenter = t;
-            else if (n.Equals("LeftGrip", System.StringComparison.OrdinalIgnoreCase)) _leftGrip = t;
-            else if (n.Equals("RightGrip", System.StringComparison.OrdinalIgnoreCase)) _rightGrip = t;
+            if (t == null) continue;
+
+            if (string.Equals(t.name, gripCenterName, StringComparison.OrdinalIgnoreCase))
+                _gripCenter = t;
+            else if (string.Equals(t.name, leftGripName, StringComparison.OrdinalIgnoreCase))
+                _leftGrip = t;
+            else if (string.Equals(t.name, rightGripName, StringComparison.OrdinalIgnoreCase))
+                _rightGrip = t;
         }
 
-        // Fallback: make a temporary center if none exists
         if (_gripCenter == null)
         {
-            // Use collider bounds center
+            // Fallback: bounds center -> runtime transform so we have stable position+rotation.
             Vector3 center = package.position;
-            var col = package.GetComponent<Collider>() ?? package.GetComponentInChildren<Collider>();
-            if (col != null) center = col.bounds.center;
+            Collider col = package.GetComponent<Collider>() ?? package.GetComponentInChildren<Collider>();
+            if (col != null)
+                center = col.bounds.center;
 
-            // Create a runtime-only helper (not parented so remote clients don’t need it)
             GameObject temp = new GameObject("RuntimeGripCenter");
             temp.hideFlags = HideFlags.HideAndDontSave;
-            temp.transform.position = center + Vector3.up * verticalOffset;
-            temp.transform.rotation = package.rotation;
-            _gripCenter = temp.transform;
+            temp.transform.SetPositionAndRotation(center + Vector3.up * verticalOffset, package.rotation);
+
+            _runtimeGripCenter = temp.transform;
+            _gripCenter = _runtimeGripCenter;
         }
     }
 
     private void Update()
     {
-        // Smooth weight target
-        float target = (_currentHeld != null) ? holdIKWeight : 0f;
+        float target = (_currentHeld != null) ? Mathf.Clamp01(holdIKWeight) : 0f;
         _currentWeight = Mathf.MoveTowards(_currentWeight, target, blendSpeed * Time.deltaTime);
     }
 
     private void OnAnimatorIK(int layerIndex)
     {
-        if (_anim == null) return;
+        if (_anim == null)
+            return;
 
         float w = _currentWeight;
+
         _anim.SetIKPositionWeight(AvatarIKGoal.LeftHand, w);
-        _anim.SetIKRotationWeight(AvatarIKGoal.LeftHand, applyRotation ? w : 0f);
         _anim.SetIKPositionWeight(AvatarIKGoal.RightHand, w);
-        _anim.SetIKRotationWeight(AvatarIKGoal.RightHand, applyRotation ? w : 0f);
+
+        float rw = applyRotation ? w : 0f;
+        _anim.SetIKRotationWeight(AvatarIKGoal.LeftHand, rw);
+        _anim.SetIKRotationWeight(AvatarIKGoal.RightHand, rw);
 
         if (w <= 0.0001f || _currentHeld == null)
             return;
 
-        // Determine target positions
         Vector3 leftPos, rightPos;
-        Quaternion rot;
+        Quaternion targetRot;
 
         if (_leftGrip != null && _rightGrip != null)
         {
+            // Best: per-hand markers.
             leftPos = _leftGrip.position;
             rightPos = _rightGrip.position;
-            rot = _leftGrip.rotation; // could average rotations
+
+            // Use center's rotation if available, otherwise average-ish by taking package rotation.
+            targetRot = _gripCenter != null ? _gripCenter.rotation : _currentHeld.rotation;
         }
         else
         {
+            // OK: compute two hand points around a single center.
             Transform center = _gripCenter != null ? _gripCenter : _currentHeld.transform;
-            rot = center.rotation;
+            targetRot = center.rotation;
 
-            // Build lateral axis for spacing
-            Vector3 forward = rot * Vector3.forward;
-            Vector3 up = rot * Vector3.up;
-            Vector3 right = Vector3.Cross(up, forward).normalized;
-            if (right.sqrMagnitude < 1e-4f) right = Vector3.right;
+            Vector3 rightAxis = targetRot * Vector3.right;
 
-            Vector3 basePoint = center.position;
-            leftPos = basePoint - right * (handHorizontalSeparation * 0.5f) + defaultLocalOffset;
-            rightPos = basePoint + right * (handHorizontalSeparation * 0.5f) + defaultLocalOffset;
+            // IMPORTANT: offset in package LOCAL space (not world).
+            Vector3 basePoint = center.TransformPoint(defaultLocalOffset);
+
+            leftPos = basePoint - rightAxis * (handHorizontalSeparation * 0.5f);
+            rightPos = basePoint + rightAxis * (handHorizontalSeparation * 0.5f);
         }
 
         _anim.SetIKPosition(AvatarIKGoal.LeftHand, leftPos);
-        _anim.SetIKRotation(AvatarIKGoal.LeftHand, rot);
         _anim.SetIKPosition(AvatarIKGoal.RightHand, rightPos);
-        _anim.SetIKRotation(AvatarIKGoal.RightHand, rot);
+
+        if (applyRotation)
+        {
+            _anim.SetIKRotation(AvatarIKGoal.LeftHand, targetRot);
+            _anim.SetIKRotation(AvatarIKGoal.RightHand, targetRot);
+        }
     }
 }
