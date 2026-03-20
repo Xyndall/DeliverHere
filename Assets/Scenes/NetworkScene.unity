@@ -3174,7 +3174,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::GameUIController
   hudRoot: {fileID: 422955008}
   dayText: {fileID: 784064381}
-  currentMoneyText: {fileID: 0}
   targetMoneyText: {fileID: 1301847670}
   bankedMoneyText: {fileID: 42608494}
   timerText: {fileID: 1216634913}
