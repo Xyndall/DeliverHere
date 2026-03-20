@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8aac7802e2c12de4d9c0ac15db7bfdcb, type: 3}
+  m_Name: StatUpgradeCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::StatUpgradeCatalog
+  definitions:
+  - {fileID: 11400000, guid: 43e820ec2b1acd847b2806d5a0048864, type: 2}
+  - {fileID: 11400000, guid: 6acbc4cbd8e0e5d4a8ee0615587efe2f, type: 2}
+  - {fileID: 11400000, guid: ecae31992768dee4a82b97ef92112482, type: 2}
+  - {fileID: 11400000, guid: 1bef5a244e793b8429e1e0588e5e3674, type: 2}
+  - {fileID: 11400000, guid: 57866c2229c13fb43a2960cd79bfdc1d, type: 2}
+  - {fileID: 11400000, guid: d88c84b2c562af54c8d1336bd68170f5, type: 2}
+  - {fileID: 11400000, guid: de997098733f4f84ea953d0160582ab7, type: 2}

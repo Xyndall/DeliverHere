@@ -88,7 +88,6 @@ public class NetworkGameState : NetworkBehaviour
             return;
         }
 
-        // PlayerMovement is the authoritative "player object" in this project.
         var players = FindObjectsByType<PlayerMovement>(FindObjectsSortMode.None);
         foreach (var pm in players)
         {
@@ -97,7 +96,6 @@ public class NetworkGameState : NetworkBehaviour
             var netObj = pm.GetComponent<NetworkObject>();
             if (netObj == null || !netObj.IsSpawned) continue;
 
-            // Owner-authoritative transform: ask the owning client to apply the teleport.
             ServerRequestOwnerTeleport(netObj, defaultSpawnPoint.position, defaultSpawnPoint.rotation);
         }
 
@@ -115,9 +113,13 @@ public class NetworkGameState : NetworkBehaviour
         nvCurrentDay.OnValueChanged += (_, v) =>
         {
             uiController?.SetDay(v);
+
             if (moneyTargetManager != null && uiController != null)
             {
-                uiController.SetDailyEarnings(moneyTargetManager.CurrentMoney, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
+                uiController.SetDailyEarnings(
+                    moneyTargetManager.BankedMoney,
+                    moneyTargetManager.TargetMoney,
+                    moneyTargetManager.Progress);
             }
         };
 
@@ -145,7 +147,7 @@ public class NetworkGameState : NetworkBehaviour
         // Push initial local state event so systems see current state on spawn
         OnLocalGameStateChanged?.Invoke(nvGameState.Value);
 
-        // Client UI initial push (server doesn't need this; it already has the objects)
+        // Client UI initial push
         if (!IsServer)
         {
             ApplyAllToClientUI();
@@ -163,7 +165,6 @@ public class NetworkGameState : NetworkBehaviour
         {
             if (moneyTargetManager != null)
             {
-                moneyTargetManager.OnMoneyChanged -= OnMoneyChangedUi;
                 moneyTargetManager.OnBankedMoneyChanged -= OnBankedMoneyChangedUi;
                 moneyTargetManager.OnTargetChanged -= OnTargetChangedUi;
             }
@@ -186,37 +187,31 @@ public class NetworkGameState : NetworkBehaviour
             return;
 
         // Avoid duplicate subscription
-        moneyTargetManager.OnMoneyChanged -= OnMoneyChangedUi;
         moneyTargetManager.OnBankedMoneyChanged -= OnBankedMoneyChangedUi;
         moneyTargetManager.OnTargetChanged -= OnTargetChangedUi;
 
-        moneyTargetManager.OnMoneyChanged += OnMoneyChangedUi;
         moneyTargetManager.OnBankedMoneyChanged += OnBankedMoneyChangedUi;
         moneyTargetManager.OnTargetChanged += OnTargetChangedUi;
 
         // Initial push
         uiController.SetDay(moneyTargetManager.CurrentDay);
         uiController.SetTarget(moneyTargetManager.TargetMoney);
-        uiController.SetDailyEarnings(moneyTargetManager.CurrentMoney, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
+        uiController.SetDailyEarnings(moneyTargetManager.BankedMoney, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
         uiController.SetBankedMoney(moneyTargetManager.BankedMoney);
-    }
-
-    private void OnMoneyChangedUi(int current)
-    {
-        if (uiController == null || moneyTargetManager == null) return;
-        uiController.SetDailyEarnings(current, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
     }
 
     private void OnBankedMoneyChangedUi(int banked)
     {
-        uiController?.SetBankedMoney(banked);
+        if (uiController == null || moneyTargetManager == null) return;
+        uiController.SetBankedMoney(banked);
+        uiController.SetDailyEarnings(banked, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
     }
 
     private void OnTargetChangedUi(int target)
     {
         if (uiController == null || moneyTargetManager == null) return;
         uiController.SetTarget(target);
-        uiController.SetDailyEarnings(moneyTargetManager.CurrentMoney, target, moneyTargetManager.Progress);
+        uiController.SetDailyEarnings(moneyTargetManager.BankedMoney, target, moneyTargetManager.Progress);
     }
 
     private void ApplyUiStateToLocal(GameState state, bool paused)
@@ -265,7 +260,6 @@ public class NetworkGameState : NetworkBehaviour
         uiController?.SetTimerVisible(true);
     }
 
-    // Client -> Server: scene-loaded handshake
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     public void ClientSceneLoadedServerRpc(RpcParams rpcParams = default)
     {
@@ -355,7 +349,6 @@ public class NetworkGameState : NetworkBehaviour
         Debug.Log($"[NetworkGameState] Client-ready handshake completed. allClientsReported={allClientsReported}");
     }
 
-    // Start/End game requests
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     public void RequestStartGameServerRpc()
     {
@@ -398,7 +391,6 @@ public class NetworkGameState : NetworkBehaviour
         ServerPositionAllPlayersToDefaultSpawn();
     }
 
-    // Optional: UI summary RPCs (kept for compatibility)
     [ClientRpc]
     public void ShowDayEndSummaryClientRpc(int earnedToday, int newBankedTotal, int packagesDelivered, bool metQuota)
     {
@@ -453,7 +445,6 @@ public class NetworkGameState : NetworkBehaviour
         if (cc != null) cc.enabled = true;
     }
 
-    // SERVER: request the owning client to apply the move locally (owner-authoritative NetworkTransform).
     public void ServerRequestOwnerTeleport(NetworkObject playerNetObj, Vector3 position, Quaternion rotation)
     {
         if (!IsServer || playerNetObj == null || !playerNetObj.IsSpawned) return;

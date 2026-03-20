@@ -9,7 +9,6 @@ public class GameUIController : MonoBehaviour
 
     [Header("HUD - Text")]
     [SerializeField] private TMP_Text dayText;
-    [SerializeField] private TMP_Text currentMoneyText;
     [SerializeField] private TMP_Text targetMoneyText;
     [SerializeField] private TMP_Text bankedMoneyText;
 
@@ -135,7 +134,6 @@ public class GameUIController : MonoBehaviour
     public void SetTarget(int target) { if (targetMoneyText != null) targetMoneyText.text = $"Target: ${target}"; }
     public void SetDailyEarnings(int current, int target, float progress)
     {
-        if (currentMoneyText != null) currentMoneyText.text = $"Today: ${current}";
         if (targetMoneyText != null) targetMoneyText.text = $"Target: ${target}";
     }
     public void SetBankedMoney(int banked) { if (bankedMoneyText != null) bankedMoneyText.text = $"Banked: ${banked}"; }

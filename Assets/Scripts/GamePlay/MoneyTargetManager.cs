@@ -13,6 +13,8 @@ public class MoneyTargetManager : NetworkBehaviour
 
     [Header("Goal Settings")]
     [SerializeField] private int targetMoney = 1000;
+
+    [Tooltip("Initial banked money at the start of a run.")]
     [SerializeField] private int startingMoney = 0;
 
     [Header("Target Growth Settings")]
@@ -36,23 +38,17 @@ public class MoneyTargetManager : NetworkBehaviour
     [Tooltip("Hard cap for TargetMoney after increases. 0 means no cap.")]
     [SerializeField] private int maxTargetMoneyCap = 0;
 
-    // Replicated money values (server authoritative)
-    private readonly NetworkVariable<int> nvCurrentMoney =
-        new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
+    // Replicated money value (server authoritative)
     private readonly NetworkVariable<int> nvBankedMoney =
         new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private bool targetReached;
-    private int currentDay; // Still local/server-driven in this class (NetworkGameState mirrors it anyway)
+    private int currentDay;
 
-    // Cache of the initial target to restore on ResetProgress
     private int initialTargetMoney;
 
     // Events for other systems (e.g., GameManager/UI)
-    public event Action<int> OnMoneyChanged;
     public event Action<int> OnBankedMoneyChanged;
-    public event Action<int, int> OnDailyEarningsBanked;
     public event Action<int> OnTargetChanged;
     public event Action OnTargetReached;
     public event Action<int> OnDayAdvanced;
@@ -72,15 +68,15 @@ public class MoneyTargetManager : NetworkBehaviour
         }
     }
 
-    public int CurrentMoney => nvCurrentMoney.Value;
+    // CurrentMoney removed; banked money is the only currency.
     public int BankedMoney => nvBankedMoney.Value;
-    public float Progress => targetMoney <= 0 ? 1f : Mathf.Clamp01((float)CurrentMoney / targetMoney);
+
+    public float Progress => targetMoney <= 0 ? 1f : Mathf.Clamp01((float)BankedMoney / targetMoney);
     public bool IsTargetReached => targetReached;
     public int CurrentDay => currentDay;
 
     private void Awake()
     {
-        // Cache the initial configured target before any resets
         initialTargetMoney = targetMoney;
     }
 
@@ -88,37 +84,30 @@ public class MoneyTargetManager : NetworkBehaviour
     {
         base.OnNetworkSpawn();
 
-        nvCurrentMoney.OnValueChanged += OnNvCurrentMoneyChanged;
         nvBankedMoney.OnValueChanged += OnNvBankedMoneyChanged;
 
-        // Push initial state to listeners (useful for late join + UI init)
-        OnMoneyChanged?.Invoke(nvCurrentMoney.Value);
+        // Push initial state to listeners
         OnBankedMoneyChanged?.Invoke(nvBankedMoney.Value);
 
-        // Only the server should run initial reset to avoid clients attempting to write server-only NVs.
         if (IsServer)
             ResetProgress();
     }
 
     public override void OnNetworkDespawn()
     {
-        nvCurrentMoney.OnValueChanged -= OnNvCurrentMoneyChanged;
         nvBankedMoney.OnValueChanged -= OnNvBankedMoneyChanged;
-
         base.OnNetworkDespawn();
-    }
-
-    private void OnNvCurrentMoneyChanged(int previous, int current)
-    {
-        OnMoneyChanged?.Invoke(current);
-        EvaluateTargetReached();
     }
 
     private void OnNvBankedMoneyChanged(int previous, int current)
     {
         OnBankedMoneyChanged?.Invoke(current);
+        EvaluateTargetReached();
     }
 
+    /// <summary>
+    /// Server: Adds directly to banked money (single-currency model).
+    /// </summary>
     public void AddMoney(int amount)
     {
         if (!IsServer) return;
@@ -130,31 +119,26 @@ public class MoneyTargetManager : NetworkBehaviour
             return;
         }
 
-        long sum = (long)nvCurrentMoney.Value + amount;
+        long sum = (long)nvBankedMoney.Value + amount;
         int newValue = (int)Mathf.Clamp(sum, 0, int.MaxValue);
 
-        if (newValue == nvCurrentMoney.Value) return;
+        if (newValue == nvBankedMoney.Value) return;
 
-        nvCurrentMoney.Value = newValue;
-        // Events fire through OnValueChanged callback.
+        nvBankedMoney.Value = newValue;
     }
 
+    /// <summary>
+    /// Server: Removes directly from banked money.
+    /// </summary>
     public void RemoveMoney(int amount)
     {
         if (!IsServer) return;
         if (amount <= 0) return;
 
-        int newValue = Mathf.Max(0, nvCurrentMoney.Value - amount);
-        bool wasReached = targetReached;
+        int newValue = Mathf.Max(0, nvBankedMoney.Value - amount);
+        if (newValue == nvBankedMoney.Value) return;
 
-        if (newValue == nvCurrentMoney.Value) return;
-
-        nvCurrentMoney.Value = newValue;
-
-        if (wasReached && nvCurrentMoney.Value < targetMoney)
-        {
-            targetReached = false;
-        }
+        nvBankedMoney.Value = newValue;
     }
 
     public bool SpendBanked(int amount)
@@ -165,16 +149,6 @@ public class MoneyTargetManager : NetworkBehaviour
 
         nvBankedMoney.Value -= amount;
         return true;
-    }
-
-    public void SetMoney(int value)
-    {
-        if (!IsServer) return;
-
-        int newValue = Mathf.Max(0, value);
-        if (newValue == nvCurrentMoney.Value) return;
-
-        nvCurrentMoney.Value = newValue;
     }
 
     public void SetBankedMoney(int value)
@@ -191,11 +165,9 @@ public class MoneyTargetManager : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        // Restore target to its initial configured value first
         TargetMoney = initialTargetMoney;
 
-        nvCurrentMoney.Value = Mathf.Max(0, startingMoney);
-        nvBankedMoney.Value = 0;
+        nvBankedMoney.Value = Mathf.Max(0, startingMoney);
 
         targetReached = false;
         currentDay = 0;
@@ -215,19 +187,6 @@ public class MoneyTargetManager : NetworkBehaviour
 
         for (int i = 0; i < days; i++)
         {
-            if (nvCurrentMoney.Value > 0)
-            {
-                long sum = (long)nvBankedMoney.Value + nvCurrentMoney.Value;
-                nvBankedMoney.Value = (int)Mathf.Clamp(sum, 0, int.MaxValue);
-
-                OnDailyEarningsBanked?.Invoke(nvBankedMoney.Value, nvCurrentMoney.Value);
-                // OnBankedMoneyChanged fires via NV callback.
-            }
-
-            nvCurrentMoney.Value = 0;
-            targetReached = false;
-            // OnMoneyChanged fires via NV callback.
-
             currentDay++;
 
             if (enableDailyIncrease)
@@ -256,9 +215,7 @@ public class MoneyTargetManager : NetworkBehaviour
     {
         float scale = 1f;
         if (useScalingCurve && dailyScalingCurve != null)
-        {
             scale = Mathf.Max(0f, dailyScalingCurve.Evaluate(dayIndex1Based));
-        }
 
         float amount;
         switch (growthMode)
@@ -279,9 +236,8 @@ public class MoneyTargetManager : NetworkBehaviour
 
         int delta = Mathf.Max(0, Mathf.RoundToInt(amount));
         if (roundingStep > 1)
-        {
             delta = RoundToStep(delta, roundingStep);
-        }
+
         return delta;
     }
 
@@ -293,18 +249,17 @@ public class MoneyTargetManager : NetworkBehaviour
 
     private void EvaluateTargetReached()
     {
-        if (!targetReached && (targetMoney == 0 || nvCurrentMoney.Value >= targetMoney))
+        if (!targetReached && (targetMoney == 0 || nvBankedMoney.Value >= targetMoney))
         {
             targetReached = true;
             OnTargetReached?.Invoke();
         }
-        else if (targetReached && nvCurrentMoney.Value < targetMoney)
+        else if (targetReached && nvBankedMoney.Value < targetMoney)
         {
             targetReached = false;
         }
     }
 
-    // Editor convenience to test day progression
     [ContextMenu("Debug/Advance One Day")]
     private void Debug_AdvanceOneDay()
     {
