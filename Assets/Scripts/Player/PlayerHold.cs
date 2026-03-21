@@ -138,6 +138,21 @@ public class PlayerHold : NetworkBehaviour
     private readonly Dictionary<Transform, int> _heldOriginalLayers = new Dictionary<Transform, int>(64);
     // ---------------------------------------------------------------
 
+    // -------------------- NEW (owner predicted visuals) --------------------
+    [Header("Held Visual Prediction (Owner Only)")]
+    [Tooltip("If enabled: the owner sees a predicted visual while holding (server physics still authoritative).")]
+    [SerializeField] private bool enablePredictedHeldVisual = true;
+
+    [Tooltip("Visual-only prefab to show while holding (should NOT have NetworkObject/NetworkTransform). If null, will clone the held object and strip physics.")]
+    [SerializeField] private GameObject predictedHeldVisualPrefab;
+
+    [Tooltip("Optional smoothing for the predicted visual. Higher = snappier.")]
+    [SerializeField] private float predictedVisualLerpSpeed = 25f;
+
+    private GameObject _predictedHeldVisualInstance;
+    private Renderer _heldRendererToHide;
+    // ----------------------------------------------------------------------
+
     private readonly NetworkVariable<NetworkObjectReference> _heldRef =
         new NetworkVariable<NetworkObjectReference>(default,
             NetworkVariableReadPermission.Everyone,
@@ -196,12 +211,10 @@ public class PlayerHold : NetworkBehaviour
     public event Action<Rigidbody> PickedUp;
     public event Action<Rigidbody> Dropped;
 
-    // Owner->Server anchor pose state
     private double _nextAnchorPoseSendTime;
     private Vector3 _lastSentAnchorPos;
     private Quaternion _lastSentAnchorRot;
 
-    // Server uses latest received pose
     private Vector3 _serverDesiredAnchorPos;
     private Quaternion _serverDesiredAnchorRot = Quaternion.identity;
 
@@ -218,7 +231,6 @@ public class PlayerHold : NetworkBehaviour
         if (inputController == null) inputController = GetComponent<PlayerInputController>();
         if (upgradableStats == null) upgradableStats = GetComponent<PlayerUpgradableStats>();
 
-        // NEW: cache layer index (safe if not created yet; re-checked on use)
         _heldItemLayer = LayerMask.NameToLayer(heldItemLayerName);
     }
 
@@ -254,6 +266,8 @@ public class PlayerHold : NetworkBehaviour
 
             if (IsServer && IsHolding)
                 ServerDropHeldInternal();
+
+            DestroyPredictedHeldVisualIfAny();
 
             if (_anchorRb != null)
                 Destroy(_anchorRb.gameObject);
@@ -311,7 +325,6 @@ public class PlayerHold : NetworkBehaviour
 
         EnsureAnchorExists();
 
-        // Compute desired anchor pose (always)
         Quaternion yawRot = GetYawRotation();
 
         float targetDist = _holdDistance;
@@ -331,22 +344,18 @@ public class PlayerHold : NetworkBehaviour
         Vector3 desiredAnchorPos = handsRoot.position + yawRot * local;
         Quaternion desiredAnchorRot = yawRot;
 
-        // Update anchor velocity (used for release)
         _anchorVel = (desiredAnchorPos - _prevAnchorPos) / Mathf.Max(1e-5f, Time.fixedDeltaTime);
         _prevAnchorPos = desiredAnchorPos;
 
-        // Owner: send desired pose to server (throttled)
         if (IsOwner && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer)
         {
             TrySendAnchorPoseToServer(desiredAnchorPos, desiredAnchorRot);
         }
 
-        // Server: apply latest received desired pose (or if host, use local)
         if (IsServer)
         {
             if (IsOwner)
             {
-                // Host: no RPC needed, just use local computed pose.
                 _serverDesiredAnchorPos = desiredAnchorPos;
                 _serverDesiredAnchorRot = desiredAnchorRot;
             }
@@ -356,15 +365,17 @@ public class PlayerHold : NetworkBehaviour
         }
         else
         {
-            // Clients: keep local anchor in sync for local computations (doesn't affect server physics).
             _anchorRb.position = desiredAnchorPos;
             _anchorRb.rotation = desiredAnchorRot;
         }
 
+        // NEW: owner-only predicted visual update (client responsiveness)
+        if (IsOwner && !IsServer && IsHolding)
+            UpdatePredictedHeldVisual(desiredAnchorPos, desiredAnchorRot);
+
         if (!IsHolding || _heldBody == null)
             return;
 
-        // Server-only: mutate physics / apply forces
         if (!IsServer)
             return;
 
@@ -495,10 +506,12 @@ public class PlayerHold : NetworkBehaviour
 
         if (_heldBody != null)
         {
-            // NEW: change layer to HeldItem while held (no other behavior changes)
             ApplyHeldItemLayer(_heldBody.transform);
 
             ApplyHeldPhysicsLocal();
+
+            // NEW: owner predicted visuals
+            EnsurePredictedHeldVisual();
         }
 
         if (IsServer && _heldBody != null)
@@ -536,7 +549,6 @@ public class PlayerHold : NetworkBehaviour
         _heldBody.interpolation = RigidbodyInterpolation.Interpolate;
         _heldBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
-        // On non-server clients, keep kinematic to avoid fighting server snapshots
         _heldBody.isKinematic = isNetworked && !isServer ? true : false;
     }
 
@@ -580,10 +592,11 @@ public class PlayerHold : NetworkBehaviour
 
         _holdingState = null;
 
-        // NEW: restore original layers on release (no other behavior changes)
         RestoreHeldLayersIfAny();
 
         RestoreHeldPhysicsLocalIfCaptured();
+
+        DestroyPredictedHeldVisualIfAny();
 
         _heldBody = null;
         DestroyJoint();
@@ -645,7 +658,92 @@ public class PlayerHold : NetworkBehaviour
         _heldOriginalLayers.Clear();
     }
 
-    // -------------------------------------------------------------
+    // -------------------- NEW (predicted visuals) --------------------
+
+    private void EnsurePredictedHeldVisual()
+    {
+        if (!enablePredictedHeldVisual) return;
+        if (!IsOwner) return;
+        if (IsServer) return; // host already has authoritative physics locally
+        if (_heldBody == null) return;
+
+        if (_predictedHeldVisualInstance != null)
+            return;
+
+        // Hide the real renderer on the owner so they don't see the laggy server pose.
+        _heldRendererToHide = _heldBody.GetComponent<Renderer>();
+        if (_heldRendererToHide != null)
+            _heldRendererToHide.enabled = false;
+
+        // Clone the ACTUAL instance so visuals match 1:1 (random scale/color/property blocks etc.).
+        _predictedHeldVisualInstance = Instantiate(_heldBody.gameObject, _heldBody.position, _heldBody.rotation);
+        _predictedHeldVisualInstance.name = $"{_heldBody.gameObject.name}_PredictedVisual";
+        _predictedHeldVisualInstance.hideFlags = HideFlags.DontSave;
+
+        // Strip everything that isn't needed for visuals.
+        // Keep: Transform + render components (Renderer, MeshFilter) so it looks identical.
+        var components = _predictedHeldVisualInstance.GetComponents<Component>();
+        for (int i = 0; i < components.Length; i++)
+        {
+            var c = components[i];
+            if (c == null) continue;
+
+            if (c is Transform) continue;
+            if (c is Renderer) continue;
+            if (c is MeshFilter) continue;
+
+            // Remove anything else (scripts, Rigidbody, Collider, Netcode, etc.)
+            Destroy(c);
+        }
+
+        // Safety: if someone adds components as children later, strip physics/netcode down the hierarchy too.
+        //foreach (var rb in _predictedHeldVisualInstance.GetComponentsInChildren<Rigidbody>(true))
+        //    Destroy(rb);
+        //foreach (var col in _predictedHeldVisualInstance.GetComponentsInChildren<Collider>(true))
+        //    Destroy(col);
+        //foreach (var nb in _predictedHeldVisualInstance.GetComponentsInChildren<NetworkBehaviour>(true))
+        //    Destroy(nb);
+        //foreach (var no in _predictedHeldVisualInstance.GetComponentsInChildren<NetworkObject>(true))
+        //    Destroy(no);
+
+        // Also strip other behaviours (including PackageProperties, Holdable, etc.) if they exist in children (future-proof).
+        foreach (var mb in _predictedHeldVisualInstance.GetComponentsInChildren<MonoBehaviour>(true))
+            Destroy(mb);
+    }
+
+    private void DestroyPredictedHeldVisualIfAny()
+    {
+        if (_predictedHeldVisualInstance != null)
+        {
+            Destroy(_predictedHeldVisualInstance);
+            _predictedHeldVisualInstance = null;
+        }
+
+        if (_heldRendererToHide != null)
+        {
+            _heldRendererToHide.enabled = true;
+            _heldRendererToHide = null;
+        }
+    }
+
+    private void UpdatePredictedHeldVisual(Vector3 desiredAnchorPos, Quaternion desiredAnchorRot)
+    {
+        if (_predictedHeldVisualInstance == null)
+            return;
+
+        Vector3 targetPos = desiredAnchorPos;
+        Quaternion targetRot = desiredAnchorRot;
+
+        float k = Mathf.Max(0.01f, predictedVisualLerpSpeed);
+        float t = 1f - Mathf.Exp(-k * Time.fixedDeltaTime);
+
+        _predictedHeldVisualInstance.transform.SetPositionAndRotation(
+            Vector3.Lerp(_predictedHeldVisualInstance.transform.position, targetPos, t),
+            Quaternion.Slerp(_predictedHeldVisualInstance.transform.rotation, targetRot, t)
+        );
+    }
+
+    // --------------------------------------------------------------
 
     private void CreateOrConfigureJoint()
     {
@@ -812,7 +910,6 @@ public class PlayerHold : NetworkBehaviour
         float anchorScale = Mathf.Lerp(1f, anchorVelMultiplierAtMaxMass, t);
         float forwardScale = Mathf.Lerp(1f, forwardBoostMultiplierAtMaxMass, t);
 
-        // Apply combined upgrade multipliers (simple)
         releaseVel += _anchorVel * ResolvedReleaseAnchorVelScale * anchorScale;
         releaseVel += forward * ResolvedReleaseForwardBoost * forwardScale;
 
@@ -924,6 +1021,8 @@ public class PlayerHold : NetworkBehaviour
         anchorPoseSendRateHz = Mathf.Clamp(anchorPoseSendRateHz, 1f, 60f);
         anchorPoseMinPosDelta = Mathf.Max(0f, anchorPoseMinPosDelta);
         anchorPoseMinRotDeltaDeg = Mathf.Max(0f, anchorPoseMinRotDeltaDeg);
+
+        predictedVisualLerpSpeed = Mathf.Max(0.1f, predictedVisualLerpSpeed);
     }
 #endif
 }
