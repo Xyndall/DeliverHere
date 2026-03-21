@@ -5564,7 +5564,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::MoneyTargetManager
   ShowTopMostFoldoutHeaderGroup: 1
   targetMoney: 1000
-  startingMoney: 0
+  startingMoney: 1000
   enableDailyIncrease: 1
   growthMode: 0
   baseDailyIncrease: 100
