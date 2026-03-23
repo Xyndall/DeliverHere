@@ -48,7 +48,6 @@ namespace DeliverHere.Items
 
         [Header("Allowed Options")]
         [SerializeField] private PackageSize[] allowedSizes = new[] { PackageSize.Small, PackageSize.Medium, PackageSize.Large };
-        [SerializeField] private Color[] colorPalette = new[] { Color.yellow, Color.red, Color.blue, Color.green, Color.cyan };
 
         [Header("Visuals")]
         [SerializeField] private Renderer targetRenderer;
@@ -79,7 +78,6 @@ namespace DeliverHere.Items
         public readonly NetworkVariable<int> NetValue = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         public readonly NetworkVariable<float> NetFragility = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         public readonly NetworkVariable<PackageSize> NetSize = new NetworkVariable<PackageSize>(PackageSize.Medium, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-        public readonly NetworkVariable<byte> NetColorIndex = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         public readonly NetworkVariable<float> NetScaleMultiplier = new NetworkVariable<float>(1f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         // Local fallback values (offline runs)
@@ -87,15 +85,11 @@ namespace DeliverHere.Items
         private int localValue;
         private float localFragility;
         private PackageSize localSize = PackageSize.Medium;
-        private byte localColorIndex;
         private float localScaleMultiplier = 1f;
 
         // Store the "base" unshared weight so we can divide it when holders change.
         // For online games this mirrors NetWeightKg; for offline it mirrors localWeightKg.
         private float originalWeightKg;
-
-        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
-        private static readonly int ColorId = Shader.PropertyToID("_Color");
 
         private bool IsNetworked => NetworkManager != null;
         private bool UseNetValues => IsNetworked && (IsServer || IsClient);
@@ -105,15 +99,6 @@ namespace DeliverHere.Items
         public float Fragility => UseNetValues ? NetFragility.Value : localFragility;
         public PackageSize Size => UseNetValues ? NetSize.Value : localSize;
         private float ScaleMultiplier => UseNetValues ? NetScaleMultiplier.Value : localScaleMultiplier;
-
-        public Color Color
-        {
-            get
-            {
-                var idx = UseNetValues ? NetColorIndex.Value : localColorIndex;
-                return (colorPalette != null && colorPalette.Length > idx) ? colorPalette[idx] : Color.white;
-            }
-        }
 
         private void Awake()
         {
@@ -157,7 +142,6 @@ namespace DeliverHere.Items
             NetValue.OnValueChanged += (_, __) => ApplyAll();
             NetFragility.OnValueChanged += (_, __) => ApplyAll();
             NetSize.OnValueChanged += (_, __) => ApplyAll();
-            NetColorIndex.OnValueChanged += (_, __) => ApplyAll();
             NetScaleMultiplier.OnValueChanged += (_, __) => ApplyAll();
 
             // Subscribe to holder count changes if the state exists
@@ -247,19 +231,12 @@ namespace DeliverHere.Items
             // Other properties
             var fragility = UnityEngine.Random.Range(Mathf.Min(minFragility, maxFragility), Mathf.Max(minFragility, maxFragility));
 
-            byte colorIndex = 0;
-            if (colorPalette != null && colorPalette.Length > 0)
-            {
-                colorIndex = (byte)UnityEngine.Random.Range(0, Mathf.Min(255, colorPalette.Length));
-            }
-
             if (isOffline)
             {
                 localWeightKg = weight;
                 localValue = value;
                 localFragility = fragility;
                 localSize = size;
-                localColorIndex = colorIndex;
                 localScaleMultiplier = Mathf.Max(0.01f, scaleMult);
             }
             else
@@ -268,14 +245,13 @@ namespace DeliverHere.Items
                 NetValue.Value = value;
                 NetFragility.Value = fragility;
                 NetSize.Value = size;
-                NetColorIndex.Value = colorIndex;
                 NetScaleMultiplier.Value = Mathf.Max(0.01f, scaleMult);
             }
 
             originalWeightKg = weight;
 
             // Recompute physics using holder count (if any)
-            ApplyAll(weight, value, fragility, size, colorIndex, Mathf.Max(0.01f, scaleMult));
+            ApplyAll(weight, value, fragility, size, Mathf.Max(0.01f, scaleMult));
             RecomputeSharedMass();
         }
 
@@ -358,20 +334,18 @@ namespace DeliverHere.Items
 
         private void ApplyAll()
         {
-            ApplyAll(WeightKg, Value, Fragility, Size,
-                UseNetValues ? NetColorIndex.Value : localColorIndex,
-                ScaleMultiplier);
+            ApplyAll(WeightKg, Value, Fragility, Size, ScaleMultiplier);
         }
 
-        private void ApplyAll(float weight, int value, float fragility, PackageSize size, byte colorIndex, float scaleMult)
+        private void ApplyAll(float weight, int value, float fragility, PackageSize size, float scaleMult)
         {
-            ApplyVisuals(size, colorIndex, scaleMult);
+            ApplyVisuals(size, scaleMult);
             // Do not blindly write the base weight to physics here; let RecomputeSharedMass handle shared weight.
             originalWeightKg = weight;
             RecomputeSharedMass();
         }
 
-        private void ApplyVisuals(PackageSize size, byte colorIndex, float scaleMult)
+        private void ApplyVisuals(PackageSize size, float scaleMult)
         {
             Vector3 baseScale;
             switch (size)
@@ -384,23 +358,7 @@ namespace DeliverHere.Items
 
             transform.localScale = baseScale * Mathf.Max(0.01f, scaleMult);
 
-            if (targetRenderer != null && colorPalette != null && colorPalette.Length > colorIndex)
-            {
-                var color = colorPalette[colorIndex];
-                var mpb = new MaterialPropertyBlock();
-                targetRenderer.GetPropertyBlock(mpb);
-
-                var mat = targetRenderer.sharedMaterial;
-                if (mat != null && mat.HasProperty(BaseColorId))
-                {
-                    mpb.SetColor(BaseColorId, color);
-                }
-                else
-                {
-                    mpb.SetColor(ColorId, color);
-                }
-                targetRenderer.SetPropertyBlock(mpb);
-            }
+            // Intentionally no color modification: color management removed.
         }
 
         private void ApplyPhysics(float weight)
