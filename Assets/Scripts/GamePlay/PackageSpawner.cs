@@ -57,6 +57,13 @@ namespace DeliverHere.GamePlay
         [SerializeField, Min(0)] private int packagesIncrementPerDay = 1;
         [SerializeField, Min(0)] private int maxDailyPackagesCap = 0;
 
+        // Tracks instance ids of spawned packages (used for bookkeeping of costs)
+        private readonly List<int> spawnedPackageInstanceIds = new List<int>();
+
+        // Running sum of the initial costs of spawned packages (sum of PackageProperties.Value at spawn time).
+        // This represents the stored "costs" the spawner recorded when it created each package.
+        private int totalSpawnedInitialValue = 0;
+
         private readonly HashSet<int> usedPointIndices = new HashSet<int>();
         private bool dailyOverrideActive;
         private int dailyOverrideCount;
@@ -277,13 +284,98 @@ namespace DeliverHere.GamePlay
                         instance.transform.SetParent(spawnParent, true);
                     }
                 }
+
+                // Record the package's initial cost (Value) at spawn time on the server.
+                // On the server, PackageProperties should have initialized its NetworkVariables by now.
+                var props = instance.GetComponentInChildren<PackageProperties>(true);
+                int costAtSpawn = 0;
+                if (props != null)
+                {
+                    costAtSpawn = props.Value;
+                }
+
+                // Store bookkeeping info
+                spawnedPackageInstanceIds.Add(instance.GetInstanceID());
+                totalSpawnedInitialValue += costAtSpawn;
             }
             else
             {
                 if (spawnParent != null) instance.transform.SetParent(spawnParent, true);
                 var propsOffline = instance.GetComponentInChildren<PackageProperties>(true);
                 propsOffline?.ServerRandomize();
+
+                int costAtSpawn = 0;
+                if (propsOffline != null)
+                {
+                    costAtSpawn = propsOffline.Value;
+                }
+
+                // Store bookkeeping info for offline spawn as well
+                spawnedPackageInstanceIds.Add(instance.GetInstanceID());
+                totalSpawnedInitialValue += costAtSpawn;
             }
+        }
+
+        /// <summary>
+        /// Returns the running sum of the initial package values recorded at spawn time.
+        /// This does not automatically track later value changes (e.g. damage). Use RecomputeSpawnedTotalIfNeeded() to recompute based on current live packages.
+        /// </summary>
+        public int GetTotalSpawnedInitialValue() => totalSpawnedInitialValue;
+
+        /// <summary>
+        /// Clears the spawner's bookkeeping of spawned package costs and instance ids.
+        /// Does not affect already-spawned GameObjects.
+        /// </summary>
+        public void ClearSpawnedCostRecords()
+        {
+            spawnedPackageInstanceIds.Clear();
+            totalSpawnedInitialValue = 0;
+        }
+
+        /// <summary>
+        /// Recomputes the total based on currently live spawned package instances by reading their current PackageProperties.Value.
+        /// This will prune dead/destroyed instances from the internal list.
+        /// Use this when you want the sum to reflect current package values (after damage/delivery).
+        /// </summary>
+        public int RecomputeSpawnedTotalIfNeeded()
+        {
+            int sum = 0;
+            for (int i = spawnedPackageInstanceIds.Count - 1; i >= 0; i--)
+            {
+                int instId = spawnedPackageInstanceIds[i];
+                // Find the live object with this instance id
+                GameObject found = null;
+                // Note: FindObjectsOfType is relatively expensive; keep this method for explicit calls.
+                var allNetworkObjects = FindObjectsOfType<NetworkObject>();
+                foreach (var no in allNetworkObjects)
+                {
+                    if (no == null) continue;
+                    if (no.gameObject.GetInstanceID() == instId)
+                    {
+                        found = no.gameObject;
+                        break;
+                    }
+                }
+
+                if (found == null)
+                {
+                    // Not found -> remove record
+                    spawnedPackageInstanceIds.RemoveAt(i);
+                    continue;
+                }
+
+                var props = found.GetComponentInChildren<PackageProperties>(true);
+                if (props == null)
+                {
+                    spawnedPackageInstanceIds.RemoveAt(i);
+                    continue;
+                }
+
+                sum += props.Value;
+            }
+
+            totalSpawnedInitialValue = sum;
+            return totalSpawnedInitialValue;
         }
 
         private bool TryGetSpawnTransform(out Vector3 position, out Quaternion rotation)
