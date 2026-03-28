@@ -1,7 +1,6 @@
 using UnityEngine;
 using Unity.Netcode;
 using System;
-using System.Collections.Generic;
 
 [DisallowMultipleComponent]
 public class PlayerHold : NetworkBehaviour
@@ -129,15 +128,6 @@ public class PlayerHold : NetworkBehaviour
     [Header("Input")]
     [SerializeField] private PlayerInputController inputController;
 
-    // -------------------- NEW (layer swap only) --------------------
-    [Header("Held Item Layer Swap")]
-    [Tooltip("Layer name applied to the held object hierarchy while held.")]
-    [SerializeField] private string heldItemLayerName = "HeldItem";
-
-    private int _heldItemLayer = -1;
-    private readonly Dictionary<Transform, int> _heldOriginalLayers = new Dictionary<Transform, int>(64);
-    // ---------------------------------------------------------------
-
     private readonly NetworkVariable<NetworkObjectReference> _heldRef =
         new NetworkVariable<NetworkObjectReference>(default,
             NetworkVariableReadPermission.Everyone,
@@ -217,9 +207,6 @@ public class PlayerHold : NetworkBehaviour
         _weightManager = GetComponent<PlayerWeightManager>();
         if (inputController == null) inputController = GetComponent<PlayerInputController>();
         if (upgradableStats == null) upgradableStats = GetComponent<PlayerUpgradableStats>();
-
-        // NEW: cache layer index (safe if not created yet; re-checked on use)
-        _heldItemLayer = LayerMask.NameToLayer(heldItemLayerName);
     }
 
     private float HoldThrowMult => upgradableStats != null ? Mathf.Max(0.01f, upgradableStats.HoldAndThrowMultiplier) : 1f;
@@ -495,9 +482,6 @@ public class PlayerHold : NetworkBehaviour
 
         if (_heldBody != null)
         {
-            // NEW: change layer to HeldItem while held (no other behavior changes)
-            ApplyHeldItemLayer(_heldBody.transform);
-
             ApplyHeldPhysicsLocal();
         }
 
@@ -580,9 +564,6 @@ public class PlayerHold : NetworkBehaviour
 
         _holdingState = null;
 
-        // NEW: restore original layers on release (no other behavior changes)
-        RestoreHeldLayersIfAny();
-
         RestoreHeldPhysicsLocalIfCaptured();
 
         _heldBody = null;
@@ -594,58 +575,6 @@ public class PlayerHold : NetworkBehaviour
 
         _weightManager?.SetHeldMass(null);
     }
-
-    // -------------------- NEW (layer swap only) --------------------
-
-    private void ApplyHeldItemLayer(Transform heldRoot)
-    {
-        if (heldRoot == null) return;
-
-        int layer = _heldItemLayer;
-        if (layer < 0)
-        {
-            layer = LayerMask.NameToLayer(heldItemLayerName);
-            _heldItemLayer = layer;
-        }
-
-        if (layer < 0)
-        {
-            Debug.LogWarning($"[{nameof(PlayerHold)}] Layer '{heldItemLayerName}' not found. Create it in Project Settings > Tags and Layers.");
-            return;
-        }
-
-        _heldOriginalLayers.Clear();
-
-        var stack = new Stack<Transform>();
-        stack.Push(heldRoot);
-        while (stack.Count > 0)
-        {
-            var t = stack.Pop();
-            if (t == null) continue;
-
-            _heldOriginalLayers[t] = t.gameObject.layer;
-            t.gameObject.layer = layer;
-
-            for (int i = 0; i < t.childCount; i++)
-                stack.Push(t.GetChild(i));
-        }
-    }
-
-    private void RestoreHeldLayersIfAny()
-    {
-        if (_heldOriginalLayers.Count == 0)
-            return;
-
-        foreach (var kvp in _heldOriginalLayers)
-        {
-            if (kvp.Key == null) continue;
-            kvp.Key.gameObject.layer = kvp.Value;
-        }
-
-        _heldOriginalLayers.Clear();
-    }
-
-    // -------------------------------------------------------------
 
     private void CreateOrConfigureJoint()
     {
