@@ -107,6 +107,28 @@ public class GameUIController : MonoBehaviour
 
     public void ClearUpgradePrompt() => SetUpgradePrompt(null);
 
+    // Helper: returns current prompt text (empty string if none)
+    public string GetUpgradePromptText()
+    {
+        if (upgradePromptText == null) return string.Empty;
+        return upgradePromptText.text ?? string.Empty;
+    }
+
+    // Helper: clear only if the current prompt equals the provided expected text.
+    // Prevents other systems' prompts from being unintentionally cleared.
+    public void ClearUpgradePromptIfEquals(string expected)
+    {
+        if (upgradePromptText == null) return;
+        if (string.IsNullOrEmpty(expected))
+        {
+            // no-op: caller shouldn't try to clear with empty expected
+            return;
+        }
+
+        if ((upgradePromptText.text ?? string.Empty) == expected)
+            ClearUpgradePrompt();
+    }
+
     // -------------------------------------------------------------------
 
     // Set button callbacks (called by GameManager after it sets itself up)

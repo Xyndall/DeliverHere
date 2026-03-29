@@ -1,80 +1,43 @@
-using System.Collections.Generic;
+using System;
+using System.Collections;
 using UnityEngine;
 using Unity.Netcode;
 using UnityEngine.SceneManagement;
-using DeliverHere.Items;
 
 namespace DeliverHere.GamePlay
 {
-    public enum SpawnMode
-    {
-        PointsOnly,
-        AreasOnly,
-        Mixed
-    }
-
-    [System.Serializable]
-    public class WeightedPackage
-    {
-        public NetworkObject prefab;
-        [Min(0f)] public float weight = 1f;
-    }
-
     [DisallowMultipleComponent]
     public class PackageSpawner : NetworkBehaviour
     {
-        [Header("Package Prefabs (must have NetworkObject + PackageProperties)")]
-        [SerializeField] private List<WeightedPackage> packageOptions = new List<WeightedPackage>();
+        [Header("Package Prefab (must have NetworkObject)")]
+        [SerializeField] private NetworkObject packagePrefab;
 
-        [Header("Spawn Positions")]
-        [SerializeField] private SpawnMode spawnMode = SpawnMode.Mixed;
+        [Header("Pipe / Spawn Point")]
+        [SerializeField] private Transform pipeExit;
 
-        [Header("Areas Provider")]
-        [SerializeField] private bool autoFindSpawnAreasProvider = true;
-        [SerializeField] private PackageSpawnAreas spawnAreasProvider;
-
-        [Header("Validation")]
-        [SerializeField] private LayerMask groundMask = ~0;
-        [SerializeField] private LayerMask obstacleMask = ~0;
-        [SerializeField] private float surfaceOffset = 0.05f;
-        [SerializeField] private float overlapRadius = 0.4f;
-        [SerializeField] private int maxAttemptsPerPackage = 25;
-
-        [Header("Raycast Settings")]
-        [SerializeField] private float sampleAbove = 2f;
-        [SerializeField] private float groundRayLength = 50f;
-
-        [Header("Lifecycle")]
-        [SerializeField] private bool autoSpawnOnNetworkSpawn = false;
+        [Header("Auto-Find Pipe (level-provided)")]
+        [SerializeField] private bool autoFindPipe = true;
+        [SerializeField] private string pipeNameKeyword = "pipe"; // search keyword (case-insensitive) used when auto-finding
 
         [Header("Parenting")]
         [SerializeField] private Transform spawnParent;
         [SerializeField] private bool useNetworkParenting = false;
 
-        [Header("Daily Mode (optional)")]
-        [SerializeField] private bool useDailyIncreasingCount = true;
-        [SerializeField, Min(0)] private int basePackagesFirstDay = 15;
-        [SerializeField, Min(0)] private int packagesIncrementPerDay = 1;
-        [SerializeField, Min(0)] private int maxDailyPackagesCap = 0;
+        [Header("Spawn Defaults")]
+        [SerializeField, Min(0)] private int initialSpawnCount = 10;
+        [SerializeField, Min(0f)] private float defaultSpawnForce = 10f;
+        [SerializeField, Min(0f)] private float defaultSpawnInterval = 0.1f;
+        [SerializeField] private bool autoSpawnOnNetworkSpawn = false;
 
-        // Tracks instance ids of spawned packages (used for bookkeeping of costs)
-        private readonly List<int> spawnedPackageInstanceIds = new List<int>();
-
-        // Running sum of the initial costs of spawned packages (sum of PackageProperties.Value at spawn time).
-        // This represents the stored "costs" the spawner recorded when it created each package.
-        private int totalSpawnedInitialValue = 0;
-
-        private readonly HashSet<int> usedPointIndices = new HashSet<int>();
-        private bool dailyOverrideActive;
-        private int dailyOverrideCount;
+        private Coroutine spawnCoroutine;
 
         private void OnEnable()
         {
             SceneManager.sceneLoaded += OnSceneLoaded;
             SceneManager.sceneUnloaded += OnSceneUnloaded;
 
-            if (autoFindSpawnAreasProvider && spawnAreasProvider == null)
-                ResolveAreasProvider();
+            if (autoFindPipe && pipeExit == null)
+                ResolvePipe();
         }
 
         private void OnDisable()
@@ -86,46 +49,46 @@ namespace DeliverHere.GamePlay
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
+            if (autoFindPipe && pipeExit == null)
+                ResolvePipe();
 
-            if (autoFindSpawnAreasProvider && spawnAreasProvider == null)
-                ResolveAreasProvider();
-
-            if (autoSpawnOnNetworkSpawn)
+            if (autoSpawnOnNetworkSpawn && IsServer)
             {
-                SpawnAll();
+                SpawnPackages(initialSpawnCount, defaultSpawnForce, defaultSpawnInterval);
             }
         }
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
-            if (!autoFindSpawnAreasProvider) return;
-            ResolveAreasProvider(preferScene: scene);
+            if (!autoFindPipe) return;
+            ResolvePipe(preferScene: scene);
         }
 
         private void OnSceneUnloaded(Scene scene)
         {
-            if (spawnAreasProvider != null)
+            // If the pipe belonged to the unloaded scene, clear reference so it can be re-resolved
+            if (pipeExit != null)
             {
-                var providerScene = spawnAreasProvider.gameObject.scene;
-                if (providerScene == scene)
+                var pScene = pipeExit.gameObject.scene;
+                if (pScene == scene)
                 {
-                    spawnAreasProvider = null;
+                    pipeExit = null;
                 }
             }
 
-            if (autoFindSpawnAreasProvider && spawnAreasProvider == null)
-            {
-                ResolveAreasProvider();
-            }
+            if (autoFindPipe && pipeExit == null)
+                ResolvePipe();
         }
 
-        private void ResolveAreasProvider(Scene? preferScene = null)
+        private void ResolvePipe(Scene? preferScene = null)
         {
-            if (spawnAreasProvider != null && spawnAreasProvider.isActiveAndEnabled)
+            // If already assigned and active, nothing to do
+            if (pipeExit != null && pipeExit.gameObject != null && pipeExit.gameObject.activeInHierarchy)
                 return;
 
-            PackageSpawnAreas found = null;
+            Transform found = null;
 
+            // Preferred scene first (useful when level is loaded additively)
             if (preferScene.HasValue)
             {
                 var s = preferScene.Value;
@@ -134,137 +97,109 @@ namespace DeliverHere.GamePlay
                     var rootObjects = s.GetRootGameObjects();
                     foreach (var ro in rootObjects)
                     {
-                        if (ro == null || !ro.activeInHierarchy) continue;
-                        var candidate = ro.GetComponentInChildren<PackageSpawnAreas>(true);
-                        if (candidate != null && candidate.isActiveAndEnabled)
+                        if (ro == null) continue;
+                        // search children for matching name
+                        var candidates = ro.GetComponentsInChildren<Transform>(true);
+                        foreach (var t in candidates)
                         {
-                            found = candidate;
-                            break;
+                            if (t == null) continue;
+                            if (NameLooksLikePipe(t.name))
+                            {
+                                found = t;
+                                break;
+                            }
                         }
+                        if (found != null) break;
                     }
                 }
             }
 
+            // Fallback: search all Transforms in loaded scenes
             if (found == null)
             {
-                var providers = FindObjectsByType<PackageSpawnAreas>(FindObjectsSortMode.None);
-                foreach (var p in providers)
+                var all = FindObjectsByType<Transform>(FindObjectsSortMode.None);
+                foreach (var t in all)
                 {
-                    if (p != null && p.isActiveAndEnabled)
+                    if (t == null) continue;
+                    if (!t.gameObject.scene.IsValid()) continue;
+                    if (NameLooksLikePipe(t.name))
                     {
-                        found = p;
-                        if (p.gameObject.scene.IsValid() && p.gameObject.scene != gameObject.scene)
-                            break;
+                        found = t;
+                        break;
                     }
                 }
             }
 
-            spawnAreasProvider = found;
+            if (found != null)
+            {
+                pipeExit = found;
+            }
         }
 
-        [ContextMenu("Server Spawn All (Play Mode)")]
-        public void SpawnAll()
+        private bool NameLooksLikePipe(string name)
         {
+            if (string.IsNullOrEmpty(name)) return false;
+            return name.IndexOf(pipeNameKeyword, StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("pipeexit", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("pipe_exit", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Server-only: spawn 'count' packages in sequence, applying impulse force from the pipe exit.
+        /// If called while a spawn sequence is running, the existing sequence is stopped and replaced.
+        /// </summary>
+        public void SpawnPackages(int count, float force, float interval = 0.1f)
+        {
+            if (count <= 0) return;
+
+            // If networked, only allow the server to perform authoritative spawns.
             if (NetworkManager.Singleton != null && !IsServer)
-            {
                 return;
-            }
 
-            if (autoFindSpawnAreasProvider && spawnAreasProvider == null)
-                ResolveAreasProvider();
+            if (packagePrefab == null || pipeExit == null)
+                return;
 
-            int desired;
-            if (dailyOverrideActive)
-            {
-                desired = dailyOverrideCount;
-            }
-            else if (useDailyIncreasingCount)
-            {
-                desired = ComputeDesiredForDay(GetCurrentDayIndexSafe());
-            }
-            else
-            {
-                desired = Mathf.Max(0, basePackagesFirstDay);
-            }
+            if (spawnCoroutine != null)
+                StopCoroutine(spawnCoroutine);
 
-            int totalSpawned = 0;
-
-            // Pass 1: points/areas with normal clearance
-            totalSpawned += SpawnPass(desired - totalSpawned, clearanceRadius: overlapRadius);
-
-            // Pass 2: points/areas with relaxed clearance
-            if (totalSpawned < desired)
-                totalSpawned += SpawnPass(desired - totalSpawned, clearanceRadius: Mathf.Max(0.1f, overlapRadius * 0.75f));
+            spawnCoroutine = StartCoroutine(SpawnSequenceCoroutine(count, force, interval));
         }
 
-        public void ApplyDayIndex(int dayIndex)
+        /// <summary>
+        /// Clients/players may call this to request the server spawn packages.
+        /// Ownership is not required so any client can request; add checks if needed.
+        /// </summary>
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+        public void RequestSpawnPackagesServerRpc(int count, float force, float interval = 0)
         {
-            int desired = ComputeDesiredForDay(dayIndex);
-            dailyOverrideActive = true;
-            dailyOverrideCount = Mathf.Max(0, desired);
+            // Provide a sane default if zero or negative interval passed from client
+            float useInterval = interval > 0f ? interval : defaultSpawnInterval;
+            SpawnPackages(count, force, useInterval);
         }
 
-        public void SetUseDailyIncreasingCount(bool enabled) => useDailyIncreasingCount = enabled;
-
-        private int ComputeDesiredForDay(int dayIndex)
+        private IEnumerator SpawnSequenceCoroutine(int count, float force, float interval)
         {
-            int dayOneBased = Mathf.Max(1, dayIndex);
-            long desired = (long)basePackagesFirstDay + (long)(packagesIncrementPerDay) * (long)(dayOneBased - 1);
-            if (maxDailyPackagesCap > 0)
-            {
-                desired = Mathf.Min((int)desired, maxDailyPackagesCap);
-            }
-            return Mathf.Max(0, (int)desired);
-        }
-
-        private int GetCurrentDayIndexSafe() => 1;
-
-        private int SpawnPass(int need, float clearanceRadius)
-        {
-            if (need <= 0) return 0;
-            if (NetworkManager.Singleton != null && !IsServer) return 0;
-            if (!HasValidPackageOption())
-            {
-                return 0;
-            }
-
-            usedPointIndices.Clear();
-
             int spawned = 0;
-            int safety = 0;
-            int maxSafety = Mathf.Max(1, need) * Mathf.Max(1, maxAttemptsPerPackage);
-
-            while (spawned < need && safety < maxSafety)
+            while (spawned < count)
             {
-                safety++;
-
-                if (!TryGetSpawnTransform(out var position, out var rotation))
-                {
-                    continue;
-                }
-
-                if (!IsPositionClearWithRadius(position, clearanceRadius))
-                {
-                    continue;
-                }
-
-                var chosen = PickWeightedPackage();
-                if (chosen == null || chosen.prefab == null)
-                {
-                    continue;
-                }
-
-                var instance = Instantiate(chosen.prefab, position, rotation);
-                SpawnAndParent(instance);
-
+                SpawnOne(force);
                 spawned++;
+
+                if (interval > 0f)
+                    yield return new WaitForSeconds(interval);
+                else
+                    yield return null;
             }
 
-            return spawned;
+            spawnCoroutine = null;
         }
 
-        private void SpawnAndParent(NetworkObject instance)
+        private void SpawnOne(float force)
         {
+            if (packagePrefab == null || pipeExit == null) return;
+
+            var instance = Instantiate(packagePrefab, pipeExit.position, pipeExit.rotation);
+
             if (NetworkManager.Singleton != null)
             {
                 instance.Spawn(true);
@@ -284,275 +219,18 @@ namespace DeliverHere.GamePlay
                         instance.transform.SetParent(spawnParent, true);
                     }
                 }
-
-                // Record the package's initial cost (Value) at spawn time on the server.
-                // On the server, PackageProperties should have initialized its NetworkVariables by now.
-                var props = instance.GetComponentInChildren<PackageProperties>(true);
-                int costAtSpawn = 0;
-                if (props != null)
-                {
-                    costAtSpawn = props.Value;
-                }
-
-                // Store bookkeeping info
-                spawnedPackageInstanceIds.Add(instance.GetInstanceID());
-                totalSpawnedInitialValue += costAtSpawn;
             }
             else
             {
                 if (spawnParent != null) instance.transform.SetParent(spawnParent, true);
-                var propsOffline = instance.GetComponentInChildren<PackageProperties>(true);
-                propsOffline?.ServerRandomize();
-
-                int costAtSpawn = 0;
-                if (propsOffline != null)
-                {
-                    costAtSpawn = propsOffline.Value;
-                }
-
-                // Store bookkeeping info for offline spawn as well
-                spawnedPackageInstanceIds.Add(instance.GetInstanceID());
-                totalSpawnedInitialValue += costAtSpawn;
             }
-        }
 
-        /// <summary>
-        /// Returns the running sum of the initial package values recorded at spawn time.
-        /// This does not automatically track later value changes (e.g. damage). Use RecomputeSpawnedTotalIfNeeded() to recompute based on current live packages.
-        /// </summary>
-        public int GetTotalSpawnedInitialValue() => totalSpawnedInitialValue;
-
-        /// <summary>
-        /// Clears the spawner's bookkeeping of spawned package costs and instance ids.
-        /// Does not affect already-spawned GameObjects.
-        /// </summary>
-        public void ClearSpawnedCostRecords()
-        {
-            spawnedPackageInstanceIds.Clear();
-            totalSpawnedInitialValue = 0;
-        }
-
-        /// <summary>
-        /// Recomputes the total based on currently live spawned package instances by reading their current PackageProperties.Value.
-        /// This will prune dead/destroyed instances from the internal list.
-        /// Use this when you want the sum to reflect current package values (after damage/delivery).
-        /// </summary>
-        public int RecomputeSpawnedTotalIfNeeded()
-        {
-            int sum = 0;
-            for (int i = spawnedPackageInstanceIds.Count - 1; i >= 0; i--)
+            // Apply impulse force to the first Rigidbody found on the spawned object or its children.
+            var rb = instance.GetComponentInChildren<Rigidbody>();
+            if (rb != null)
             {
-                int instId = spawnedPackageInstanceIds[i];
-                // Find the live object with this instance id
-                GameObject found = null;
-                // Note: FindObjectsOfType is relatively expensive; keep this method for explicit calls.
-                var allNetworkObjects = FindObjectsOfType<NetworkObject>();
-                foreach (var no in allNetworkObjects)
-                {
-                    if (no == null) continue;
-                    if (no.gameObject.GetInstanceID() == instId)
-                    {
-                        found = no.gameObject;
-                        break;
-                    }
-                }
-
-                if (found == null)
-                {
-                    // Not found -> remove record
-                    spawnedPackageInstanceIds.RemoveAt(i);
-                    continue;
-                }
-
-                var props = found.GetComponentInChildren<PackageProperties>(true);
-                if (props == null)
-                {
-                    spawnedPackageInstanceIds.RemoveAt(i);
-                    continue;
-                }
-
-                sum += props.Value;
+                rb.AddForce(pipeExit.forward * force, ForceMode.Impulse);
             }
-
-            totalSpawnedInitialValue = sum;
-            return totalSpawnedInitialValue;
-        }
-
-        private bool TryGetSpawnTransform(out Vector3 position, out Quaternion rotation)
-        {
-            bool usePoint = spawnMode == SpawnMode.PointsOnly || (spawnMode == SpawnMode.Mixed && Random.value < 0.5f);
-
-            if (usePoint && TryFromPoints(out position, out rotation)) return true;
-            if (TryFromAreas(out position, out rotation)) return true;
-            if (!usePoint && spawnMode != SpawnMode.AreasOnly) return TryFromPoints(out position, out rotation);
-
-            position = default;
-            rotation = default;
-            return false;
-        }
-
-        private IReadOnlyList<Transform> GetPoints()
-        {
-            if (spawnAreasProvider != null && spawnAreasProvider.Points != null && spawnAreasProvider.Points.Count > 0)
-                return spawnAreasProvider.Points;
-
-            return System.Array.Empty<Transform>();
-        }
-
-        private IReadOnlyList<BoxCollider> GetAreas()
-        {
-            if (spawnAreasProvider != null && spawnAreasProvider.Areas != null && spawnAreasProvider.Areas.Count > 0)
-                return spawnAreasProvider.Areas;
-
-            return System.Array.Empty<BoxCollider>();
-        }
-
-        private bool TryFromPoints(out Vector3 position, out Quaternion rotation)
-        {
-            position = default;
-            rotation = default;
-
-            var points = GetPoints();
-            if (points == null || points.Count == 0) return false;
-
-            for (int attempt = 0; attempt < Mathf.Min(maxAttemptsPerPackage, points.Count); attempt++)
-            {
-                int idx = Random.Range(0, points.Count);
-                if (usedPointIndices.Contains(idx) && usedPointIndices.Count < points.Count) continue;
-
-                var t = points[idx];
-                if (t == null) continue;
-
-                var origin = t.position + Vector3.up * sampleAbove;
-                if (TryProjectToGround(origin, out var hitPoint, out var hitNormal))
-                {
-                    if (IsPositionClear(hitPoint))
-                    {
-                        usedPointIndices.Add(idx);
-                        position = hitPoint + hitNormal * surfaceOffset;
-                        rotation = Quaternion.FromToRotation(Vector3.up, hitNormal) * Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                        return true;
-                    }
-                }
-                else
-                {
-                    if (IsPositionClear(t.position))
-                    {
-                        usedPointIndices.Add(idx);
-                        position = t.position + Vector3.up * surfaceOffset;
-                        rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        private bool TryFromAreas(out Vector3 position, out Quaternion rotation)
-        {
-            position = default;
-            rotation = default;
-
-            var areas = GetAreas();
-            if (areas == null || areas.Count == 0) return false;
-
-            for (int attempt = 0; attempt < maxAttemptsPerPackage; attempt++)
-            {
-                var area = areas[Random.Range(0, areas.Count)];
-                if (area == null) continue;
-
-                var bounds = area.bounds;
-                var origin = new Vector3(
-                    Random.Range(bounds.min.x, bounds.max.x),
-                    bounds.max.y + sampleAbove,
-                    Random.Range(bounds.min.z, bounds.max.z));
-
-                if (!TryProjectToGround(origin, out var hitPoint, out var hitNormal)) continue;
-                if (!IsPositionClear(hitPoint)) continue;
-
-                position = hitPoint + hitNormal * surfaceOffset;
-                rotation = Quaternion.FromToRotation(Vector3.up, hitNormal) * Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                return true;
-            }
-            return false;
-        }
-
-        private bool TryProjectToGround(Vector3 rayOrigin, out Vector3 hitPoint, out Vector3 hitNormal)
-        {
-            hitPoint = default;
-            hitNormal = Vector3.up;
-
-            if (Physics.Raycast(rayOrigin, Vector3.down, out var hit, groundRayLength, groundMask, QueryTriggerInteraction.Ignore))
-            {
-                hitPoint = hit.point;
-                hitNormal = hit.normal;
-                return true;
-            }
-            return false;
-        }
-
-        private bool IsPositionClear(Vector3 position) => IsPositionClearWithRadius(position, overlapRadius);
-
-        private bool IsPositionClearWithRadius(Vector3 position, float radius)
-        {
-            var center = position + Vector3.up * (radius + surfaceOffset + 0.01f);
-            return !Physics.CheckSphere(center, radius, obstacleMask, QueryTriggerInteraction.Ignore);
-        }
-
-        private (int points, int areas) ProviderCounts()
-        {
-            int p = 0, a = 0;
-            if (spawnAreasProvider != null)
-            {
-                p = spawnAreasProvider.Points != null ? spawnAreasProvider.Points.Count : 0;
-                a = spawnAreasProvider.Areas != null ? spawnAreasProvider.Areas.Count : 0;
-            }
-            return (p, a);
-        }
-
-        private bool HasValidPackageOption()
-        {
-            if (packageOptions == null || packageOptions.Count == 0) return false;
-            foreach (var p in packageOptions)
-            {
-                if (p != null && p.prefab != null && p.weight > 0f) return true;
-            }
-            return false;
-        }
-
-        private WeightedPackage PickWeightedPackage()
-        {
-            float total = 0f;
-            WeightedPackage lastValid = null;
-
-            for (int i = 0; i < packageOptions.Count; i++)
-            {
-                var p = packageOptions[i];
-                if (p == null || p.prefab == null || p.weight <= 0f) continue;
-                total += p.weight;
-                lastValid = p;
-            }
-
-            if (total <= 0f)
-            {
-                for (int i = 0; i < packageOptions.Count; i++)
-                {
-                    var p = packageOptions[i];
-                    if (p != null && p.prefab != null) return p;
-                }
-                return null;
-            }
-
-            float r = Random.value * total;
-            float acc = 0f;
-            for (int i = 0; i < packageOptions.Count; i++)
-            {
-                var p = packageOptions[i];
-                if (p == null || p.prefab == null || p.weight <= 0f) continue;
-                acc += p.weight;
-                if (r <= acc) return p;
-            }
-            return lastValid;
         }
     }
 }

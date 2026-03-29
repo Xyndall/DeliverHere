@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using DeliverHere.Items;
 using Unity.Netcode;
 
@@ -78,6 +78,9 @@ public class PackageDamageSystem : MonoBehaviour
     {
         if (_rb == null || _props == null) return;
 
+        // Respect safe zones: packages inside a PackageSafeZone should not take damage.
+        if (PackageSafeZone.IsPackageSafe(_props)) return;
+
         // Filter ignored layers
         if (((1 << collision.gameObject.layer) & ignoreLayers.value) != 0)
             return;
@@ -109,7 +112,7 @@ public class PackageDamageSystem : MonoBehaviour
         if (damage < minDamageAmount)
             return;
 
-        // Prefer package origin with a small upward local offset so it’s visible above geometry
+        // Prefer package origin with a small upward local offset so itï¿½s visible above geometry
         Vector3 localOffset = textLocalOffset;
 
         ApplyDamageToValue(damage, localOffset);

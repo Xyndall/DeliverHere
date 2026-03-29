@@ -193,8 +193,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4278254082
-  m_fontColor: {r: 0.008386504, g: 0.9811321, b: 0, a: 1}
+    rgba: 4294967295
+  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -1659,30 +1659,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.PackageSpawner
   ShowTopMostFoldoutHeaderGroup: 1
-  packageOptions:
-  - prefab: {fileID: -122704528989098008, guid: 41173a9fe6a77ce46acc137dfe4daa63, type: 3}
-    weight: 1
-  spawnMode: 1
-  autoFindSpawnAreasProvider: 1
-  spawnAreasProvider: {fileID: 0}
-  groundMask:
-    serializedVersion: 2
-    m_Bits: 128
-  obstacleMask:
-    serializedVersion: 2
-    m_Bits: 256
-  surfaceOffset: 0.1
-  overlapRadius: 0.1
-  maxAttemptsPerPackage: 100
-  sampleAbove: 5
-  groundRayLength: 50
-  autoSpawnOnNetworkSpawn: 0
+  packagePrefab: {fileID: -122704528989098008, guid: 41173a9fe6a77ce46acc137dfe4daa63, type: 3}
+  pipeExit: {fileID: 0}
+  autoFindPipe: 1
+  pipeNameKeyword: pipeSpawnPackages
   spawnParent: {fileID: 325799804}
   useNetworkParenting: 1
-  useDailyIncreasingCount: 1
-  basePackagesFirstDay: 50
-  packagesIncrementPerDay: 5
-  maxDailyPackagesCap: 50
+  initialSpawnCount: 10
+  defaultSpawnForce: 10
+  defaultSpawnInterval: 0.1
+  autoSpawnOnNetworkSpawn: 0
 --- !u!4 &325799804
 Transform:
   m_ObjectHideFlags: 0
@@ -5616,9 +5602,6 @@ MonoBehaviour:
   uiStateManager: {fileID: 314850537}
   levelLoader: {fileID: 2074574621}
   levelFlow: {fileID: 2074574623}
-  packageSpawners:
-  - {fileID: 325799803}
-  preventDuplicateSpawnsPerDay: 1
   autoFindSpawnPoints: 1
   playerSpawnPoints: []
 --- !u!114 &1657870876

@@ -18,12 +18,6 @@ public class GameManager : NetworkBehaviour
     [SerializeField] private LevelLoader levelLoader;
     [SerializeField] private LevelFlowController levelFlow;
 
-    [Header("Package Spawning")]
-    [SerializeField] private List<PackageSpawner> packageSpawners = new List<PackageSpawner>();
-
-    [Header("Spawn Safety")]
-    [SerializeField] private bool preventDuplicateSpawnsPerDay = true;
-
     [Header("Player Spawning")]
     [SerializeField] private bool autoFindSpawnPoints = true;
     [SerializeField] private List<Transform> playerSpawnPoints = new List<Transform>();
@@ -317,8 +311,7 @@ public class GameManager : NetworkBehaviour
 
         if (moneyTargetManager != null && moneyTargetManager.CurrentDay <= 0 && IsServerOrStandalone)
             moneyTargetManager.AdvanceDay();
-        else if (moneyTargetManager != null && moneyTargetManager.CurrentDay > 0 && IsServerOrStandalone)
-            TrySpawnPackagesForDay(moneyTargetManager.CurrentDay);
+
 
         dailyPackagesDelivered = 0;
         currentDayTargetMoney = GetTargetMoney();
@@ -487,8 +480,6 @@ public class GameManager : NetworkBehaviour
         uiController.HideDayEndSummary();
         uiController.ShowHUD();
 
-        if (IsServerOrStandalone)
-            TrySpawnPackagesForDay(newDayIndex);
     }
 
     private void HandleTargetReached()
@@ -586,32 +577,5 @@ public class GameManager : NetworkBehaviour
         SyncAllUI();
     }
 
-    private void TrySpawnPackagesForDay(int dayIndex)
-    {
-        if (preventDuplicateSpawnsPerDay && lastSpawnedDay == dayIndex)
-            return;
-
-        lastSpawnedDay = dayIndex;
-        SpawnPackagesForDay(dayIndex);
-    }
-
-    private void SpawnPackagesForDay(int dayIndex)
-    {
-        if (packageSpawners == null) return;
-
-        var active = new List<PackageSpawner>();
-        foreach (var s in packageSpawners)
-        {
-            if (s != null && s.isActiveAndEnabled)
-                active.Add(s);
-        }
-        if (active.Count == 0) return;
-
-        foreach (var spawner in active)
-        {
-            spawner.SetUseDailyIncreasingCount(false);
-            spawner.ApplyDayIndex(dayIndex);
-            spawner.SpawnAll();
-        }
-    }
+    
 }

@@ -352,6 +352,7 @@ GameObject:
   - component: {fileID: 1314525665084999406}
   - component: {fileID: -7515118946062083735}
   - component: {fileID: 5444711449975326875}
+  - component: {fileID: 5565783595140617324}
   m_Layer: 9
   m_Name: Player
   m_TagString: Untagged
@@ -630,7 +631,6 @@ MonoBehaviour:
   anchorPoseMinPosDelta: 0
   anchorPoseMinRotDeltaDeg: 0
   inputController: {fileID: 1314525665084999406}
-  heldItemLayerName: HeldItem
   massForMaxSlowdown: 10
 --- !u!114 &276092387163634943
 MonoBehaviour:
@@ -912,6 +912,27 @@ MonoBehaviour:
   pickupRange: 3
   showUiPrompt: 1
   serverRangeBuffer: 0.5
+--- !u!114 &5565783595140617324
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ebd85f04a0da7c34099c7f531657ba46, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerInteractions
+  ShowTopMostFoldoutHeaderGroup: 1
+  cameraTransform: {fileID: 0}
+  interactLayer:
+    serializedVersion: 2
+    m_Bits: 4096
+  range: 3
+  triggerInteraction: 1
+  drawGizmos: 1
+  gizmoDuration: 5
 --- !u!1001 &540586581813028460
 PrefabInstance:
   m_ObjectHideFlags: 0

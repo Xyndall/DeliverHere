@@ -71,6 +71,10 @@ public sealed class PlayerUpgradeInteractor : NetworkBehaviour
 
     private void UpdateLookTargetAndPrompt()
     {
+        // Lazy-find the UI in case it wasn't present during OnNetworkSpawn
+        if (IsOwner && _ui == null)
+            _ui = FindAnyObjectByType<GameUIController>();
+
         _lookedAtPickupLocal = null;
         _lookedAtRef = default;
 

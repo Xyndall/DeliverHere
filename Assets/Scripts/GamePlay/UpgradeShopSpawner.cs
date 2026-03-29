@@ -76,13 +76,11 @@ public sealed class UpgradeShopSpawner : NetworkBehaviour
                 continue;
             }
 
-            // Preserve prefab-authored scale even when parenting under a scaled shop transform.
-            Vector3 prefabLocalScale = pickupPrefab.transform.localScale;
-
             // Instantiate unparented first to avoid inheriting parent scale during creation.
             var inst = Instantiate(pickupPrefab, point.position, point.rotation);
 
-            // Parent while keeping world transform, then restore the intended local scale.
+            // Preserve the instantiated object's authored local scale, then parent while keeping world transform.
+            Vector3 prefabLocalScale = inst.transform.localScale;
             inst.transform.SetParent(transform, true);
             inst.transform.localScale = prefabLocalScale;
 
