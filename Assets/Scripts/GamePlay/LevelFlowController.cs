@@ -1,9 +1,8 @@
-using System;
+using DeliverHere.GamePlay;
 using System.Collections;
-using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using Unity.Netcode;
 
 public partial class LevelFlowController : MonoBehaviour
 {
@@ -15,6 +14,13 @@ public partial class LevelFlowController : MonoBehaviour
     [SerializeField] private float postTeleportStartDelaySeconds = 0.25f;
 
     [SerializeField] private LevelLoader levelLoader;
+    
+    // NEW: Loading screen reference
+    [Header("UI References")]
+    [SerializeField] private LoadingScreen loadingScreen;
+    [SerializeField] private bool autoFindLoadingScreen = true;
+
+    private bool IsServer => NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
 
     private void OnEnable()
     {
@@ -35,6 +41,9 @@ public partial class LevelFlowController : MonoBehaviour
     {
         if (levelLoader == null)
             levelLoader = LevelLoader.Instance ?? FindFirstObjectByType<LevelLoader>();
+
+        if (loadingScreen == null && autoFindLoadingScreen)
+            loadingScreen = FindFirstObjectByType<LoadingScreen>();
     }
 
     // Public entry point you can call from UI, NetworkGameState, etc.
@@ -111,15 +120,43 @@ public partial class LevelFlowController : MonoBehaviour
 
     private IEnumerator FinishLoadingAndStartGame_Coroutine()
     {
-        // Let teleport RPCs / owner-authoritative transforms apply.
-        yield return null;
+        yield return new WaitForSeconds(postTeleportStartDelaySeconds);
 
-        if (postTeleportStartDelaySeconds > 0f)
-            yield return new WaitForSeconds(postTeleportStartDelaySeconds);
+        // Hide loading screen if available
+        if (loadingScreen != null)
+            loadingScreen.gameObject.SetActive(false);
 
-        // NOW start the game (gameplay active + timer ticking + UI state)
+        // Setup level but don't auto-start game
+        OnLevelFullyLoaded_Server();
+
+        // The WorldStartGameButton will call GameManager.StartGame() when pressed
+    }
+
+    private void OnLevelFullyLoaded_Server()
+    {
+        if (!IsServer) return;
+
+        // Find and setup the delivery zone manager (discover zones, find warehouse)
+        var zoneManager = FindFirstObjectByType<DailyDeliveryZoneManager>();
+        if (zoneManager != null)
+        {
+            zoneManager.ServerSetupAfterLevelLoad();
+        }
+
+        // Position players at spawn points but DON'T start the game yet
         if (GameManager.Instance != null)
-            GameManager.Instance.StartGame();
+        {
+            GameManager.Instance.PositionPlayersToSpawnPoints();
+        }
+
+        // IMPORTANT: Set game state to Lobby so players can move and interact with the start button
+        var netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+        if (netState != null)
+        {
+            netState.ServerSetGameState(GameState.Lobby, paused: false);
+        }
+
+        Debug.Log("[LevelFlowController] Level loaded and setup complete. Waiting for start button press...");
     }
 
     /// <summary>

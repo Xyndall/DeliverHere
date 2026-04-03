@@ -17,20 +17,22 @@ public class PlayerInteractions : NetworkBehaviour
     [Header("Feedback (optional)")]
     [SerializeField] private bool drawGizmos = true;
 
-    [Header("UI (reuses upgrade prompt)")]
+    [Header("UI Prompts")]
     [SerializeField] private bool showUiPrompt = true;
 
     private PlayerInputController _input;
 
-    // Cached result of the continuous raycast
-    private WorldSpawnButton _lookedAtButton;
+    // Cached results of the continuous raycast
+    private WorldSpawnButton _lookedAtSpawnButton;
+    private WorldStartGameButton _lookedAtStartButton;
     private float _lastLookDistance;
 
-    // UI controller (reused from PlayerUpgradeInteractor)
+    // UI controller
     private GameUIController _ui;
 
-    // constant prompt text this component owns
-    private const string SpawnPromptText = "Interact to spawn packages";
+    // Prompt texts
+    private const string SpawnPromptText = "Press [E] to Spawn Packages";
+    private const string StartGamePromptText = "Press [E] to Start Game";
 
     private void Awake()
     {
@@ -57,7 +59,10 @@ public class PlayerInteractions : NetworkBehaviour
     private void OnDisable()
     {
         if (IsOwner && _ui != null)
+        {
             _ui.ClearUpgradePromptIfEquals(SpawnPromptText);
+            _ui.ClearUpgradePromptIfEquals(StartGamePromptText);
+        }
     }
 
     private void Update()
@@ -79,9 +84,7 @@ public class PlayerInteractions : NetworkBehaviour
     {
         if (cameraTransform == null)
         {
-            _lookedAtButton = null;
-            _lastLookDistance = 0f;
-            if (showUiPrompt && _ui != null) _ui.ClearUpgradePromptIfEquals(SpawnPromptText);
+            ClearLookedAt();
             return;
         }
 
@@ -93,42 +96,68 @@ public class PlayerInteractions : NetworkBehaviour
 
         if (!gotHit || hit.collider == null)
         {
-            _lookedAtButton = null;
+            ClearLookedAt();
             _lastLookDistance = gotHit ? hit.distance : range;
-            if (showUiPrompt && _ui != null) _ui.ClearUpgradePromptIfEquals(SpawnPromptText);
             return;
         }
 
-        // Cache the WorldSpawnButton if present on the hit object or its parents
-        _lookedAtButton = hit.collider.GetComponentInParent<WorldSpawnButton>();
+        // Cache the interactable components if present on the hit object or its parents
+        _lookedAtSpawnButton = hit.collider.GetComponentInParent<WorldSpawnButton>();
+        _lookedAtStartButton = hit.collider.GetComponentInParent<WorldStartGameButton>();
         _lastLookDistance = hit.distance;
 
-        // Show a basic prompt (reusing the upgrade prompt UI)
+        // Show appropriate prompt based on what we're looking at
+        UpdatePromptUI();
+    }
+
+    private void ClearLookedAt()
+    {
+        _lookedAtSpawnButton = null;
+        _lookedAtStartButton = null;
+        
+        if (showUiPrompt && _ui != null)
+        {
+            _ui.ClearUpgradePromptIfEquals(SpawnPromptText);
+            _ui.ClearUpgradePromptIfEquals(StartGamePromptText);
+        }
+    }
+
+    private void UpdatePromptUI()
+    {
         if (!showUiPrompt || _ui == null)
             return;
 
-        if (_lookedAtButton != null)
+        // Priority: Start button takes precedence over spawn button
+        if (_lookedAtStartButton != null)
         {
-            // Basic text — change if you want something more descriptive
+            _ui.SetUpgradePrompt(StartGamePromptText);
+        }
+        else if (_lookedAtSpawnButton != null)
+        {
             _ui.SetUpgradePrompt(SpawnPromptText);
         }
         else
         {
             _ui.ClearUpgradePromptIfEquals(SpawnPromptText);
+            _ui.ClearUpgradePromptIfEquals(StartGamePromptText);
         }
     }
 
     private void TryInteract()
     {
-        // Use the cached looked-at interactable
-        if (_lookedAtButton != null)
+        // Priority: Start button takes precedence
+        if (_lookedAtStartButton != null)
         {
-            // ActivateLocal will handle server/standalone logic (it issues RPCs when needed)
-            _lookedAtButton.ActivateLocal();
+            _lookedAtStartButton.ActivateLocal();
+            return;
+        }
+
+        if (_lookedAtSpawnButton != null)
+        {
+            _lookedAtSpawnButton.ActivateLocal();
             return;
         }
 
         // No cached interactable — nothing to do.
     }
-
 }

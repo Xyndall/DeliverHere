@@ -323,11 +323,10 @@ MonoBehaviour:
   mediumValueRange: {x: 150, y: 350}
   largeValueRange: {x: 350, y: 500}
   allowedSizes: 000102
-  colorPalette: []
   targetRenderer: {fileID: 3160900035877206250}
   smallScale: {x: 0.7, y: 0.7, z: 0.7}
-  mediumScale: {x: 1, y: 1, z: 1}
-  largeScale: {x: 1.4, y: 1.4, z: 1.4}
+  mediumScale: {x: 0.85, y: 0.85, z: 0.85}
+  largeScale: {x: 1, y: 1, z: 1}
   randomizeScale: 1
   smallScaleMultiplierRange: {x: 0.7, y: 0.9}
   mediumScaleMultiplierRange: {x: 0.9, y: 1.2}

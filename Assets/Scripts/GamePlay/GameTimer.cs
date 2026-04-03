@@ -10,7 +10,7 @@ public class GameTimer : MonoBehaviour
     [SerializeField] private float durationSeconds = 180f;
 
     [Tooltip("Automatically start the first timer if no day has started yet.")]
-    [SerializeField] private bool autoStartFirstDay = true;
+    [SerializeField] private bool autoStartFirstDay = false; // CHANGED: Set to false by default
 
     [Tooltip("If true, immediately advance to the next day on success without requiring a button press.")]
     [SerializeField] private bool autoAdvanceOnSuccess = false;
@@ -64,8 +64,8 @@ public class GameTimer : MonoBehaviour
         if (totalTime <= 0f)
             totalTime = Mathf.Max(1f, durationSeconds);
 
-        // Start flow based on current day
-        if (money != null && autoStartFirstDay && money.CurrentDay <= 0 && IsServerOrStandalone)
+        // CHANGED: Only auto-start if explicitly enabled
+        if (autoStartFirstDay && money != null && money.CurrentDay <= 0 && IsServerOrStandalone)
         {
             money.AdvanceDay();
         }
@@ -84,7 +84,6 @@ public class GameTimer : MonoBehaviour
         {
             money.OnDayAdvanced -= HandleDayAdvanced;
         }
-
     }
 
     private void EnsureRefs()
@@ -128,7 +127,6 @@ public class GameTimer : MonoBehaviour
 
         if (IsServerOrStandalone)
         {
-
             remainingTime -= Time.deltaTime;
             if (remainingTime <= 0f)
             {

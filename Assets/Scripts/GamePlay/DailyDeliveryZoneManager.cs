@@ -30,6 +30,10 @@ namespace DeliverHere.GamePlay
         [Header("Zones (Manual Assignment)")]
         [SerializeField] private List<DeliveryZoneDefinition> allDeliveryZones = new List<DeliveryZoneDefinition>();
 
+        [Header("Setup Timing")]
+        [Tooltip("If true, setup happens immediately on network spawn. If false, requires manual call (e.g., from start button).")]
+        [SerializeField] private bool autoSetupOnSpawn = false;
+
         [Header("Debug")]
         [SerializeField] private bool showDebugGizmos = true;
         [SerializeField] private bool enableServerLogs = true;
@@ -39,6 +43,7 @@ namespace DeliverHere.GamePlay
         private HashSet<int> _usedZoneIndices = new HashSet<int>();
         private int _currentDay = 0;
         private float _currentRadius = 0f;
+        private bool _hasBeenSetup = false;
 
         // Network variables for client synchronization
         private readonly NetworkVariable<int> nvCurrentDay = new NetworkVariable<int>(
@@ -67,12 +72,6 @@ namespace DeliverHere.GamePlay
         {
             base.OnNetworkSpawn();
 
-            if (autoFindWarehouse && warehouseSpawnPoint == null)
-                FindWarehouseSpawnPoint();
-
-            if (autoDiscoverZones)
-                DiscoverAllZones();
-
             if (moneyTargetManager != null)
                 moneyTargetManager.OnDayAdvanced += OnDayAdvanced;
 
@@ -86,6 +85,12 @@ namespace DeliverHere.GamePlay
                 _currentDay = nvCurrentDay.Value;
                 SyncActiveZonesFromNetwork();
             }
+
+            // Only auto-setup if configured
+            if (autoSetupOnSpawn && IsServer)
+            {
+                ServerSetupAfterLevelLoad();
+            }
         }
 
         public override void OnNetworkDespawn()
@@ -97,6 +102,52 @@ namespace DeliverHere.GamePlay
             nvActiveZoneIndices.OnListChanged -= OnNetworkActiveZonesChanged;
 
             base.OnNetworkDespawn();
+        }
+
+        /// <summary>
+        /// Server: Call this after level is loaded to discover warehouse and zones.
+        /// Typically called from WorldStartGameButton or LevelFlowController.
+        /// </summary>
+        public void ServerSetupAfterLevelLoad()
+        {
+            if (!IsServer)
+            {
+                Debug.LogWarning("[DailyDeliveryZoneManager] ServerSetupAfterLevelLoad can only be called on server.");
+                return;
+            }
+
+            if (_hasBeenSetup)
+            {
+                if (enableServerLogs)
+                    Debug.Log("[DailyDeliveryZoneManager] Already setup, skipping.");
+                return;
+            }
+
+            _hasBeenSetup = true;
+
+            if (enableServerLogs)
+                Debug.Log("[DailyDeliveryZoneManager] Running level load setup...");
+
+            // 1. Find warehouse spawn point
+            if (autoFindWarehouse && warehouseSpawnPoint == null)
+            {
+                FindWarehouseSpawnPoint();
+            }
+
+            // 2. Discover all delivery zones in the loaded level
+            if (autoDiscoverZones)
+            {
+                DiscoverAllZones();
+            }
+
+            // 3. If a day has already started, select zones immediately
+            if (moneyTargetManager != null && moneyTargetManager.CurrentDay > 0)
+            {
+                SelectZonesForDay(moneyTargetManager.CurrentDay);
+            }
+
+            if (enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Setup complete. Warehouse: {warehouseSpawnPoint?.name ?? "null"}, Zones discovered: {allDeliveryZones.Count}");
         }
 
         private void OnDayAdvanced(int newDayIndex)
@@ -116,19 +167,28 @@ namespace DeliverHere.GamePlay
             if (gm != null && gm.PlayerSpawnPoints != null && gm.PlayerSpawnPoints.Count > 0)
             {
                 warehouseSpawnPoint = gm.PlayerSpawnPoints[0];
+                
+                if (enableServerLogs)
+                    Debug.Log($"[DailyDeliveryZoneManager] Found warehouse from GameManager: {warehouseSpawnPoint.name}");
                 return;
             }
 
-            // Fallback: search by tag or name
+            // Fallback: search by tag
             var spawns = GameObject.FindGameObjectsWithTag("PlayerSpawn");
             if (spawns != null && spawns.Length > 0)
             {
                 warehouseSpawnPoint = spawns[0].transform;
+                
+                if (enableServerLogs)
+                    Debug.Log($"[DailyDeliveryZoneManager] Found warehouse by tag: {warehouseSpawnPoint.name}");
                 return;
             }
 
-            // Use this transform as fallback
+            // Last resort: use this transform as fallback
             warehouseSpawnPoint = transform;
+            
+            if (enableServerLogs)
+                Debug.LogWarning("[DailyDeliveryZoneManager] No warehouse spawn found, using manager position as fallback.");
         }
 
         private void DiscoverAllZones()
@@ -349,6 +409,19 @@ namespace DeliverHere.GamePlay
         {
             DiscoverAllZones();
             Debug.Log($"Discovered {allDeliveryZones.Count} zones.");
+        }
+
+        [ContextMenu("Debug/Server Setup After Level Load")]
+        private void Debug_ServerSetup()
+        {
+            if (!Application.isPlaying)
+            {
+                Debug.LogWarning("Only available in Play mode.");
+                return;
+            }
+
+            _hasBeenSetup = false; // Reset to allow re-setup
+            ServerSetupAfterLevelLoad();
         }
     }
 }
