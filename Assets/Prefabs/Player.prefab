@@ -590,7 +590,7 @@ MonoBehaviour:
   upgradableStats: {fileID: -7515118946062083735}
   pickupMask:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 2112
   pickupCastRadius: 0.12
   pickupRange: 3
   linearSpringBase: 1000

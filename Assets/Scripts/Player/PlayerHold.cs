@@ -175,6 +175,7 @@ public class PlayerHold : NetworkBehaviour
         public float AngularDrag;
         public RigidbodyInterpolation Interp;
         public CollisionDetectionMode CollisionMode;
+        public int Layer;
     }
 
     private HeldRestore _restore;
@@ -475,7 +476,8 @@ public class PlayerHold : NetworkBehaviour
                 Drag = _heldBody.linearDamping,
                 AngularDrag = _heldBody.angularDamping,
                 Interp = _heldBody.interpolation,
-                CollisionMode = _heldBody.collisionDetectionMode
+                CollisionMode = _heldBody.collisionDetectionMode,
+                Layer = _heldBody.gameObject.layer
             };
             _restoreCaptured = true;
         }
@@ -483,6 +485,13 @@ public class PlayerHold : NetworkBehaviour
         if (_heldBody != null)
         {
             ApplyHeldPhysicsLocal();
+
+            // Change layer to HeldItem
+            int heldItemLayer = LayerMask.NameToLayer("HeldItem");
+            if (heldItemLayer != -1)
+            {
+                _heldBody.gameObject.layer = heldItemLayer;
+            }
         }
 
         if (IsServer && _heldBody != null)
@@ -534,6 +543,7 @@ public class PlayerHold : NetworkBehaviour
         _heldBody.angularDamping = _restore.AngularDrag;
         _heldBody.interpolation = _restore.Interp;
         _heldBody.collisionDetectionMode = _restore.CollisionMode;
+        _heldBody.gameObject.layer = _restore.Layer;
     }
 
     private void OnHoldersCountChanged(int previous, int current)
@@ -766,6 +776,12 @@ public class PlayerHold : NetworkBehaviour
         _heldBody.angularDamping = _restore.AngularDrag;
         _heldBody.interpolation = _restore.Interp;
         _heldBody.collisionDetectionMode = _restore.CollisionMode;
+
+        // Restore original layer
+        if (_restoreCaptured)
+        {
+            _heldBody.gameObject.layer = _restore.Layer;
+        }
 
         if (overrideVelocity.HasValue)
             _heldBody.linearVelocity = overrideVelocity.Value;
