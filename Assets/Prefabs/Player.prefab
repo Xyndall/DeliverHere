@@ -593,6 +593,9 @@ MonoBehaviour:
     m_Bits: 2112
   pickupCastRadius: 0.12
   pickupRange: 3
+  heldItemLayer: 11
+  restoreOriginalLayerOnDrop: 1
+  dropRestoreLayer: 6
   linearSpringBase: 1000
   linearSpringPerKg: 40
   linearDamper: 100

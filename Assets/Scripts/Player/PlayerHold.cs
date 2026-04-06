@@ -25,6 +25,14 @@ public class PlayerHold : NetworkBehaviour
     [SerializeField] private float pickupCastRadius = 0.15f;
     [SerializeField] private float pickupRange = 3f;
 
+    [Header("Layer Management")]
+    [Tooltip("Layer to apply when object is held (e.g., HeldItem).")]
+    [SerializeField] private int heldItemLayer = 0;
+    [Tooltip("If true, restore to original layer on drop. If false, use dropRestoreLayer.")]
+    [SerializeField] private bool restoreOriginalLayerOnDrop = true;
+    [Tooltip("Layer to apply on drop if not restoring original layer.")]
+    [SerializeField] private int dropRestoreLayer = 0;
+
     [Header("ConfigurableJoint (Position Drive)")]
     [Tooltip("Base linear drive spring (N/m) + per-kg scale produces final spring.")]
     [SerializeField] private float linearSpringBase = 450f;
@@ -485,10 +493,10 @@ public class PlayerHold : NetworkBehaviour
         if (_heldBody != null)
         {
             ApplyHeldPhysicsLocal();
-
-            // Change layer to HeldItem
-            int heldItemLayer = LayerMask.NameToLayer("HeldItem");
-            if (heldItemLayer != -1)
+            
+            // CHANGED: Only apply layer on clients for visual consistency
+            // Server will handle this in RequestPickupServerRpc
+            if (!IsServer)
             {
                 _heldBody.gameObject.layer = heldItemLayer;
             }
@@ -543,7 +551,16 @@ public class PlayerHold : NetworkBehaviour
         _heldBody.angularDamping = _restore.AngularDrag;
         _heldBody.interpolation = _restore.Interp;
         _heldBody.collisionDetectionMode = _restore.CollisionMode;
-        _heldBody.gameObject.layer = _restore.Layer;
+        
+        // Restore layer based on settings
+        if (restoreOriginalLayerOnDrop)
+        {
+            _heldBody.gameObject.layer = _restore.Layer;
+        }
+        else
+        {
+            _heldBody.gameObject.layer = dropRestoreLayer;
+        }
     }
 
     private void OnHoldersCountChanged(int previous, int current)
@@ -719,11 +736,26 @@ public class PlayerHold : NetworkBehaviour
         var netObj = rb.GetComponent<NetworkObject>();
         if (netObj == null) return;
 
+        // ADDED: Capture and apply layer on server
+        _restore = new HeldRestore
+        {
+            UseGravity = rb.useGravity,
+            IsKinematic = rb.isKinematic,
+            Drag = rb.linearDamping,
+            AngularDrag = rb.angularDamping,
+            Interp = rb.interpolation,
+            CollisionMode = rb.collisionDetectionMode,
+            Layer = rb.gameObject.layer
+        };
+        _restoreCaptured = true;
+
+        // ADDED: Apply held layer on server (this is the authoritative change)
+        rb.gameObject.layer = heldItemLayer;
+
         _heldBody = rb;
         _heldRef.Value = new NetworkObjectReference(netObj);
 
         _anchorRampElapsed = 0f;
-        _restoreCaptured = false;
         _pickupTimestamp = Time.time;
         _exceededSeparationTime = 0f;
 
@@ -770,17 +802,25 @@ public class PlayerHold : NetworkBehaviour
 
         DestroyJoint();
 
+        // Restore physics settings
         _heldBody.isKinematic = _restore.IsKinematic;
         _heldBody.useGravity = alwaysEnableGravityOnDrop ? true : _restore.UseGravity;
         _heldBody.linearDamping = _restore.Drag;
         _heldBody.angularDamping = _restore.AngularDrag;
         _heldBody.interpolation = _restore.Interp;
         _heldBody.collisionDetectionMode = _restore.CollisionMode;
-
-        // Restore original layer
+        
+        // CHANGED: Restore layer on server (authoritative)
         if (_restoreCaptured)
         {
-            _heldBody.gameObject.layer = _restore.Layer;
+            if (restoreOriginalLayerOnDrop)
+            {
+                _heldBody.gameObject.layer = _restore.Layer;
+            }
+            else
+            {
+                _heldBody.gameObject.layer = dropRestoreLayer;
+            }
         }
 
         if (overrideVelocity.HasValue)
@@ -869,6 +909,10 @@ public class PlayerHold : NetworkBehaviour
         anchorPoseSendRateHz = Mathf.Clamp(anchorPoseSendRateHz, 1f, 60f);
         anchorPoseMinPosDelta = Mathf.Max(0f, anchorPoseMinPosDelta);
         anchorPoseMinRotDeltaDeg = Mathf.Max(0f, anchorPoseMinRotDeltaDeg);
+        
+        // Validate layer indices
+        heldItemLayer = Mathf.Clamp(heldItemLayer, 0, 31);
+        dropRestoreLayer = Mathf.Clamp(dropRestoreLayer, 0, 31);
     }
 #endif
 }

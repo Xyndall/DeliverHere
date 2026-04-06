@@ -26,6 +26,8 @@ namespace DeliverHere.GamePlay
         [SerializeField, Min(1)] private int zonesPerDay = 1;
         [SerializeField] private bool allowDuplicateZones = false;
         [SerializeField] private bool autoDiscoverZones = true;
+        [Tooltip("If true, prevents selecting the same zone as the previous day.")]
+        [SerializeField] private bool avoidLastDayZone = true;
 
         [Header("Zones (Manual Assignment)")]
         [SerializeField] private List<DeliveryZoneDefinition> allDeliveryZones = new List<DeliveryZoneDefinition>();
@@ -44,6 +46,9 @@ namespace DeliverHere.GamePlay
         private int _currentDay = 0;
         private float _currentRadius = 0f;
         private bool _hasBeenSetup = false;
+
+        // NEW: Track previous day's zone(s) to avoid repeating
+        private List<int> _previousDayZoneIndices = new List<int>();
 
         // Network variables for client synchronization
         private readonly NetworkVariable<int> nvCurrentDay = new NetworkVariable<int>(
@@ -208,6 +213,7 @@ namespace DeliverHere.GamePlay
 
         /// <summary>
         /// Server-only: Selects random delivery zones within the current day's radius.
+        /// Avoids zones used in the previous day.
         /// </summary>
         private void SelectZonesForDay(int dayIndex)
         {
@@ -228,18 +234,47 @@ namespace DeliverHere.GamePlay
                 return;
             }
 
+            // NEW: Filter out zones from previous day if enabled
+            var candidateZones = new List<DeliveryZoneDefinition>(eligibleZones);
+            
+            if (avoidLastDayZone && _previousDayZoneIndices.Count > 0)
+            {
+                // Remove zones that were active last day
+                for (int i = candidateZones.Count - 1; i >= 0; i--)
+                {
+                    int globalIndex = allDeliveryZones.IndexOf(candidateZones[i]);
+                    if (_previousDayZoneIndices.Contains(globalIndex))
+                    {
+                        candidateZones.RemoveAt(i);
+                    }
+                }
+
+                // If we filtered out everything, fall back to all eligible zones
+                if (candidateZones.Count == 0)
+                {
+                    if (enableServerLogs)
+                        Debug.LogWarning($"[DailyDeliveryZoneManager] All zones were used last day. Using full eligible pool.");
+                    candidateZones = new List<DeliveryZoneDefinition>(eligibleZones);
+                }
+                else if (enableServerLogs)
+                {
+                    Debug.Log($"[DailyDeliveryZoneManager] Filtered out {eligibleZones.Count - candidateZones.Count} zone(s) from previous day. {candidateZones.Count} candidates remain.");
+                }
+            }
+
             // Select random zones
             _activeZonesThisDay.Clear();
             _usedZoneIndices.Clear();
             nvActiveZoneIndices.Clear();
 
-            int targetCount = Mathf.Min(zonesPerDay, eligibleZones.Count);
+            int targetCount = Mathf.Min(zonesPerDay, candidateZones.Count);
+            var newlySelectedIndices = new List<int>();
 
             if (!allowDuplicateZones)
             {
                 // Unique selection
                 var indices = new List<int>();
-                for (int i = 0; i < eligibleZones.Count; i++)
+                for (int i = 0; i < candidateZones.Count; i++)
                     indices.Add(i);
 
                 for (int i = 0; i < targetCount; i++)
@@ -248,13 +283,16 @@ namespace DeliverHere.GamePlay
                     int selectedIndex = indices[randIndex];
                     indices.RemoveAt(randIndex);
 
-                    var zone = eligibleZones[selectedIndex];
+                    var zone = candidateZones[selectedIndex];
                     _activeZonesThisDay.Add(zone);
 
                     // Find global index for network sync
                     int globalIndex = allDeliveryZones.IndexOf(zone);
                     if (globalIndex >= 0)
+                    {
                         nvActiveZoneIndices.Add(globalIndex);
+                        newlySelectedIndices.Add(globalIndex);
+                    }
 
                     zone.ActivateZone();
                 }
@@ -264,16 +302,24 @@ namespace DeliverHere.GamePlay
                 // Allow duplicates
                 for (int i = 0; i < targetCount; i++)
                 {
-                    var zone = eligibleZones[UnityEngine.Random.Range(0, eligibleZones.Count)];
+                    var zone = candidateZones[UnityEngine.Random.Range(0, candidateZones.Count)];
                     _activeZonesThisDay.Add(zone);
 
                     int globalIndex = allDeliveryZones.IndexOf(zone);
                     if (globalIndex >= 0)
+                    {
                         nvActiveZoneIndices.Add(globalIndex);
+                        if (!newlySelectedIndices.Contains(globalIndex))
+                            newlySelectedIndices.Add(globalIndex);
+                    }
 
                     zone.ActivateZone();
                 }
             }
+
+            // NEW: Store current selection for next day's exclusion
+            _previousDayZoneIndices.Clear();
+            _previousDayZoneIndices.AddRange(newlySelectedIndices);
 
             if (enableServerLogs)
             {
@@ -383,6 +429,23 @@ namespace DeliverHere.GamePlay
             // Draw warehouse position
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireCube(center, Vector3.one * 5f);
+
+            // NEW: Draw previous day's zones in orange
+            if (_previousDayZoneIndices != null && _previousDayZoneIndices.Count > 0)
+            {
+                Gizmos.color = new Color(1f, 0.5f, 0f, 0.6f);
+                foreach (int idx in _previousDayZoneIndices)
+                {
+                    if (idx >= 0 && idx < allDeliveryZones.Count)
+                    {
+                        var zone = allDeliveryZones[idx];
+                        if (zone != null)
+                        {
+                            Gizmos.DrawWireSphere(zone.WorldPosition, 3f);
+                        }
+                    }
+                }
+            }
         }
 #endif
 
