@@ -5838,6 +5838,7 @@ MonoBehaviour:
   zonesPerDay: 1
   allowDuplicateZones: 0
   autoDiscoverZones: 1
+  avoidLastDayZone: 1
   allDeliveryZones: []
   autoSetupOnSpawn: 0
   showDebugGizmos: 1

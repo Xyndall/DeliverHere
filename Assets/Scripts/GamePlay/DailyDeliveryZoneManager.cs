@@ -39,6 +39,7 @@ namespace DeliverHere.GamePlay
         [Header("Debug")]
         [SerializeField] private bool showDebugGizmos = true;
         [SerializeField] private bool enableServerLogs = true;
+        [SerializeField] private bool enableClientLogs = false;
 
         // Runtime state
         private List<DeliveryZoneDefinition> _activeZonesThisDay = new List<DeliveryZoneDefinition>();
@@ -84,14 +85,29 @@ namespace DeliverHere.GamePlay
             nvCurrentDay.OnValueChanged += OnNetworkDayChanged;
             nvActiveZoneIndices.OnListChanged += OnNetworkActiveZonesChanged;
 
-            // Clients sync initial state
+            // NEW: Clients need to discover zones locally too!
             if (!IsServer)
             {
+                if (enableClientLogs)
+                    Debug.Log("[DailyDeliveryZoneManager] Client discovering zones...");
+
+                // Clients discover zones in their local scene
+                if (autoDiscoverZones)
+                {
+                    DiscoverAllZones();
+                }
+
                 _currentDay = nvCurrentDay.Value;
+                _currentRadius = Mathf.Min(initialRadius + (radiusIncreasePerDay * (_currentDay - 1)), maxRadius);
+
+                // Sync active zones from network
                 SyncActiveZonesFromNetwork();
+
+                if (enableClientLogs)
+                    Debug.Log($"[DailyDeliveryZoneManager] Client synced: Day {_currentDay}, {_activeZonesThisDay.Count} active zones");
             }
 
-            // Only auto-setup if configured
+            // Only auto-setup if configured (server only)
             if (autoSetupOnSpawn && IsServer)
             {
                 ServerSetupAfterLevelLoad();
@@ -155,6 +171,32 @@ namespace DeliverHere.GamePlay
                 Debug.Log($"[DailyDeliveryZoneManager] Setup complete. Warehouse: {warehouseSpawnPoint?.name ?? "null"}, Zones discovered: {allDeliveryZones.Count}");
         }
 
+        /// <summary>
+        /// Client: Call this when a client joins mid-game or loads the level late.
+        /// Ensures client has discovered zones and synced state.
+        /// </summary>
+        public void ClientDiscoverAndSync()
+        {
+            if (IsServer) return;
+
+            if (enableClientLogs)
+                Debug.Log("[DailyDeliveryZoneManager] Client manual discover and sync...");
+
+            // Discover zones in client's local scene
+            if (autoDiscoverZones)
+            {
+                DiscoverAllZones();
+            }
+
+            // Sync from network state
+            _currentDay = nvCurrentDay.Value;
+            _currentRadius = Mathf.Min(initialRadius + (radiusIncreasePerDay * (_currentDay - 1)), maxRadius);
+            SyncActiveZonesFromNetwork();
+
+            if (enableClientLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Client sync complete: {_activeZonesThisDay.Count} active zones");
+        }
+
         private void OnDayAdvanced(int newDayIndex)
         {
             if (!IsServer) return;
@@ -172,7 +214,7 @@ namespace DeliverHere.GamePlay
             if (gm != null && gm.PlayerSpawnPoints != null && gm.PlayerSpawnPoints.Count > 0)
             {
                 warehouseSpawnPoint = gm.PlayerSpawnPoints[0];
-                
+
                 if (enableServerLogs)
                     Debug.Log($"[DailyDeliveryZoneManager] Found warehouse from GameManager: {warehouseSpawnPoint.name}");
                 return;
@@ -183,7 +225,7 @@ namespace DeliverHere.GamePlay
             if (spawns != null && spawns.Length > 0)
             {
                 warehouseSpawnPoint = spawns[0].transform;
-                
+
                 if (enableServerLogs)
                     Debug.Log($"[DailyDeliveryZoneManager] Found warehouse by tag: {warehouseSpawnPoint.name}");
                 return;
@@ -191,7 +233,7 @@ namespace DeliverHere.GamePlay
 
             // Last resort: use this transform as fallback
             warehouseSpawnPoint = transform;
-            
+
             if (enableServerLogs)
                 Debug.LogWarning("[DailyDeliveryZoneManager] No warehouse spawn found, using manager position as fallback.");
         }
@@ -200,15 +242,19 @@ namespace DeliverHere.GamePlay
         {
             allDeliveryZones.Clear();
             var found = FindObjectsByType<DeliveryZoneDefinition>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            
+
             foreach (var zone in found)
             {
                 if (zone != null)
                     allDeliveryZones.Add(zone);
             }
 
-            if (enableServerLogs && IsServer)
-                Debug.Log($"[DailyDeliveryZoneManager] Discovered {allDeliveryZones.Count} delivery zones.");
+            bool isClient = !IsServer;
+            if ((enableServerLogs && IsServer) || (enableClientLogs && isClient))
+            {
+                string peer = IsServer ? "Server" : "Client";
+                Debug.Log($"[DailyDeliveryZoneManager] {peer} discovered {allDeliveryZones.Count} delivery zones.");
+            }
         }
 
         /// <summary>
@@ -236,7 +282,7 @@ namespace DeliverHere.GamePlay
 
             // NEW: Filter out zones from previous day if enabled
             var candidateZones = new List<DeliveryZoneDefinition>(eligibleZones);
-            
+
             if (avoidLastDayZone && _previousDayZoneIndices.Count > 0)
             {
                 // Remove zones that were active last day
@@ -364,28 +410,55 @@ namespace DeliverHere.GamePlay
         {
             _currentDay = newDay;
             _currentRadius = Mathf.Min(initialRadius + (radiusIncreasePerDay * (newDay - 1)), maxRadius);
+
+            if (!IsServer && enableClientLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Client day changed: {previousDay} -> {newDay}, radius: {_currentRadius:F1}m");
         }
 
         private void OnNetworkActiveZonesChanged(NetworkListEvent<int> changeEvent)
         {
             if (IsServer) return; // Server handles this locally
+
+            if (enableClientLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Client received zone list change, syncing...");
+
             SyncActiveZonesFromNetwork();
         }
 
         private void SyncActiveZonesFromNetwork()
         {
+            // Ensure zones are discovered before trying to sync
+            if (allDeliveryZones.Count == 0 && autoDiscoverZones)
+            {
+                if (enableClientLogs || enableServerLogs)
+                    Debug.Log("[DailyDeliveryZoneManager] No zones discovered yet, discovering now...");
+                DiscoverAllZones();
+            }
+
             DeactivateAllZones();
             _activeZonesThisDay.Clear();
 
+            int syncedCount = 0;
             foreach (int zoneIndex in nvActiveZoneIndices)
             {
                 if (zoneIndex >= 0 && zoneIndex < allDeliveryZones.Count)
                 {
                     var zone = allDeliveryZones[zoneIndex];
-                    _activeZonesThisDay.Add(zone);
-                    zone.ActivateZone();
+                    if (zone != null)
+                    {
+                        _activeZonesThisDay.Add(zone);
+                        zone.ActivateZone();
+                        syncedCount++;
+                    }
+                }
+                else if (!IsServer && enableClientLogs)
+                {
+                    Debug.LogWarning($"[DailyDeliveryZoneManager] Client: Invalid zone index {zoneIndex} (have {allDeliveryZones.Count} zones)");
                 }
             }
+
+            if (!IsServer && enableClientLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Client synced {syncedCount} active zones");
 
             OnZonesSelectedForDay?.Invoke(_activeZonesThisDay);
         }
@@ -485,6 +558,18 @@ namespace DeliverHere.GamePlay
 
             _hasBeenSetup = false; // Reset to allow re-setup
             ServerSetupAfterLevelLoad();
+        }
+
+        [ContextMenu("Debug/Client Discover and Sync")]
+        private void Debug_ClientSync()
+        {
+            if (!Application.isPlaying)
+            {
+                Debug.LogWarning("Only available in Play mode.");
+                return;
+            }
+
+            ClientDiscoverAndSync();
         }
     }
 }
