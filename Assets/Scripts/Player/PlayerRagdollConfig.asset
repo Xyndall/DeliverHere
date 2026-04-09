@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bb5a971e485ae1c4ba14cfdf96fe5331, type: 3}
   m_Name: PlayerRagdollConfig
   m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Player.PlayerRagdollConfig
-  minImpactSpeed: 5
+  minImpactSpeed: 0.1
   minImpactMass: 1
   stunDuration: 2
   stunCooldown: 1

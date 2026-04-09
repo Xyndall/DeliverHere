@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -238,6 +239,10 @@ namespace DeliverHere.GamePlay
                 Debug.LogWarning("[DailyDeliveryZoneManager] No warehouse spawn found, using manager position as fallback.");
         }
 
+        /// <summary>
+        /// Discovers all zones and sorts them deterministically to ensure consistent ordering
+        /// between server and clients (critical for network synchronization).
+        /// </summary>
         private void DiscoverAllZones()
         {
             allDeliveryZones.Clear();
@@ -249,11 +254,25 @@ namespace DeliverHere.GamePlay
                     allDeliveryZones.Add(zone);
             }
 
+            // CRITICAL FIX: Sort zones deterministically by GameObject instance ID
+            // This ensures server and clients have zones in the same order
+            allDeliveryZones = allDeliveryZones
+                .OrderBy(z => z.gameObject.GetInstanceID())
+                .ToList();
+
             bool isClient = !IsServer;
             if ((enableServerLogs && IsServer) || (enableClientLogs && isClient))
             {
                 string peer = IsServer ? "Server" : "Client";
-                Debug.Log($"[DailyDeliveryZoneManager] {peer} discovered {allDeliveryZones.Count} delivery zones.");
+                Debug.Log($"[DailyDeliveryZoneManager] {peer} discovered {allDeliveryZones.Count} delivery zones (sorted by instance ID).");
+                
+                if (enableClientLogs || enableServerLogs)
+                {
+                    for (int i = 0; i < allDeliveryZones.Count; i++)
+                    {
+                        Debug.Log($"  [{i}] {allDeliveryZones[i].ZoneName} (ID: {allDeliveryZones[i].gameObject.GetInstanceID()})");
+                    }
+                }
             }
         }
 
@@ -371,7 +390,10 @@ namespace DeliverHere.GamePlay
             {
                 Debug.Log($"[DailyDeliveryZoneManager] Day {dayIndex}: Selected {_activeZonesThisDay.Count} zones within radius {_currentRadius:F1}m");
                 foreach (var z in _activeZonesThisDay)
-                    Debug.Log($"  - {z.ZoneName} at {z.WorldPosition}");
+                {
+                    int idx = allDeliveryZones.IndexOf(z);
+                    Debug.Log($"  - [{idx}] {z.ZoneName} at {z.WorldPosition}");
+                }
             }
 
             OnZonesSelectedForDay?.Invoke(_activeZonesThisDay);
@@ -449,6 +471,9 @@ namespace DeliverHere.GamePlay
                         _activeZonesThisDay.Add(zone);
                         zone.ActivateZone();
                         syncedCount++;
+
+                        if (enableClientLogs)
+                            Debug.Log($"[DailyDeliveryZoneManager] Client activated zone [{zoneIndex}] {zone.ZoneName}");
                     }
                 }
                 else if (!IsServer && enableClientLogs)

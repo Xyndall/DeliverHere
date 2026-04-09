@@ -29,6 +29,9 @@ public class NetworkGameState : NetworkBehaviour
     [Tooltip("Where players are positioned when returning to lobby / on loss. Server-authoritative.")]
     [SerializeField] private Transform defaultSpawnPoint;
 
+    [Header("Debug")]
+    [SerializeField] private bool enableDebugLogs = true;
+
     public Transform DefaultSpawnPoint => defaultSpawnPoint;
 
     public event Action<bool> OnGameStartedChangedEvent;
@@ -106,13 +109,19 @@ public class NetworkGameState : NetworkBehaviour
     {
         base.OnNetworkSpawn();
 
+        DebugLog($"OnNetworkSpawn called. IsServer={IsServer}, IsClient={IsClient}");
+
+        // Ensure references are assigned
+        EnsureReferences();
+
         // Money UI is driven by MoneyTargetManager NetworkVariables + events (Option B)
         BindMoneyUi();
 
         // Day UI
-        nvCurrentDay.OnValueChanged += (_, v) =>
+        nvCurrentDay.OnValueChanged += (oldVal, newVal) =>
         {
-            uiController?.SetDay(v);
+            DebugLog($"nvCurrentDay changed: {oldVal} -> {newVal}");
+            uiController?.SetDay(newVal);
 
             if (moneyTargetManager != null && uiController != null)
             {
@@ -124,20 +133,27 @@ public class NetworkGameState : NetworkBehaviour
         };
 
         // Drive UIStateManager from replicated state
-        nvGameState.OnValueChanged += (_, s) =>
+        nvGameState.OnValueChanged += (oldState, newState) =>
         {
-            ApplyUiStateToLocal(s, nvPaused.Value);
-            OnLocalGameStateChanged?.Invoke(s);
+            DebugLog($"nvGameState changed: {oldState} -> {newState} (IsServer={IsServer})");
+            ApplyUiStateToLocal(newState, nvPaused.Value);
+            OnLocalGameStateChanged?.Invoke(newState);
         };
-        nvPaused.OnValueChanged += (_, p) => ApplyUiStateToLocal(nvGameState.Value, p);
+        
+        nvPaused.OnValueChanged += (oldVal, newVal) =>
+        {
+            DebugLog($"nvPaused changed: {oldVal} -> {newVal}");
+            ApplyUiStateToLocal(nvGameState.Value, newVal);
+        };
 
         // Toggle HUD locally on clients when gameStarted changes
-        gameStarted.OnValueChanged += (_, started) =>
+        gameStarted.OnValueChanged += (oldVal, newVal) =>
         {
-            OnGameStartedChangedEvent?.Invoke(started);
+            DebugLog($"gameStarted changed: {oldVal} -> {newVal}");
+            OnGameStartedChangedEvent?.Invoke(newVal);
             if (!IsServer)
             {
-                if (started)
+                if (newVal)
                     GameManager.Instance?.StartGame();
                 else
                     GameManager.Instance?.EndGame();
@@ -145,17 +161,59 @@ public class NetworkGameState : NetworkBehaviour
         };
 
         // Push initial local state event so systems see current state on spawn
+        DebugLog($"Invoking initial OnLocalGameStateChanged with state: {nvGameState.Value}");
         OnLocalGameStateChanged?.Invoke(nvGameState.Value);
 
         // Client UI initial push
         if (!IsServer)
         {
-            ApplyAllToClientUI();
-            ApplyUiStateToLocal(nvGameState.Value, nvPaused.Value);
+            DebugLog("Client: Applying initial UI state");
+            StartCoroutine(DelayedClientUISetup());
         }
         else
         {
+            DebugLog("Server: Pushing snapshot");
             ServerPushSnapshot();
+        }
+    }
+
+    private IEnumerator DelayedClientUISetup()
+    {
+        // Wait one frame to ensure all NetworkBehaviours are spawned
+        yield return null;
+        
+        EnsureReferences();
+        ApplyAllToClientUI();
+        ApplyUiStateToLocal(nvGameState.Value, nvPaused.Value);
+        
+        DebugLog($"Client UI setup complete. State={nvGameState.Value}, Paused={nvPaused.Value}");
+    }
+
+    private void EnsureReferences()
+    {
+        if (uiController == null)
+        {
+            uiController = FindFirstObjectByType<GameUIController>();
+            if (uiController == null)
+                Debug.LogWarning("[NetworkGameState] GameUIController not found!");
+            else
+                DebugLog("Found GameUIController");
+        }
+
+        if (uiState == null)
+        {
+            uiState = FindFirstObjectByType<UIStateManager>();
+            if (uiState == null)
+                Debug.LogWarning("[NetworkGameState] UIStateManager not found!");
+            else
+                DebugLog("Found UIStateManager");
+        }
+
+        if (moneyTargetManager == null)
+        {
+            moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
+            if (moneyTargetManager == null && IsServer)
+                Debug.LogWarning("[NetworkGameState] MoneyTargetManager not found!");
         }
     }
 
@@ -184,7 +242,10 @@ public class NetworkGameState : NetworkBehaviour
             moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
 
         if (uiController == null || moneyTargetManager == null)
+        {
+            DebugLog($"Cannot bind money UI - uiController={uiController != null}, moneyTargetManager={moneyTargetManager != null}");
             return;
+        }
 
         // Avoid duplicate subscription
         moneyTargetManager.OnBankedMoneyChanged -= OnBankedMoneyChangedUi;
@@ -198,6 +259,8 @@ public class NetworkGameState : NetworkBehaviour
         uiController.SetTarget(moneyTargetManager.TargetMoney);
         uiController.SetDailyEarnings(moneyTargetManager.BankedMoney, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
         uiController.SetBankedMoney(moneyTargetManager.BankedMoney);
+        
+        DebugLog("Money UI bound successfully");
     }
 
     private void OnBankedMoneyChangedUi(int banked)
@@ -217,8 +280,12 @@ public class NetworkGameState : NetworkBehaviour
     private void ApplyUiStateToLocal(GameState state, bool paused)
     {
         if (uiState == null)
+        {
+            Debug.LogWarning($"[NetworkGameState] UIStateManager is null! Cannot apply state {state}, paused={paused}");
             return;
+        }
 
+        DebugLog($"Applying UI state: {state}, paused={paused}");
         uiState.SetGameState(state);
         uiState.SetPaused(paused);
     }
@@ -251,6 +318,8 @@ public class NetworkGameState : NetworkBehaviour
         var timer = FindFirstObjectByType<GameTimer>();
         if (timer != null) timerNorm = timer.Normalized;
         nvTimerProgress.Value = timerNorm;
+        
+        DebugLog($"Server pushed snapshot: Day={nvCurrentDay.Value}, Timer={nvTimerProgress.Value}");
     }
 
     private void ApplyAllToClientUI()
@@ -258,6 +327,13 @@ public class NetworkGameState : NetworkBehaviour
         BindMoneyUi();
         uiController?.SetDay(nvCurrentDay.Value);
         uiController?.SetTimerVisible(true);
+        DebugLog($"Applied all to client UI: Day={nvCurrentDay.Value}");
+    }
+
+    private void DebugLog(string message)
+    {
+        if (enableDebugLogs)
+            Debug.Log($"[NetworkGameState] {message}");
     }
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
@@ -354,6 +430,8 @@ public class NetworkGameState : NetworkBehaviour
     {
         if (gameStarted.Value) return;
 
+        DebugLog("RequestStartGameServerRpc called");
+
         nvPaused.Value = false;
         nvGameState.Value = GameState.Loading;
 
@@ -369,6 +447,8 @@ public class NetworkGameState : NetworkBehaviour
     public void RequestEndGameServerRpc()
     {
         if (!gameStarted.Value) return;
+
+        DebugLog("RequestEndGameServerRpc called");
 
         gameStarted.Value = false;
 
@@ -464,6 +544,7 @@ public class NetworkGameState : NetworkBehaviour
     public void ServerSetGameState(GameState state, bool paused = false)
     {
         if (!IsServer) return;
+        DebugLog($"ServerSetGameState called: {state}, paused={paused}");
         nvPaused.Value = paused;
         nvGameState.Value = state;
     }

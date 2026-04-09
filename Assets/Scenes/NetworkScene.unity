@@ -3345,6 +3345,7 @@ MonoBehaviour:
   uiPanel: {fileID: 2102985913}
   autoFindManager: 0
   hideWhenNoZones: 1
+  retryDelay: 0.5
 --- !u!1 &742259109
 GameObject:
   m_ObjectHideFlags: 0
@@ -3866,6 +3867,7 @@ MonoBehaviour:
   levelFlow: {fileID: 2074574623}
   uiState: {fileID: 314850537}
   defaultSpawnPoint: {fileID: 1345327562}
+  enableDebugLogs: 1
 --- !u!1 &880771538
 GameObject:
   m_ObjectHideFlags: 0
@@ -5842,7 +5844,8 @@ MonoBehaviour:
   allDeliveryZones: []
   autoSetupOnSpawn: 0
   showDebugGizmos: 1
-  enableServerLogs: 1
+  enableServerLogs: 0
+  enableClientLogs: 0
 --- !u!1 &1734071482
 GameObject:
   m_ObjectHideFlags: 0
@@ -6517,7 +6520,7 @@ MonoBehaviour:
   loadTimeoutSeconds: 10
   postTeleportStartDelaySeconds: 0.25
   levelLoader: {fileID: 2074574621}
-  loadingScreen: {fileID: 0}
+  loadingScreen: {fileID: 449018634}
   autoFindLoadingScreen: 1
 --- !u!1 &2102985913
 GameObject:

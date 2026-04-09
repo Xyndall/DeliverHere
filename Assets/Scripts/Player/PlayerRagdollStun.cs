@@ -1,5 +1,6 @@
-using UnityEngine;
+using DeliverHere.GamePlay;
 using Unity.Netcode;
+using UnityEngine;
 
 namespace DeliverHere.Player
 {
@@ -143,8 +144,13 @@ namespace DeliverHere.Player
         [SerializeField] private bool logImpacts = false;
         [SerializeField] private bool logGroundContact = false;
 
-        // Network variable to replicate stun state
+        // Network variables to replicate stun state
         private readonly NetworkVariable<bool> _isStunned = new NetworkVariable<bool>(
+            false,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        private readonly NetworkVariable<bool> _nvHasHitGround = new NetworkVariable<bool>(
             false,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
@@ -191,6 +197,10 @@ namespace DeliverHere.Player
         // Store last frame velocity for CharacterController impact detection
         private Vector3 _lastPosition;
         private Vector3 _currentVelocity;
+
+        // Last applied force and impact point (for client-side force application)
+        private Vector3 _lastAppliedForce;
+        private Vector3 _lastImpactPoint;
 
         public bool IsStunned => _isStunned.Value;
         public bool IsInRagdoll => _isInRagdoll;
@@ -389,6 +399,7 @@ namespace DeliverHere.Player
             base.OnNetworkSpawn();
 
             _isStunned.OnValueChanged += OnStunStateChanged;
+            _nvHasHitGround.OnValueChanged += OnNetworkGroundStateChanged;
 
             // Sync initial state
             if (_isStunned.Value && !_isInRagdoll)
@@ -397,9 +408,22 @@ namespace DeliverHere.Player
             }
         }
 
+        private void OnNetworkGroundStateChanged(bool wasGrounded, bool isGrounded)
+        {
+            if (!IsServer && isGrounded && !_hasHitGround)
+            {
+                _hasHitGround = true;
+                if (logGroundContact)
+                {
+                    Debug.Log($"[PlayerRagdollStun] CLIENT synced ground state from network: {isGrounded}");
+                }
+            }
+        }
+
         public override void OnNetworkDespawn()
         {
             _isStunned.OnValueChanged -= OnStunStateChanged;
+            _nvHasHitGround.OnValueChanged -= OnNetworkGroundStateChanged;
             base.OnNetworkDespawn();
         }
 
@@ -416,25 +440,58 @@ namespace DeliverHere.Player
                 }
             }
 
-            if (!IsServer) return;
             if (!_isInRagdoll) return;
 
-            // Check for recovery conditions
+            // ADDED: Force recovery after 4 seconds regardless of ground state
+            float timeInRagdoll = Time.time - _lastStunTime;
+            if (timeInRagdoll >= 4f)
+            {
+                if (logGroundContact)
+                {
+                    Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} FORCING recovery after {timeInRagdoll:F2}s (bypassing ground check)");
+                }
+                
+                // Only server can change network state
+                if (IsServer)
+                {
+                    RecoverFromRagdoll();
+                }
+                else
+                {
+                    // Clients request recovery from server
+                    RequestRecoveryServerRpc();
+                }
+                return; // Exit early after forcing recovery
+            }
+
+            // Check for normal recovery conditions (both server and clients)
             if (Time.time >= _stunEndTime && autoRecover)
             {
                 if (CanRecover())
                 {
-                    RecoverFromRagdoll();
+                    // Only server can change network state
+                    if (IsServer)
+                    {
+                        RecoverFromRagdoll();
+                    }
+                    else
+                    {
+                        // Clients request recovery from server
+                        RequestRecoveryServerRpc();
+                    }
+                }
+                else if (logGroundContact)
+                {
+                    // Log why we can't recover yet
+                    Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} Cannot recover yet - Ground:{CanRecover()}, Time in ragdoll:{timeInRagdoll:F2}s");
                 }
             }
         }
 
         private void FixedUpdate()
         {
-            if (!IsServer) return;
-
-            // Clamp ragdoll velocities to prevent extreme speeds (and clipping)
-            if (_isInRagdoll && maxRagdollVelocity > 0f)
+            // Velocity clamping runs on server only (to avoid physics conflicts)
+            if (IsServer && _isInRagdoll && maxRagdollVelocity > 0f)
             {
                 foreach (var rb in ragdollBodies)
                 {
@@ -447,7 +504,7 @@ namespace DeliverHere.Player
                     }
 
                     // Clamp angular velocity
-                    float maxAngularVel = maxRagdollVelocity * 2f; // Allow more rotation
+                    float maxAngularVel = maxRagdollVelocity * 2f;
                     if (rb.angularVelocity.magnitude > maxAngularVel)
                     {
                         rb.angularVelocity = rb.angularVelocity.normalized * maxAngularVel;
@@ -455,7 +512,8 @@ namespace DeliverHere.Player
                 }
             }
 
-            // Track ground contact
+            // Ground contact tracking runs on ALL machines
+            // This allows clients to detect when they can recover
             if (_isInRagdoll && requireGroundContactForRecovery)
             {
                 UpdateGroundContact();
@@ -493,7 +551,7 @@ namespace DeliverHere.Player
                     _groundContactStartTime = Time.time;
                     if (logGroundContact)
                     {
-                        Debug.Log("[PlayerRagdollStun] Ground contact started");
+                        Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} Ground contact started");
                     }
                 }
                 _groundContactCount++;
@@ -503,9 +561,21 @@ namespace DeliverHere.Player
                 if (!_hasHitGround && contactDuration >= minGroundedTimeForRecovery)
                 {
                     _hasHitGround = true;
+
+                    // Clients report ground contact to server
+                    if (!IsServer)
+                    {
+                        ReportGroundContactServerRpc();
+                    }
+                    else
+                    {
+                        // Server sets network variable
+                        _nvHasHitGround.Value = true;
+                    }
+
                     if (logGroundContact)
                     {
-                        Debug.Log("[PlayerRagdollStun] Ragdoll has settled on ground - recovery allowed");
+                        Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} Ragdoll has settled on ground - recovery allowed");
                     }
                 }
             }
@@ -515,12 +585,28 @@ namespace DeliverHere.Player
             }
         }
 
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+        private void ReportGroundContactServerRpc(RpcParams rpcParams = default)
+        {
+            if (!_hasHitGround)
+            {
+                _hasHitGround = true;
+                _nvHasHitGround.Value = true;
+
+                if (logGroundContact)
+                {
+                    Debug.Log($"[PlayerRagdollStun] SERVER received ground contact from client");
+                }
+            }
+        }
+
         private bool CanRecover()
         {
             if (!requireGroundContactForRecovery)
                 return true;
 
-            return _hasHitGround;
+            // Server uses local value, clients use network variable
+            return IsServer ? _hasHitGround : _nvHasHitGround.Value;
         }
 
         private void OnControllerColliderHit(ControllerColliderHit hit)
@@ -584,9 +670,6 @@ namespace DeliverHere.Player
 
         private void OnCollisionEnter(Collision collision)
         {
-            // Only process on server
-            if (!IsServer) return;
-
             // Check cooldown
             if (Time.time - _lastStunTime < StunCooldown)
                 return;
@@ -608,23 +691,78 @@ namespace DeliverHere.Player
             if (impactRb.mass < MinImpactMass)
                 return;
 
-            // Calculate impact speed
+            // FIX: Check for spline/animation velocity tracker FIRST
             float impactSpeed = collision.relativeVelocity.magnitude;
+            Vector3 impactVelocity = collision.relativeVelocity;
+            
+            // NEW: Try to get velocity from spline tracker (for animated vehicles)
+            var splineTracker = collision.gameObject.GetComponentInParent<SplineVehicleVelocityTracker>();
+            if (splineTracker != null)
+            {
+                // Use tracked velocity from spline animation
+                Vector3 trackedVelocity = splineTracker.GetTrackedVelocity();
+                impactSpeed = trackedVelocity.magnitude;
+                impactVelocity = trackedVelocity;
+                
+                if (logImpacts)
+                {
+                    Debug.Log($"[PlayerRagdollStun] Using SPLINE tracked velocity: {impactSpeed:F2} m/s (Unity collision: {collision.relativeVelocity.magnitude:F2}, Rigidbody: {impactRb.linearVelocity.magnitude:F2})");
+                }
+            }
 
             if (logImpacts)
             {
-                Debug.Log($"[PlayerRagdollStun] OnCollisionEnter detected: speed={impactSpeed:F2} m/s, mass={impactRb.mass:F2} kg, threshold={MinImpactSpeed:F2} m/s, object={collision.gameObject.name}");
+                Debug.Log($"[PlayerRagdollStun] OnCollisionEnter detected on {(IsServer ? "SERVER" : "CLIENT")}: speed={impactSpeed:F2} m/s, mass={impactRb.mass:F2} kg, threshold={MinImpactSpeed:F2} m/s, object={collision.gameObject.name}");
             }
 
+            // Clients forward collision to server
+            if (!IsServer)
+            {
+                // Calculate impact data client-side
+                Vector3 impactDirection = impactVelocity.magnitude > 0.01f ? impactVelocity.normalized : collision.relativeVelocity.normalized;
+                Vector3 impactPoint = collision.contacts[0].point;
+                if (collision.contactCount > 1)
+                {
+                    Vector3 avgPoint = Vector3.zero;
+                    foreach (var contact in collision.contacts)
+                    {
+                        avgPoint += contact.point;
+                    }
+                    impactPoint = avgPoint / collision.contactCount;
+                }
+
+                // Get the NetworkObject of the colliding object (if it has one)
+                NetworkObject impactNetObj = collision.gameObject.GetComponentInParent<NetworkObject>();
+
+                if (impactNetObj != null && impactNetObj.IsSpawned)
+                {
+                    // Send collision to server with the NetworkObject reference
+                    ReportCollisionToServerRpc(
+                        new NetworkObjectReference(impactNetObj),
+                        impactRb.mass,
+                        impactSpeed,
+                        impactDirection,
+                        impactPoint
+                    );
+                }
+                else
+                {
+                    Debug.LogWarning($"[PlayerRagdollStun] Client detected collision with {collision.gameObject.name} but it has no NetworkObject - cannot report to server");
+                }
+
+                return;
+            }
+
+            // SERVER-SIDE: Process collision normally
             // Check if impact is strong enough
             if (impactSpeed < MinImpactSpeed)
                 return;
 
             // Calculate impact force direction and magnitude
-            Vector3 impactDirection = collision.relativeVelocity.normalized;
+            Vector3 impactDir = impactVelocity.magnitude > 0.01f ? impactVelocity.normalized : collision.relativeVelocity.normalized;
 
             // Find the contact point closest to center of mass for better force application
-            Vector3 impactPoint = collision.contacts[0].point;
+            Vector3 impactPt = collision.contacts[0].point;
             if (collision.contactCount > 1)
             {
                 Vector3 avgPoint = Vector3.zero;
@@ -632,7 +770,7 @@ namespace DeliverHere.Player
                 {
                     avgPoint += contact.point;
                 }
-                impactPoint = avgPoint / collision.contactCount;
+                impactPt = avgPoint / collision.contactCount;
             }
 
             // Calculate force magnitude based on speed and mass
@@ -640,12 +778,87 @@ namespace DeliverHere.Player
             forceMagnitude = Mathf.Min(forceMagnitude, MaxImpactForce);
 
             // Add upward component for more dramatic effect
-            Vector3 force = impactDirection * forceMagnitude;
+            Vector3 force = impactDir * forceMagnitude;
             force.y += UpwardForceBoost;
 
             if (logImpacts)
             {
-                Debug.Log($"[PlayerRagdollStun] Applying stun from collision! Force={forceMagnitude:F2}N, Direction={impactDirection}");
+                Debug.Log($"[PlayerRagdollStun] Applying stun from collision! Force={forceMagnitude:F2}N, Direction={impactDir}");
+            }
+
+            // Trigger ragdoll stun
+            TriggerRagdollStun(force, impactPt);
+        }
+
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+        private void ReportCollisionToServerRpc(
+            NetworkObjectReference impactObjRef,
+            float impactMass,
+            float clientReportedSpeed,
+            Vector3 impactDirection,
+            Vector3 impactPoint,
+            RpcParams rpcParams = default)
+        {
+            // Verify not already stunned
+            if (_isInRagdoll)
+                return;
+
+            // Verify cooldown
+            if (Time.time - _lastStunTime < StunCooldown)
+                return;
+
+            // Try to get the NetworkObject
+            if (!impactObjRef.TryGet(out NetworkObject impactNetObj))
+            {
+                Debug.LogWarning("[PlayerRagdollStun] Server received collision report but couldn't find NetworkObject");
+                return;
+            }
+
+            // Get the rigidbody from the NetworkObject
+            Rigidbody impactRb = impactNetObj.GetComponent<Rigidbody>();
+            if (impactRb == null)
+            {
+                impactRb = impactNetObj.GetComponentInChildren<Rigidbody>();
+            }
+
+            if (impactRb == null)
+            {
+                Debug.LogWarning($"[PlayerRagdollStun] Server received collision report for {impactNetObj.name} but it has no Rigidbody");
+                return;
+            }
+
+            // Use server-side velocity (more accurate)
+            float serverSpeed = impactRb.linearVelocity.magnitude;
+
+            // If server sees no velocity but client reported high speed, trust client (could be network lag)
+            float impactSpeed = Mathf.Max(serverSpeed, clientReportedSpeed);
+
+            if (logImpacts)
+            {
+                Debug.Log($"[PlayerRagdollStun] Server received collision report: clientSpeed={clientReportedSpeed:F2}, serverSpeed={serverSpeed:F2}, using={impactSpeed:F2}, mass={impactMass:F2}, object={impactNetObj.name}");
+            }
+
+            // Check if impact is strong enough
+            if (impactSpeed < MinImpactSpeed)
+            {
+                if (logImpacts)
+                {
+                    Debug.Log($"[PlayerRagdollStun] Impact too weak: {impactSpeed:F2} < {MinImpactSpeed:F2}");
+                }
+                return;
+            }
+
+            // Calculate force magnitude based on speed and mass
+            float forceMagnitude = impactSpeed * impactMass * ImpactForceMultiplier;
+            forceMagnitude = Mathf.Min(forceMagnitude, MaxImpactForce);
+
+            // Add upward component for more dramatic effect
+            Vector3 force = impactDirection.normalized * forceMagnitude;
+            force.y += UpwardForceBoost;
+
+            if (logImpacts)
+            {
+                Debug.Log($"[PlayerRagdollStun] Server applying stun from client-reported collision! Force={forceMagnitude:F2}N");
             }
 
             // Trigger ragdoll stun
@@ -663,6 +876,11 @@ namespace DeliverHere.Player
             _hasHitGround = false;
             _groundContactCount = 0;
             _groundContactStartTime = 0f;
+            _nvHasHitGround.Value = false;
+
+            // Store force for clients to apply
+            _lastAppliedForce = force;
+            _lastImpactPoint = impactPoint;
 
             // Set network variable to replicate to clients
             _isStunned.Value = true;
@@ -672,6 +890,12 @@ namespace DeliverHere.Player
 
             // Play feedback
             PlayImpactFeedbackClientRpc(impactPoint);
+
+            // Send stun timing to clients so they know when to recover
+            SyncStunTimingClientRpc(StunDuration);
+
+            // Send force to clients so they can apply it locally
+            ApplyRagdollForceClientRpc(force, impactPoint);
         }
 
         private void EnableRagdoll(Vector3 force, Vector3 impactPoint = default)
@@ -690,9 +914,16 @@ namespace DeliverHere.Player
             if (firstPersonLook != null)
                 firstPersonLook.enabled = false;
 
-            // Disable animator
+            // Disable animator on ALL machines, not just owner
+            // This ensures other clients see the ragdoll physics, not stiff animation
             if (animator != null)
+            {
                 animator.enabled = false;
+
+                // Force the animator to update one last time in its current pose
+                // This prevents it from snapping to a default pose when disabled
+                animator.Update(0f);
+            }
 
             // Unparent ragdoll root to allow independent physics FIRST
             if (ragdollRoot != null && ragdollRoot.parent != null)
@@ -711,7 +942,7 @@ namespace DeliverHere.Player
                 ragdollRoot.rotation = worldRot;
             }
 
-            // FIXED: Reparent camera to the HEAD BONE (which has physics) instead of ragdoll root
+            // Reparent camera to the HEAD BONE (which has physics) instead of ragdoll root
             if (IsOwner && firstPersonLook != null && firstPersonLook.playerCamera != null && cameraFollowBone != null)
             {
                 Transform camTransform = firstPersonLook.playerCamera.transform;
@@ -721,7 +952,7 @@ namespace DeliverHere.Player
 
                 // Parent camera directly to the head bone so it follows the physics
                 camTransform.SetParent(cameraFollowBone, true); // preserve world position
-                
+
                 // Apply the offset relative to head bone
                 camTransform.localPosition = cameraFollowOffset;
                 camTransform.localRotation = Quaternion.identity;
@@ -817,7 +1048,7 @@ namespace DeliverHere.Player
             // Disable ragdoll physics BEFORE reparenting
             SetRagdollEnabled(false);
 
-            // ADDED: Restore camera parent (owner only)
+            // Restore camera parent (owner only)
             if (IsOwner && firstPersonLook != null && firstPersonLook.playerCamera != null && _originalCameraParentBeforeRagdoll != null)
             {
                 Transform camTransform = firstPersonLook.playerCamera.transform;
@@ -890,6 +1121,13 @@ namespace DeliverHere.Player
             // Reset ground contact tracking
             _hasHitGround = false;
             _groundContactCount = 0;
+
+            _lastStunTime -= StunCooldown;
+            
+            if (logImpacts)
+            {
+                Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} cooldown reset, can ragdoll again immediately");
+            }
         }
 
         private void SetRagdollEnabled(bool enabled)
@@ -968,13 +1206,61 @@ namespace DeliverHere.Player
 
         private void OnStunStateChanged(bool wasStunned, bool isStunned)
         {
+            Debug.Log($"[PlayerRagdollStun] OnStunStateChanged - IsServer:{IsServer}, IsOwner:{IsOwner}, IsClient:{IsClient}, wasStunned:{wasStunned}, isStunned:{isStunned}, _isInRagdoll:{_isInRagdoll}");
+
             if (isStunned && !_isInRagdoll)
             {
+                Debug.Log($"[PlayerRagdollStun] Enabling ragdoll on {(IsServer ? "SERVER" : "CLIENT")}");
+                // Clients will receive force via ApplyRagdollForceClientRpc, so pass zero here
                 EnableRagdoll(Vector3.zero);
             }
             else if (!isStunned && _isInRagdoll)
             {
+                Debug.Log($"[PlayerRagdollStun] Disabling ragdoll on {(IsServer ? "SERVER" : "CLIENT")}");
                 DisableRagdoll();
+
+                // Reset ground contact state on clients too
+                if (!IsServer)
+                {
+                    _hasHitGround = false;
+                    _groundContactCount = 0;
+                }
+            }
+        }
+
+        [ClientRpc]
+        private void ApplyRagdollForceClientRpc(Vector3 force, Vector3 impactPoint)
+        {
+            // Don't apply on server - already applied in TriggerRagdollStun
+            if (IsServer) return;
+
+            // Only apply if ragdoll is active
+            if (!_isInRagdoll) return;
+
+            Debug.Log($"[PlayerRagdollStun] CLIENT applying force: {force.magnitude:F2}N at {impactPoint}");
+
+            // Apply force to ragdoll bodies (same logic as server)
+            if (ragdollRigidbody != null && ragdollBodies.Length == 0)
+            {
+                if (impactPoint != default)
+                    ragdollRigidbody.AddForceAtPosition(force, impactPoint, ForceMode.Impulse);
+                else
+                    ragdollRigidbody.AddForce(force, ForceMode.Impulse);
+            }
+            else
+            {
+                // Distribute force across ragdoll bodies
+                foreach (var rb in ragdollBodies)
+                {
+                    if (rb == null || rb.isKinematic) continue;
+
+                    float distance = Vector3.Distance(rb.position, impactPoint);
+                    float falloff = Mathf.Clamp01(1f - (distance / 2f));
+
+                    rb.AddForce(force * falloff, ForceMode.Impulse);
+
+                    Debug.Log($"[PlayerRagdollStun] CLIENT applied {(force * falloff).magnitude:F2}N to {rb.name}");
+                }
             }
         }
 
@@ -993,6 +1279,46 @@ namespace DeliverHere.Player
             {
                 impactAudioSource.PlayOneShot(impactSFX);
             }
+        }
+
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+        private void RequestRecoveryServerRpc(RpcParams rpcParams = default)
+        {
+            if (!_isInRagdoll) return;
+
+            float timeInRagdoll = Time.time - _lastStunTime;
+            bool forcedRecovery = timeInRagdoll >= 4f;
+            
+            // Server validates recovery is allowed OR it's a forced recovery
+            if (forcedRecovery || (Time.time >= _stunEndTime && CanRecover()))
+            {
+                if (forcedRecovery)
+                {
+                    Debug.Log($"[PlayerRagdollStun] Server approving FORCED recovery from client after {timeInRagdoll:F2}s");
+                }
+                else
+                {
+                    Debug.Log($"[PlayerRagdollStun] Client requested recovery, server approving (normal conditions met)");
+                }
+                
+                RecoverFromRagdoll();
+            }
+            else
+            {
+                Debug.LogWarning($"[PlayerRagdollStun] Client requested recovery but conditions not met. Time:{Time.time >= _stunEndTime}, Ground:{CanRecover()}, Forced:{forcedRecovery}");
+            }
+        }
+
+        [ClientRpc]
+        private void SyncStunTimingClientRpc(float duration)
+        {
+            if (IsServer) return; // Server already set this
+
+            // Clients sync their local stun timer
+            _lastStunTime = Time.time;
+            _stunEndTime = Time.time + duration;
+
+            Debug.Log($"[PlayerRagdollStun] CLIENT synced stun timing: will expire at {_stunEndTime} (duration={duration})");
         }
 
         /// <summary>
