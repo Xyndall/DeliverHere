@@ -517,11 +517,16 @@ public class NetworkGameState : NetworkBehaviour
 
         if (cc != null) cc.enabled = false;
         pm.transform.SetPositionAndRotation(position, rotation);
+        
         if (rb != null)
         {
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
         }
+        
+        // Reset vertical velocity to prevent drift
+        pm.ResetMovementState();
+        
         if (cc != null) cc.enabled = true;
     }
 

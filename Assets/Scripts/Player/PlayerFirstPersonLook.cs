@@ -314,7 +314,7 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         }
     }
 
-    private void CacheExternalRefsAndDefaults()
+    public void CacheExternalRefsAndDefaults()
     {
         _movement = _movement ?? GetComponentInParent<PlayerMovement>();
         _cc = _cc ?? GetComponentInParent<CharacterController>();
@@ -354,6 +354,38 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         float x = eulerX;
         if (x > 180f) x -= 360f;
         return x;
+    }
+
+    public void ResetCameraEffects()
+    {
+        // Reset sway state
+        _swayEuler = Vector3.zero;
+        _lastDx = 0f;
+        _lastDy = 0f;
+
+        // Reset head bob
+        _bobPhase = 0f;
+
+        // Reset camera position to default
+        if (playerCamera != null)
+        {
+            playerCamera.transform.localPosition = _camDefaultLocalPos;
+            playerCamera.transform.localRotation = Quaternion.identity;
+
+            // CRITICAL: Reset FOV to base immediately (no lerp)
+            if (enableSprintFovKick)
+            {
+                var lens = playerCamera.Lens;
+                lens.FieldOfView = _baseFov;
+                playerCamera.Lens = lens;
+            }
+        }
+
+        // Reset pitch pivot if it exists
+        if (pitchPivot != null)
+        {
+            pitchPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
+        }
     }
 
 #if UNITY_EDITOR

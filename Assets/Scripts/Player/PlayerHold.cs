@@ -133,6 +133,16 @@ public class PlayerHold : NetworkBehaviour
     [Tooltip("Minimum rotation change before sending another pose (degrees).")]
     [SerializeField] private float anchorPoseMinRotDeltaDeg = 0.5f;
 
+    [Header("Client-Side Prediction")]
+    [Tooltip("Enable client-side prediction for immediate visual feedback.")]
+    [SerializeField] private bool enableClientPrediction = true;
+    [Tooltip("How quickly client prediction reconciles with server position (higher = snappier but more jitter).")]
+    [SerializeField] private float clientReconciliationSpeed = 12f;
+    [Tooltip("Maximum allowed divergence before hard-snapping to server position (meters).")]
+    [SerializeField] private float maxPredictionError = 0.5f;
+    [Tooltip("Smoothing applied to held object rotation on clients.")]
+    [SerializeField] private float clientRotationSmoothSpeed = 15f;
+
     [Header("Input")]
     [SerializeField] private PlayerInputController inputController;
 
@@ -204,6 +214,12 @@ public class PlayerHold : NetworkBehaviour
     private Vector3 _serverDesiredAnchorPos;
     private Quaternion _serverDesiredAnchorRot = Quaternion.identity;
 
+    // ADDED: Client-side prediction state
+    private Vector3 _clientPredictedPosition;
+    private Quaternion _clientPredictedRotation;
+    private Vector3 _clientPredictedVelocity;
+    private bool _hasClientPrediction;
+
     private void Awake()
     {
         if (handsRoot == null) handsRoot = transform;
@@ -260,6 +276,15 @@ public class PlayerHold : NetworkBehaviour
     private void Update()
     {
         if (!IsOwner) return;
+        
+        // ADDED: Update handsRoot position to follow camera with offset
+        if (handsRoot != null && cameraTransform != null)
+        {
+            Vector3 forwardOffset = cameraTransform.forward * 1f; // Adjust 0.5f to your desired offset
+            handsRoot.position = cameraTransform.position + forwardOffset;
+            handsRoot.rotation = Quaternion.LookRotation(cameraTransform.forward, Vector3.up);
+        }
+        
         if (inputController == null) return;
 
         float axis = inputController.ExtendInput;
@@ -357,6 +382,12 @@ public class PlayerHold : NetworkBehaviour
             _anchorRb.rotation = desiredAnchorRot;
         }
 
+        // ADDED: Client-side prediction for held object
+        if (!IsServer && IsOwner && IsHolding && _heldBody != null && enableClientPrediction)
+        {
+            ApplyClientPrediction(desiredAnchorPos, desiredAnchorRot);
+        }
+
         if (!IsHolding || _heldBody == null)
             return;
 
@@ -404,6 +435,58 @@ public class PlayerHold : NetworkBehaviour
         float maxOmegaRad = Mathf.Deg2Rad * Mathf.Max(30f, maxAngularSpeedDeg);
         if (_heldBody.angularVelocity.magnitude > maxOmegaRad)
             _heldBody.angularVelocity = _heldBody.angularVelocity.normalized * maxOmegaRad;
+    }
+
+    // ADDED: Client-side prediction logic
+    private void ApplyClientPrediction(Vector3 targetPos, Quaternion targetRot)
+    {
+        if (!_hasClientPrediction)
+        {
+            // Initialize prediction state
+            _clientPredictedPosition = _heldBody.position;
+            _clientPredictedRotation = _heldBody.rotation;
+            _clientPredictedVelocity = Vector3.zero;
+            _hasClientPrediction = true;
+        }
+
+        // Simulate spring-like behavior toward target (mimics ConfigurableJoint)
+        Vector3 toTarget = targetPos - _clientPredictedPosition;
+        float distance = toTarget.magnitude;
+
+        // Check for large deviations (reconciliation needed)
+        if (distance > maxPredictionError)
+        {
+            // Hard snap to server position if too far off
+            _clientPredictedPosition = _heldBody.position;
+            _clientPredictedVelocity = Vector3.zero;
+        }
+        else
+        {
+            // Apply spring force (simplified physics)
+            float mass = Mathf.Max(0.001f, _heldBody.mass);
+            float springForce = distance * (linearSpringBase + linearSpringPerKg * mass);
+            Vector3 acceleration = (toTarget.normalized * springForce) / mass;
+            
+            // Apply damping
+            Vector3 dampingForce = -_clientPredictedVelocity * linearDamper;
+            acceleration += dampingForce / mass;
+
+            // Update velocity and position
+            _clientPredictedVelocity += acceleration * Time.fixedDeltaTime;
+            _clientPredictedPosition += _clientPredictedVelocity * Time.fixedDeltaTime;
+
+            // Blend toward server position for smooth reconciliation
+            float serverWeight = 1f - Mathf.Exp(-clientReconciliationSpeed * Time.fixedDeltaTime);
+            _clientPredictedPosition = Vector3.Lerp(_clientPredictedPosition, _heldBody.position, serverWeight);
+        }
+
+        // Smooth rotation toward target
+        _clientPredictedRotation = Quaternion.Slerp(_clientPredictedRotation, targetRot, 
+            clientRotationSmoothSpeed * Time.fixedDeltaTime);
+
+        // Apply predicted transform (visual only, doesn't affect server physics)
+        _heldBody.transform.position = _clientPredictedPosition;
+        _heldBody.transform.rotation = _clientPredictedRotation;
     }
 
     private void TrySendAnchorPoseToServer(Vector3 pos, Quaternion rot)
@@ -475,6 +558,10 @@ public class PlayerHold : NetworkBehaviour
         _lastSentAnchorPos = _anchorRb.position;
         _lastSentAnchorRot = _anchorRb.rotation;
 
+        // ADDED: Reset client prediction state
+        _hasClientPrediction = false;
+        _clientPredictedVelocity = Vector3.zero;
+
         if (_heldBody != null && !_restoreCaptured)
         {
             _restore = new HeldRestore
@@ -494,8 +581,7 @@ public class PlayerHold : NetworkBehaviour
         {
             ApplyHeldPhysicsLocal();
             
-            // CHANGED: Only apply layer on clients for visual consistency
-            // Server will handle this in RequestPickupServerRpc
+            // Layer is now applied on server in RequestPickupServerRpc
             if (!IsServer)
             {
                 _heldBody.gameObject.layer = heldItemLayer;
@@ -534,11 +620,14 @@ public class PlayerHold : NetworkBehaviour
         }
 
         _heldBody.maxAngularVelocity = Mathf.Max(_heldBody.maxAngularVelocity, 100f);
+        
+        // CHANGED: Use interpolation on clients for smoother visuals
         _heldBody.interpolation = RigidbodyInterpolation.Interpolate;
         _heldBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
-        // On non-server clients, keep kinematic to avoid fighting server snapshots
-        _heldBody.isKinematic = isNetworked && !isServer ? true : false;
+        // CHANGED: Keep non-kinematic on clients to allow visual prediction
+        // Server snapshots will still override, but clients can predict between updates
+        _heldBody.isKinematic = false;
     }
 
     private void RestoreHeldPhysicsLocalIfCaptured()
@@ -599,6 +688,9 @@ public class PlayerHold : NetworkBehaviour
         _restoreCaptured = false;
         _exceededSeparationTime = 0f;
         _sag01 = 0f;
+
+        // ADDED: Reset prediction state
+        _hasClientPrediction = false;
 
         _weightManager?.SetHeldMass(null);
     }
@@ -736,7 +828,7 @@ public class PlayerHold : NetworkBehaviour
         var netObj = rb.GetComponent<NetworkObject>();
         if (netObj == null) return;
 
-        // ADDED: Capture and apply layer on server
+        // Capture and apply layer on server
         _restore = new HeldRestore
         {
             UseGravity = rb.useGravity,
@@ -913,6 +1005,11 @@ public class PlayerHold : NetworkBehaviour
         // Validate layer indices
         heldItemLayer = Mathf.Clamp(heldItemLayer, 0, 31);
         dropRestoreLayer = Mathf.Clamp(dropRestoreLayer, 0, 31);
+
+        // ADDED: Validate client prediction settings
+        clientReconciliationSpeed = Mathf.Max(0.1f, clientReconciliationSpeed);
+        maxPredictionError = Mathf.Max(0.1f, maxPredictionError);
+        clientRotationSmoothSpeed = Mathf.Max(0.1f, clientRotationSmoothSpeed);
     }
 #endif
 }

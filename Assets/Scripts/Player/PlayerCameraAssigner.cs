@@ -73,4 +73,9 @@ public class PlayerCameraAssigner : NetworkBehaviour
             cameraController.CameraIsAssigned();
         }
     }
+
+    public void ReassignCamera()
+    {
+        AssignCameraToPlayer();
+    }
 }

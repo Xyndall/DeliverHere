@@ -14,6 +14,9 @@ public class PlayerHeadLook : NetworkBehaviour
     [Tooltip("Optional: used to find camera if not provided.")]
     [SerializeField] private PlayerFirstPersonLook firstPersonLook;
 
+    [Tooltip("Reference to the Animator component (required for OnAnimatorIK).")]
+    [SerializeField] private Animator animator;
+
     [Header("Limits")]
     [Tooltip("Max left/right rotation from rest (degrees).")]
     [SerializeField] private float maxYaw = 75f;
@@ -41,10 +44,15 @@ public class PlayerHeadLook : NetworkBehaviour
     private Quaternion _restLocalRot;
     private Vector3 _restForwardLocal;
     private bool _initialized;
+    private Quaternion _targetRotation;
 
     private void Awake()
     {
         CacheRefs();
+        
+        // Find animator if not assigned
+        if (animator == null)
+            animator = GetComponentInChildren<Animator>();
     }
 
     private void OnEnable()
@@ -55,7 +63,6 @@ public class PlayerHeadLook : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
-        // Ensure refs exist when spawned on remote clients too
         CacheRefs();
     }
 
@@ -93,26 +100,19 @@ public class PlayerHeadLook : NetworkBehaviour
             {
                 if (cameraTransform == null) return;
 
-                // Desired direction in parent space (so we can build a local rotation)
                 Vector3 desiredDirLocal = headBone.parent.InverseTransformDirection(cameraTransform.forward);
-
-                // Convert desired direction into the head's rest-space to measure yaw/pitch from the reference pose
                 Vector3 dirRest = Quaternion.Inverse(_restLocalRot) * desiredDirLocal;
 
-                // Yaw around +Y, Pitch positive = down (so up is negative)
                 yawDeg = Mathf.Atan2(dirRest.x, dirRest.z) * Mathf.Rad2Deg;
                 pitchDeg = -Mathf.Asin(Mathf.Clamp(dirRest.y, -1f, 1f)) * Mathf.Rad2Deg;
 
-                // Clamp
                 yawDeg = Mathf.Clamp(yawDeg, -maxYaw, maxYaw);
                 pitchDeg = Mathf.Clamp(pitchDeg, -maxPitchUp, maxPitchDown);
 
-                // Replicate to others
                 _repYawPitch.Value = new Vector2(yawDeg, pitchDeg);
             }
             else
             {
-                // Non-owners: consume replicated angles
                 Vector2 a = _repYawPitch.Value;
                 yawDeg = Mathf.Clamp(a.x, -maxYaw, maxYaw);
                 pitchDeg = Mathf.Clamp(a.y, -maxPitchUp, maxPitchDown);
@@ -120,7 +120,6 @@ public class PlayerHeadLook : NetworkBehaviour
         }
         else
         {
-            // Everyone tries to use their local camera (typically not what you want for multiplayer).
             if (cameraTransform == null) return;
 
             Vector3 desiredDirLocal = headBone.parent.InverseTransformDirection(cameraTransform.forward);
@@ -133,31 +132,35 @@ public class PlayerHeadLook : NetworkBehaviour
             pitchDeg = Mathf.Clamp(pitchDeg, -maxPitchUp, maxPitchDown);
         }
 
-        // Reconstruct clamped direction in rest space
+        // Calculate target rotation
         float cy = Mathf.Cos(yawDeg * Mathf.Deg2Rad);
         float sy = Mathf.Sin(yawDeg * Mathf.Deg2Rad);
         float cp = Mathf.Cos(pitchDeg * Mathf.Deg2Rad);
         float sp = Mathf.Sin(pitchDeg * Mathf.Deg2Rad);
 
-        // Rest-space forward rotated by yaw, then by pitch (positive pitch looks down, so y = -sp)
         Vector3 clampedRestDir = new Vector3(sy * cp, -sp, cy * cp);
-
-        // Back to parent local space
         Vector3 clampedLocalDir = _restLocalRot * clampedRestDir;
 
-        // Build rotation that takes rest-forward to the clamped direction
         Quaternion delta = Quaternion.FromToRotation(_restForwardLocal, clampedLocalDir);
         Quaternion targetLocal = _restLocalRot * delta;
 
-        // Smooth follow
         Quaternion current = headBone.localRotation;
         Quaternion followed = Quaternion.Slerp(current, targetLocal, 1f - Mathf.Exp(-followLerp * Time.deltaTime));
 
-        // Blend with animation using weight
         if (weight < 1f)
             followed = Quaternion.Slerp(current, followed, weight);
 
-        headBone.localRotation = followed;
+        // Store for OnAnimatorIK
+        _targetRotation = followed;
+    }
+
+    // This runs AFTER animation updates, ensuring head rotation isn't overridden
+    private void OnAnimatorIK(int layerIndex)
+    {
+        if (!_initialized || headBone == null || weight <= 0f)
+            return;
+
+        headBone.localRotation = _targetRotation;
     }
 
 #if UNITY_EDITOR

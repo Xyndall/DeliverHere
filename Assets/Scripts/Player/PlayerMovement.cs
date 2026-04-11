@@ -93,6 +93,17 @@ public class PlayerMovement : NetworkBehaviour
         enabled = false;
     }
 
+    /// <summary>
+    /// Public method to reset vertical velocity and movement state.
+    /// Call this when teleporting the player to prevent drift.
+    /// </summary>
+    public void ResetMovementState()
+    {
+        _verticalVel = Vector3.zero;
+        _regenCooldown = 0f;
+        IsSprinting = false;
+    }
+
     private void Update()
     {
         if (!IsOwner) return;

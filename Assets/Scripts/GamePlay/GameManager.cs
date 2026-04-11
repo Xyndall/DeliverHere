@@ -362,6 +362,9 @@ public class GameManager : NetworkBehaviour
                 rb.angularVelocity = Vector3.zero;
             }
 
+            // Reset vertical velocity to prevent drift
+            pm.ResetMovementState();
+
             if (cc != null) cc.enabled = true;
 
             _netState?.ServerRequestOwnerTeleport(netObj, spawn.position, spawn.rotation);

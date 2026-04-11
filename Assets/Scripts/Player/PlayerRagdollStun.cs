@@ -1,6 +1,8 @@
 using DeliverHere.GamePlay;
 using Unity.Netcode;
 using UnityEngine;
+using System.Collections.Generic;
+using System.Collections;
 
 namespace DeliverHere.Player
 {
@@ -104,15 +106,9 @@ namespace DeliverHere.Player
         [Tooltip("The transform that contains the ragdoll (usually the character model). Will be unparented during ragdoll.")]
         [SerializeField] private Transform ragdollRoot;
 
-        [Tooltip("If true, automatically find ragdoll root from animator.")]
-        [SerializeField] private bool autoFindRagdollRoot = true;
-
         [Header("Camera Following")]
         [Tooltip("Bone to track for camera position during ragdoll (usually head bone). If null, uses pelvis.")]
         [SerializeField] private Transform cameraFollowBone;
-
-        [Tooltip("If true, auto-find head bone for camera tracking.")]
-        [SerializeField] private bool autoFindCameraFollowBone = true;
 
         [Tooltip("Camera smoothing during ragdoll follow.")]
         [SerializeField] private float cameraFollowSmoothing = 8f;
@@ -243,58 +239,12 @@ namespace DeliverHere.Player
 
         private void Awake()
         {
-            // Auto-find components if not assigned
-            if (characterController == null)
-                characterController = GetComponent<CharacterController>();
-
-            if (ragdollRigidbody == null)
-                ragdollRigidbody = GetComponent<Rigidbody>();
-
-            if (playerMovement == null)
-                playerMovement = GetComponent<PlayerMovement>();
-
-            if (inputController == null)
-                inputController = GetComponent<PlayerInputController>();
-
-            if (animator == null)
-                animator = GetComponentInChildren<Animator>();
-
-            if (firstPersonLook == null)
-                firstPersonLook = GetComponentInChildren<PlayerFirstPersonLook>();
-
-            if (cameraAssigner == null)
-                cameraAssigner = GetComponent<PlayerCameraAssigner>();
-
-            // Auto-find ragdoll root
-            if (autoFindRagdollRoot && ragdollRoot == null && animator != null)
-            {
-                ragdollRoot = animator.transform;
-            }
-
-            // Auto-find camera follow bone (head)
-            if (autoFindCameraFollowBone && cameraFollowBone == null && animator != null && animator.isHuman)
-            {
-                cameraFollowBone = animator.GetBoneTransform(HumanBodyBones.Head);
-            }
-
             // Store original parent relationship
             if (ragdollRoot != null)
             {
                 _originalParent = ragdollRoot.parent;
                 _originalLocalPosition = ragdollRoot.localPosition;
                 _originalLocalRotation = ragdollRoot.localRotation;
-            }
-
-            // Auto-populate ragdoll bodies if empty
-            if (ragdollBodies.Length == 0 && animator != null)
-            {
-                ragdollBodies = animator.GetComponentsInChildren<Rigidbody>();
-            }
-
-            // Auto-populate ragdoll colliders if empty
-            if (ragdollColliders.Length == 0 && animator != null)
-            {
-                ragdollColliders = animator.GetComponentsInChildren<Collider>();
             }
 
             // Apply mass distribution
@@ -427,8 +377,12 @@ namespace DeliverHere.Player
             base.OnNetworkDespawn();
         }
 
+        
+
         private void Update()
         {
+            
+
             // Track velocity for CharacterController collision detection
             if (!_isInRagdoll)
             {
@@ -442,7 +396,7 @@ namespace DeliverHere.Player
 
             if (!_isInRagdoll) return;
 
-            // ADDED: Force recovery after 4 seconds regardless of ground state
+            // Force recovery after 4 seconds regardless of ground state
             float timeInRagdoll = Time.time - _lastStunTime;
             if (timeInRagdoll >= 4f)
             {
@@ -450,7 +404,7 @@ namespace DeliverHere.Player
                 {
                     Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} FORCING recovery after {timeInRagdoll:F2}s (bypassing ground check)");
                 }
-                
+
                 // Only server can change network state
                 if (IsServer)
                 {
@@ -486,7 +440,11 @@ namespace DeliverHere.Player
                     Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} Cannot recover yet - Ground:{CanRecover()}, Time in ragdoll:{timeInRagdoll:F2}s");
                 }
             }
+
+            
+
         }
+
 
         private void FixedUpdate()
         {
@@ -691,11 +649,11 @@ namespace DeliverHere.Player
             if (impactRb.mass < MinImpactMass)
                 return;
 
-            // FIX: Check for spline/animation velocity tracker FIRST
+            // Check for spline/animation velocity tracker FIRST
             float impactSpeed = collision.relativeVelocity.magnitude;
             Vector3 impactVelocity = collision.relativeVelocity;
-            
-            // NEW: Try to get velocity from spline tracker (for animated vehicles)
+
+            // Try to get velocity from spline tracker (for animated vehicles)
             var splineTracker = collision.gameObject.GetComponentInParent<SplineVehicleVelocityTracker>();
             if (splineTracker != null)
             {
@@ -703,7 +661,7 @@ namespace DeliverHere.Player
                 Vector3 trackedVelocity = splineTracker.GetTrackedVelocity();
                 impactSpeed = trackedVelocity.magnitude;
                 impactVelocity = trackedVelocity;
-                
+
                 if (logImpacts)
                 {
                     Debug.Log($"[PlayerRagdollStun] Using SPLINE tracked velocity: {impactSpeed:F2} m/s (Unity collision: {collision.relativeVelocity.magnitude:F2}, Rigidbody: {impactRb.linearVelocity.magnitude:F2})");
@@ -900,20 +858,8 @@ namespace DeliverHere.Player
 
         private void EnableRagdoll(Vector3 force, Vector3 impactPoint = default)
         {
+            // Set ragdoll state IMMEDIATELY to block LateUpdate
             _isInRagdoll = true;
-
-            // Disable character controller
-            if (characterController != null)
-                characterController.enabled = false;
-
-            // Disable player movement script
-            if (playerMovement != null)
-                playerMovement.enabled = false;
-
-            // Disable camera look (prevents jitter from sway)
-            if (firstPersonLook != null)
-                firstPersonLook.enabled = false;
-
             // Disable animator on ALL machines, not just owner
             // This ensures other clients see the ragdoll physics, not stiff animation
             if (animator != null)
@@ -925,21 +871,58 @@ namespace DeliverHere.Player
                 animator.Update(0f);
             }
 
-            // Unparent ragdoll root to allow independent physics FIRST
+            // Start coroutine to delay the actual ragdoll setup
+            StartCoroutine(EnableRagdollDelayed(force, impactPoint));
+        }
+
+        private IEnumerator EnableRagdollDelayed(Vector3 force, Vector3 impactPoint)
+        {
+            // Small delay to ensure LateUpdate doesn't run during transition
+            // This gives Unity one frame to process _isInRagdoll = true
+            yield return new WaitForSeconds(0.1f);
+
+            // Disable character controller
+            if (characterController != null)
+                characterController.enabled = false;
+
+            // Disable player movement script
+            if (playerMovement != null)
+                playerMovement.enabled = false;
+
+            // Reset camera effects BEFORE disabling (ensures FOV returns to base)
+            if (IsOwner && firstPersonLook != null)
+            {
+                firstPersonLook.ResetCameraEffects();
+            }
+
+            // Disable camera look (prevents jitter from sway)
+            if (firstPersonLook != null)
+                firstPersonLook.enabled = false;
+
+            
+            
+            // Unparent ragdoll root to allow independent physics
             if (ragdollRoot != null && ragdollRoot.parent != null)
             {
-                // Store world position/rotation before unparenting
-                Vector3 worldPos = ragdollRoot.position;
-                Quaternion worldRot = ragdollRoot.rotation;
-
+                // HARD-CODE: Use the PLAYER ROOT position (transform.position), not ragdollRoot.position
+                Vector3 playerRootPosition = transform.position;
+                
                 ragdollRoot.SetParent(null);
 
-                // Lift slightly above ground to prevent initial clipping
-                worldPos.y += ragdollSpawnHeightOffset;
-
-                // Restore world position/rotation after unparenting
-                ragdollRoot.position = worldPos;
-                ragdollRoot.rotation = worldRot;
+                // Set ragdoll to player's position with Y offset to prevent clipping
+                ragdollRoot.position = new Vector3(
+                    playerRootPosition.x,
+                    playerRootPosition.y + ragdollSpawnHeightOffset,
+                    playerRootPosition.z
+                );
+                
+                // Keep the ragdoll's current rotation (from animation pose)
+                // Don't modify rotation - let it inherit from unparenting
+                
+                if (logImpacts)
+                {
+                    Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} Ragdoll spawned at player position: {ragdollRoot.position}");
+                }
             }
 
             // Reparent camera to the HEAD BONE (which has physics) instead of ragdoll root
@@ -972,8 +955,8 @@ namespace DeliverHere.Player
             // Enable ragdoll physics with anti-clipping settings
             SetRagdollEnabled(true);
 
-            // Apply force to ragdoll (server-only)
-            if (IsServer && force.sqrMagnitude > 0.01f)
+            // Apply force to ragdoll (server-only OR clients applying their own force)
+            if (force.sqrMagnitude > 0.01f)
             {
                 // Apply force to the main rigidbody or distribute to body parts
                 if (ragdollRigidbody != null && ragdollBodies.Length == 0)
@@ -982,6 +965,11 @@ namespace DeliverHere.Player
                         ragdollRigidbody.AddForceAtPosition(force, impactPoint, ForceMode.Impulse);
                     else
                         ragdollRigidbody.AddForce(force, ForceMode.Impulse);
+                        
+                    if (logImpacts)
+                    {
+                        Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} Applied force {force.magnitude:F2}N to main rigidbody");
+                    }
                 }
                 else
                 {
@@ -994,6 +982,11 @@ namespace DeliverHere.Player
                         float falloff = Mathf.Clamp01(1f - (distance / 2f)); // Force falls off with distance
 
                         rb.AddForce(force * falloff, ForceMode.Impulse);
+                        
+                        if (logImpacts)
+                        {
+                            Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} Applied {(force * falloff).magnitude:F2}N to {rb.name}");
+                        }
                     }
                 }
             }
@@ -1048,24 +1041,7 @@ namespace DeliverHere.Player
             // Disable ragdoll physics BEFORE reparenting
             SetRagdollEnabled(false);
 
-            // Restore camera parent (owner only)
-            if (IsOwner && firstPersonLook != null && firstPersonLook.playerCamera != null && _originalCameraParentBeforeRagdoll != null)
-            {
-                Transform camTransform = firstPersonLook.playerCamera.transform;
-                camTransform.SetParent(_originalCameraParentBeforeRagdoll, true); // preserve world position
-                camTransform.localPosition = _originalCameraLocalPos;
-                camTransform.localRotation = _originalCameraLocalRot;
-            }
-
-            // Reparent ragdoll root back to player
-            if (ragdollRoot != null && ragdollRoot.parent != _originalParent)
-            {
-                ragdollRoot.SetParent(_originalParent);
-                ragdollRoot.localPosition = _originalLocalPosition;
-                ragdollRoot.localRotation = _originalLocalRotation;
-            }
-
-            // Move player root to recovery position
+            // Move player root to recovery position FIRST (before reparenting ragdoll root)
             if (characterController != null)
             {
                 characterController.enabled = false; // Disable first to allow teleport
@@ -1087,6 +1063,14 @@ namespace DeliverHere.Player
 
             transform.rotation = recoveryRotation;
 
+            // NOW reparent ragdoll root back to player (AFTER player root has moved)
+            if (ragdollRoot != null && ragdollRoot.parent != _originalParent)
+            {
+                ragdollRoot.SetParent(_originalParent);
+                ragdollRoot.localPosition = _originalLocalPosition;
+                ragdollRoot.localRotation = _originalLocalRotation;
+            }
+
             // Re-enable character controller
             if (characterController != null)
             {
@@ -1097,9 +1081,24 @@ namespace DeliverHere.Player
             if (playerMovement != null)
                 playerMovement.enabled = true;
 
-            // Re-enable camera look
+            // Use PlayerCameraAssigner to properly restore camera (owner only)
+            if (IsOwner && cameraAssigner != null)
+            {
+                // This will properly reparent to followTarget with correct local space
+                cameraAssigner.ReassignCamera();
+            }
+
+            // Re-enable camera look AFTER camera is reassigned
             if (firstPersonLook != null)
+            {
                 firstPersonLook.enabled = true;
+
+                // Reset all camera effect states to prevent jitter
+                if (IsOwner)
+                {
+                    firstPersonLook.ResetCameraEffects();
+                }
+            }
 
             // Re-enable animator
             if (animator != null)
@@ -1123,10 +1122,10 @@ namespace DeliverHere.Player
             _groundContactCount = 0;
 
             _lastStunTime -= StunCooldown;
-            
+
             if (logImpacts)
             {
-                Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} cooldown reset, can ragdoll again immediately");
+                Debug.Log($"[PlayerRagdollStun] {(IsServer ? "SERVER" : "CLIENT")} Recovery complete at position {transform.position}");
             }
         }
 
@@ -1288,7 +1287,7 @@ namespace DeliverHere.Player
 
             float timeInRagdoll = Time.time - _lastStunTime;
             bool forcedRecovery = timeInRagdoll >= 4f;
-            
+
             // Server validates recovery is allowed OR it's a forced recovery
             if (forcedRecovery || (Time.time >= _stunEndTime && CanRecover()))
             {
@@ -1300,7 +1299,7 @@ namespace DeliverHere.Player
                 {
                     Debug.Log($"[PlayerRagdollStun] Client requested recovery, server approving (normal conditions met)");
                 }
-                
+
                 RecoverFromRagdoll();
             }
             else
@@ -1335,6 +1334,14 @@ namespace DeliverHere.Player
             TriggerRagdollStun(force, impactPoint);
         }
 
+        private void LateUpdate()
+        {
+            if (_isInRagdoll == false && animator != null)
+            {
+                animator.transform.localPosition = new Vector3(0, -1, 0);
+            }
+        }
+
 #if UNITY_EDITOR
         private void OnValidate()
         {
@@ -1357,26 +1364,6 @@ namespace DeliverHere.Player
             totalRagdollMass = Mathf.Max(1f, totalRagdollMass);
             minGroundedTimeForRecovery = Mathf.Max(0f, minGroundedTimeForRecovery);
             settledVelocityThreshold = Mathf.Max(0f, settledVelocityThreshold);
-
-            // Auto-find ragdoll root in editor
-            if (autoFindRagdollRoot && ragdollRoot == null)
-            {
-                var anim = GetComponentInChildren<Animator>();
-                if (anim != null)
-                {
-                    ragdollRoot = anim.transform;
-                }
-            }
-
-            // Auto-find camera follow bone in editor
-            if (autoFindCameraFollowBone && cameraFollowBone == null)
-            {
-                var anim = GetComponentInChildren<Animator>();
-                if (anim != null && anim.isHuman)
-                {
-                    cameraFollowBone = anim.GetBoneTransform(HumanBodyBones.Head);
-                }
-            }
         }
 
         [ContextMenu("Debug/Test Ragdoll Stun")]
