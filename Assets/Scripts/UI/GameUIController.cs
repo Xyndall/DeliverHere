@@ -9,7 +9,7 @@ public class GameUIController : MonoBehaviour
 
     [Header("HUD - Text")]
     [SerializeField] private TMP_Text dayText;
-    [SerializeField] private TMP_Text targetMoneyText;
+    [SerializeField] private TMP_Text deliveryZoneValueText; // NEW: Shows target/current in zone
     [SerializeField] private TMP_Text bankedMoneyText;
 
     [Header("HUD - Timer")]
@@ -26,8 +26,6 @@ public class GameUIController : MonoBehaviour
     [SerializeField] private GameObject dayEndSummaryPanel;
 
     [Header("Day End Summary UI")]
-    [SerializeField] private TMP_Text dayEarnedText;
-    [SerializeField] private TMP_Text dayNewBankedText;
     [SerializeField] private TMP_Text packagesDeliveredText;
     [SerializeField] private TMP_Text quotaStatusText;
     [SerializeField] private Button nextDayButton;
@@ -153,20 +151,23 @@ public class GameUIController : MonoBehaviour
 
     // ---- Setters used by GameManager ----
     public void SetDay(int day) { if (dayText != null) dayText.text = $"Day {day}"; }
-    public void SetTarget(int target) { if (targetMoneyText != null) targetMoneyText.text = $"Target: ${target}"; }
-    public void SetDailyEarnings(int current, int target, float progress)
+    
+    // NEW: Display delivery zone value vs target
+    public void SetDeliveryZoneValue(int currentValueInZone, int targetMoney)
     {
-        if (targetMoneyText != null) targetMoneyText.text = $"Target: ${target}";
+        if (deliveryZoneValueText != null)
+        {
+            deliveryZoneValueText.text = $"Quota: ${targetMoney} / ${currentValueInZone}";
+        }
     }
+
     public void SetBankedMoney(int banked) { if (bankedMoneyText != null) bankedMoneyText.text = $"Banked: ${banked}"; }
 
-    // New extended summary (replaces old)
+    // New extended summary (simplified - removed earned today display)
     public void ShowDayEndSummary(int earnedToday, int newBanked, int packagesDelivered, bool metQuota, bool hostHasControl)
     {
         if (dayEndSummaryPanel != null) dayEndSummaryPanel.SetActive(true);
 
-        if (dayEarnedText != null) dayEarnedText.text = $"Earned Today: ${earnedToday}";
-        if (dayNewBankedText != null) dayNewBankedText.text = $"New Banked Total: ${newBanked}";
         if (packagesDeliveredText != null) packagesDeliveredText.text = $"Packages Delivered: {packagesDelivered}";
         if (quotaStatusText != null)
         {
@@ -216,6 +217,5 @@ public class GameUIController : MonoBehaviour
             uiStateManager.SetGameState(isPaused ? GameState.Paused : GameState.InGame);
         }
 
-        //Time.timeScale = isPaused ? 0f : 1f;
     }
 }

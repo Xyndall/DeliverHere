@@ -42,6 +42,10 @@ public class MoneyTargetManager : NetworkBehaviour
     private readonly NetworkVariable<int> nvBankedMoney =
         new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+    // Track money at the start of the current day
+    private readonly NetworkVariable<int> nvDayStartMoney =
+        new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
     private bool targetReached;
     private int currentDay;
 
@@ -51,27 +55,28 @@ public class MoneyTargetManager : NetworkBehaviour
     public event Action<int> OnBankedMoneyChanged;
     public event Action<int> OnTargetChanged;
     public event Action OnTargetReached;
+    public event Action OnTargetFailed;
     public event Action<int> OnDayAdvanced;
     public event Action<int, int> OnTargetIncreased;
 
     public int TargetMoney
     {
         get => targetMoney;
-        set
+        private set // Changed to private to prevent external modification
         {
             int newTarget = Mathf.Max(0, value);
             if (targetMoney == newTarget) return;
 
             targetMoney = newTarget;
             OnTargetChanged?.Invoke(targetMoney);
-            EvaluateTargetReached();
         }
     }
 
-    // CurrentMoney removed; banked money is the only currency.
     public int BankedMoney => nvBankedMoney.Value;
+    public int DayStartMoney => nvDayStartMoney.Value;
+    public int EarnedToday => Mathf.Max(0, nvBankedMoney.Value - nvDayStartMoney.Value);
 
-    public float Progress => targetMoney <= 0 ? 1f : Mathf.Clamp01((float)BankedMoney / targetMoney);
+    public float Progress => targetMoney <= 0 ? 1f : Mathf.Clamp01((float)EarnedToday / targetMoney);
     public bool IsTargetReached => targetReached;
     public int CurrentDay => currentDay;
 
@@ -85,6 +90,7 @@ public class MoneyTargetManager : NetworkBehaviour
         base.OnNetworkSpawn();
 
         nvBankedMoney.OnValueChanged += OnNvBankedMoneyChanged;
+        nvDayStartMoney.OnValueChanged += OnNvDayStartMoneyChanged;
 
         // Push initial state to listeners
         OnBankedMoneyChanged?.Invoke(nvBankedMoney.Value);
@@ -96,12 +102,19 @@ public class MoneyTargetManager : NetworkBehaviour
     public override void OnNetworkDespawn()
     {
         nvBankedMoney.OnValueChanged -= OnNvBankedMoneyChanged;
+        nvDayStartMoney.OnValueChanged -= OnNvDayStartMoneyChanged;
         base.OnNetworkDespawn();
     }
 
     private void OnNvBankedMoneyChanged(int previous, int current)
     {
         OnBankedMoneyChanged?.Invoke(current);
+        EvaluateTargetReached();
+    }
+
+    private void OnNvDayStartMoneyChanged(int previous, int current)
+    {
+        // Recalculate progress when day start money changes
         EvaluateTargetReached();
     }
 
@@ -167,11 +180,66 @@ public class MoneyTargetManager : NetworkBehaviour
 
         TargetMoney = initialTargetMoney;
 
-        nvBankedMoney.Value = Mathf.Max(0, startingMoney);
+        int startMoney = Mathf.Max(0, startingMoney);
+        nvBankedMoney.Value = startMoney;
+        nvDayStartMoney.Value = startMoney;
 
         targetReached = false;
         currentDay = 0;
 
+        EvaluateTargetReached();
+    }
+
+    /// <summary>
+    /// Call this at the END of a day to evaluate if quota was met, then prepare for next day.
+    /// Returns true if the daily quota was reached.
+    /// </summary>
+    public bool CompleteDayAndEvaluate()
+    {
+        if (!IsServer) return false;
+
+        bool quotaMet = EarnedToday >= targetMoney;
+        
+        if (!quotaMet)
+        {
+            OnTargetFailed?.Invoke();
+        }
+
+        return quotaMet;
+    }
+
+    /// <summary>
+    /// Call this at the START of a new day to reset the daily tracking and optionally increase target.
+    /// </summary>
+    public void StartNewDay()
+    {
+        if (!IsServer) return;
+
+        currentDay++;
+
+        // Set the new baseline for today's earnings
+        nvDayStartMoney.Value = nvBankedMoney.Value;
+        targetReached = false;
+
+        if (enableDailyIncrease)
+        {
+            int delta = CalculateDailyIncrease(currentDay);
+            if (delta > 0)
+            {
+                int newTarget = targetMoney + delta;
+
+                if (maxTargetMoneyCap > 0)
+                    newTarget = Mathf.Min(newTarget, maxTargetMoneyCap);
+
+                if (newTarget != targetMoney)
+                {
+                    TargetMoney = newTarget;
+                    OnTargetIncreased?.Invoke(TargetMoney, delta);
+                }
+            }
+        }
+
+        OnDayAdvanced?.Invoke(currentDay);
         EvaluateTargetReached();
     }
 
@@ -187,27 +255,7 @@ public class MoneyTargetManager : NetworkBehaviour
 
         for (int i = 0; i < days; i++)
         {
-            currentDay++;
-
-            if (enableDailyIncrease)
-            {
-                int delta = CalculateDailyIncrease(currentDay);
-                if (delta > 0)
-                {
-                    int newTarget = targetMoney + delta;
-
-                    if (maxTargetMoneyCap > 0)
-                        newTarget = Mathf.Min(newTarget, maxTargetMoneyCap);
-
-                    if (newTarget != targetMoney)
-                    {
-                        TargetMoney = newTarget;
-                        OnTargetIncreased?.Invoke(TargetMoney, delta);
-                    }
-                }
-            }
-
-            OnDayAdvanced?.Invoke(currentDay);
+            StartNewDay();
         }
     }
 
@@ -249,20 +297,39 @@ public class MoneyTargetManager : NetworkBehaviour
 
     private void EvaluateTargetReached()
     {
-        if (!targetReached && (targetMoney == 0 || nvBankedMoney.Value >= targetMoney))
+        bool shouldBeReached = targetMoney == 0 || EarnedToday >= targetMoney;
+
+        if (!targetReached && shouldBeReached)
         {
             targetReached = true;
             OnTargetReached?.Invoke();
         }
-        else if (targetReached && nvBankedMoney.Value < targetMoney)
+        else if (targetReached && !shouldBeReached)
         {
             targetReached = false;
         }
+    }
+    public int GetSplitQuota(int zoneCount)
+    {
+        if (zoneCount <= 0) return TargetMoney;
+        return Mathf.CeilToInt(TargetMoney / (float)zoneCount);
     }
 
     [ContextMenu("Debug/Advance One Day")]
     private void Debug_AdvanceOneDay()
     {
         AdvanceDay();
+    }
+
+    [ContextMenu("Debug/Add 500 Money")]
+    private void Debug_Add500()
+    {
+        AddMoney(500);
+    }
+
+    [ContextMenu("Debug/Log Daily Stats")]
+    private void Debug_LogStats()
+    {
+        Debug.Log($"Day {currentDay} | Target: ${targetMoney} | Earned Today: ${EarnedToday} | Banked: ${BankedMoney} | Quota Met: {targetReached}");
     }
 }

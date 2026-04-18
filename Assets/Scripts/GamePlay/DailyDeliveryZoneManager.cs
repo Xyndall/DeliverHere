@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.Netcode;
@@ -7,7 +7,7 @@ using UnityEngine;
 namespace DeliverHere.GamePlay
 {
     /// <summary>
-    /// Manages daily delivery zone selection with expanding radius.
+    /// Manages daily delivery zone selection with expanding radius and multi-zone quota splitting.
     /// Server-authoritative: selects zones each day and broadcasts to clients.
     /// </summary>
     [DisallowMultipleComponent]
@@ -30,11 +30,27 @@ namespace DeliverHere.GamePlay
         [Tooltip("If true, prevents selecting the same zone as the previous day.")]
         [SerializeField] private bool avoidLastDayZone = true;
 
+        [Header("Multi-Zone Quota Settings")]
+        [Tooltip("How to split quota among multiple zones.")]
+        [SerializeField] private QuotaSplitMode quotaSplitMode = QuotaSplitMode.EqualSplit;
+        [Tooltip("If using WeightedByDistance, zones further from warehouse get higher quotas.")]
+        [SerializeField, Range(0.5f, 2f)] private float distanceQuotaMultiplier = 1.2f;
+
+        [Header("Progressive Zone Unlocking")]
+        [Tooltip("Enable to gradually unlock more zones as days progress.")]
+        [SerializeField] private bool enableProgressiveUnlock = true;
+        [Tooltip("Day number to unlock second zone.")]
+        [SerializeField, Min(1)] private int unlockSecondZoneDay = 5;
+        [Tooltip("Additional zones to unlock every X days after second zone.")]
+        [SerializeField, Min(1)] private int additionalZoneEveryXDays = 3;
+        [Tooltip("Maximum number of simultaneous zones.")]
+        [SerializeField, Min(1)] private int maxSimultaneousZones = 4;
+
         [Header("Zones (Manual Assignment)")]
         [SerializeField] private List<DeliveryZoneDefinition> allDeliveryZones = new List<DeliveryZoneDefinition>();
 
         [Header("Setup Timing")]
-        [Tooltip("If true, setup happens immediately on network spawn. If false, requires manual call (e.g., from start button).")]
+        [Tooltip("If true, setup happens immediately on network spawn. If false, requires manual call.")]
         [SerializeField] private bool autoSetupOnSpawn = false;
 
         [Header("Debug")]
@@ -42,14 +58,22 @@ namespace DeliverHere.GamePlay
         [SerializeField] private bool enableServerLogs = true;
         [SerializeField] private bool enableClientLogs = false;
 
+        public enum QuotaSplitMode
+        {
+            EqualSplit,              // Each zone gets quota / zoneCount
+            WeightedByDistance,      // Farther zones get higher quotas
+            PrimarySecondary         // First zone gets 70%, others share 30%
+        }
+
         // Runtime state
         private List<DeliveryZoneDefinition> _activeZonesThisDay = new List<DeliveryZoneDefinition>();
+        private Dictionary<DeliveryZoneDefinition, int> _zoneQuotas = new Dictionary<DeliveryZoneDefinition, int>();
         private HashSet<int> _usedZoneIndices = new HashSet<int>();
         private int _currentDay = 0;
         private float _currentRadius = 0f;
         private bool _hasBeenSetup = false;
 
-        // NEW: Track previous day's zone(s) to avoid repeating
+        // Track previous day's zone(s) to avoid repeating
         private List<int> _previousDayZoneIndices = new List<int>();
 
         // Network variables for client synchronization
@@ -58,6 +82,7 @@ namespace DeliverHere.GamePlay
 
         // Network list to replicate active zone indices to clients
         private NetworkList<int> nvActiveZoneIndices;
+        private NetworkList<int> nvZoneQuotas; // Parallel list to nvActiveZoneIndices
 
         // Public events
         public event Action<List<DeliveryZoneDefinition>> OnZonesSelectedForDay;
@@ -70,6 +95,7 @@ namespace DeliverHere.GamePlay
         private void Awake()
         {
             nvActiveZoneIndices = new NetworkList<int>();
+            nvZoneQuotas = new NetworkList<int>();
 
             if (moneyTargetManager == null)
                 moneyTargetManager = FindFirstObjectByType<MoneyTargetManager>();
@@ -85,14 +111,14 @@ namespace DeliverHere.GamePlay
             // Subscribe to network variable changes
             nvCurrentDay.OnValueChanged += OnNetworkDayChanged;
             nvActiveZoneIndices.OnListChanged += OnNetworkActiveZonesChanged;
+            nvZoneQuotas.OnListChanged += OnNetworkQuotasChanged;
 
-            // NEW: Clients need to discover zones locally too!
+            // Clients need to discover zones locally too
             if (!IsServer)
             {
                 if (enableClientLogs)
                     Debug.Log("[DailyDeliveryZoneManager] Client discovering zones...");
 
-                // Clients discover zones in their local scene
                 if (autoDiscoverZones)
                 {
                     DiscoverAllZones();
@@ -101,14 +127,12 @@ namespace DeliverHere.GamePlay
                 _currentDay = nvCurrentDay.Value;
                 _currentRadius = Mathf.Min(initialRadius + (radiusIncreasePerDay * (_currentDay - 1)), maxRadius);
 
-                // Sync active zones from network
                 SyncActiveZonesFromNetwork();
 
                 if (enableClientLogs)
                     Debug.Log($"[DailyDeliveryZoneManager] Client synced: Day {_currentDay}, {_activeZonesThisDay.Count} active zones");
             }
 
-            // Only auto-setup if configured (server only)
             if (autoSetupOnSpawn && IsServer)
             {
                 ServerSetupAfterLevelLoad();
@@ -122,14 +146,11 @@ namespace DeliverHere.GamePlay
 
             nvCurrentDay.OnValueChanged -= OnNetworkDayChanged;
             nvActiveZoneIndices.OnListChanged -= OnNetworkActiveZonesChanged;
+            nvZoneQuotas.OnListChanged -= OnNetworkQuotasChanged;
 
             base.OnNetworkDespawn();
         }
 
-        /// <summary>
-        /// Server: Call this after level is loaded to discover warehouse and zones.
-        /// Typically called from WorldStartGameButton or LevelFlowController.
-        /// </summary>
         public void ServerSetupAfterLevelLoad()
         {
             if (!IsServer)
@@ -150,19 +171,16 @@ namespace DeliverHere.GamePlay
             if (enableServerLogs)
                 Debug.Log("[DailyDeliveryZoneManager] Running level load setup...");
 
-            // 1. Find warehouse spawn point
             if (autoFindWarehouse && warehouseSpawnPoint == null)
             {
                 FindWarehouseSpawnPoint();
             }
 
-            // 2. Discover all delivery zones in the loaded level
             if (autoDiscoverZones)
             {
                 DiscoverAllZones();
             }
 
-            // 3. If a day has already started, select zones immediately
             if (moneyTargetManager != null && moneyTargetManager.CurrentDay > 0)
             {
                 SelectZonesForDay(moneyTargetManager.CurrentDay);
@@ -172,10 +190,6 @@ namespace DeliverHere.GamePlay
                 Debug.Log($"[DailyDeliveryZoneManager] Setup complete. Warehouse: {warehouseSpawnPoint?.name ?? "null"}, Zones discovered: {allDeliveryZones.Count}");
         }
 
-        /// <summary>
-        /// Client: Call this when a client joins mid-game or loads the level late.
-        /// Ensures client has discovered zones and synced state.
-        /// </summary>
         public void ClientDiscoverAndSync()
         {
             if (IsServer) return;
@@ -183,13 +197,11 @@ namespace DeliverHere.GamePlay
             if (enableClientLogs)
                 Debug.Log("[DailyDeliveryZoneManager] Client manual discover and sync...");
 
-            // Discover zones in client's local scene
             if (autoDiscoverZones)
             {
                 DiscoverAllZones();
             }
 
-            // Sync from network state
             _currentDay = nvCurrentDay.Value;
             _currentRadius = Mathf.Min(initialRadius + (radiusIncreasePerDay * (_currentDay - 1)), maxRadius);
             SyncActiveZonesFromNetwork();
@@ -210,7 +222,6 @@ namespace DeliverHere.GamePlay
 
         private void FindWarehouseSpawnPoint()
         {
-            // Try to find warehouse/spawn point
             var gm = GameManager.Instance;
             if (gm != null && gm.PlayerSpawnPoints != null && gm.PlayerSpawnPoints.Count > 0)
             {
@@ -221,7 +232,6 @@ namespace DeliverHere.GamePlay
                 return;
             }
 
-            // Fallback: search by tag
             var spawns = GameObject.FindGameObjectsWithTag("PlayerSpawn");
             if (spawns != null && spawns.Length > 0)
             {
@@ -232,17 +242,12 @@ namespace DeliverHere.GamePlay
                 return;
             }
 
-            // Last resort: use this transform as fallback
             warehouseSpawnPoint = transform;
 
             if (enableServerLogs)
                 Debug.LogWarning("[DailyDeliveryZoneManager] No warehouse spawn found, using manager position as fallback.");
         }
 
-        /// <summary>
-        /// Discovers all zones and sorts them deterministically to ensure consistent ordering
-        /// between server and clients (critical for network synchronization).
-        /// </summary>
         private void DiscoverAllZones()
         {
             allDeliveryZones.Clear();
@@ -254,8 +259,7 @@ namespace DeliverHere.GamePlay
                     allDeliveryZones.Add(zone);
             }
 
-            // CRITICAL FIX: Sort zones deterministically by GameObject instance ID
-            // This ensures server and clients have zones in the same order
+            // Sort deterministically
             allDeliveryZones = allDeliveryZones
                 .OrderBy(z => z.gameObject.GetInstanceID())
                 .ToList();
@@ -265,24 +269,15 @@ namespace DeliverHere.GamePlay
             {
                 string peer = IsServer ? "Server" : "Client";
                 Debug.Log($"[DailyDeliveryZoneManager] {peer} discovered {allDeliveryZones.Count} delivery zones (sorted by instance ID).");
-                
-                if (enableClientLogs || enableServerLogs)
-                {
-                    for (int i = 0; i < allDeliveryZones.Count; i++)
-                    {
-                        Debug.Log($"  [{i}] {allDeliveryZones[i].ZoneName} (ID: {allDeliveryZones[i].gameObject.GetInstanceID()})");
-                    }
-                }
             }
         }
 
-        /// <summary>
-        /// Server-only: Selects random delivery zones within the current day's radius.
-        /// Avoids zones used in the previous day.
-        /// </summary>
         private void SelectZonesForDay(int dayIndex)
         {
             if (!IsServer) return;
+
+            // Calculate how many zones to activate based on day
+            int targetZoneCount = CalculateTargetZoneCount(dayIndex);
 
             // Calculate radius for this day
             _currentRadius = Mathf.Min(initialRadius + (radiusIncreasePerDay * (dayIndex - 1)), maxRadius);
@@ -299,12 +294,11 @@ namespace DeliverHere.GamePlay
                 return;
             }
 
-            // NEW: Filter out zones from previous day if enabled
+            // Filter out zones from previous day if enabled
             var candidateZones = new List<DeliveryZoneDefinition>(eligibleZones);
 
             if (avoidLastDayZone && _previousDayZoneIndices.Count > 0)
             {
-                // Remove zones that were active last day
                 for (int i = candidateZones.Count - 1; i >= 0; i--)
                 {
                     int globalIndex = allDeliveryZones.IndexOf(candidateZones[i]);
@@ -314,26 +308,23 @@ namespace DeliverHere.GamePlay
                     }
                 }
 
-                // If we filtered out everything, fall back to all eligible zones
                 if (candidateZones.Count == 0)
                 {
                     if (enableServerLogs)
                         Debug.LogWarning($"[DailyDeliveryZoneManager] All zones were used last day. Using full eligible pool.");
                     candidateZones = new List<DeliveryZoneDefinition>(eligibleZones);
                 }
-                else if (enableServerLogs)
-                {
-                    Debug.Log($"[DailyDeliveryZoneManager] Filtered out {eligibleZones.Count - candidateZones.Count} zone(s) from previous day. {candidateZones.Count} candidates remain.");
-                }
             }
 
             // Select random zones
             _activeZonesThisDay.Clear();
-            _usedZoneIndices.Clear();
+            _zoneQuotas.Clear();
             nvActiveZoneIndices.Clear();
+            nvZoneQuotas.Clear();
 
-            int targetCount = Mathf.Min(zonesPerDay, candidateZones.Count);
+            int actualZoneCount = Mathf.Min(targetZoneCount, candidateZones.Count);
             var newlySelectedIndices = new List<int>();
+            var selectedZones = new List<DeliveryZoneDefinition>();
 
             if (!allowDuplicateZones)
             {
@@ -342,49 +333,65 @@ namespace DeliverHere.GamePlay
                 for (int i = 0; i < candidateZones.Count; i++)
                     indices.Add(i);
 
-                for (int i = 0; i < targetCount; i++)
+                for (int i = 0; i < actualZoneCount; i++)
                 {
                     int randIndex = UnityEngine.Random.Range(0, indices.Count);
                     int selectedIndex = indices[randIndex];
                     indices.RemoveAt(randIndex);
 
                     var zone = candidateZones[selectedIndex];
-                    _activeZonesThisDay.Add(zone);
+                    selectedZones.Add(zone);
 
-                    // Find global index for network sync
                     int globalIndex = allDeliveryZones.IndexOf(zone);
                     if (globalIndex >= 0)
                     {
-                        nvActiveZoneIndices.Add(globalIndex);
                         newlySelectedIndices.Add(globalIndex);
                     }
-
-                    zone.ActivateZone();
                 }
             }
             else
             {
-                // Allow duplicates
-                for (int i = 0; i < targetCount; i++)
+                for (int i = 0; i < actualZoneCount; i++)
                 {
                     var zone = candidateZones[UnityEngine.Random.Range(0, candidateZones.Count)];
-                    _activeZonesThisDay.Add(zone);
+                    selectedZones.Add(zone);
 
                     int globalIndex = allDeliveryZones.IndexOf(zone);
-                    if (globalIndex >= 0)
+                    if (globalIndex >= 0 && !newlySelectedIndices.Contains(globalIndex))
                     {
-                        nvActiveZoneIndices.Add(globalIndex);
-                        if (!newlySelectedIndices.Contains(globalIndex))
-                            newlySelectedIndices.Add(globalIndex);
+                        newlySelectedIndices.Add(globalIndex);
                     }
-
-                    zone.ActivateZone();
                 }
             }
 
-            // NEW: Store current selection for next day's exclusion
+            // Calculate and assign quotas
+            CalculateAndAssignQuotas(selectedZones, dayIndex);
+
+            // Activate zones with their quotas
+            for (int i = 0; i < selectedZones.Count; i++)
+            {
+                var zone = selectedZones[i];
+                int globalIndex = allDeliveryZones.IndexOf(zone);
+                int quota = _zoneQuotas[zone];
+
+                _activeZonesThisDay.Add(zone);
+                nvActiveZoneIndices.Add(globalIndex);
+                nvZoneQuotas.Add(quota);
+
+                zone.ActivateZone();
+
+                if (zone.DeliveryZone != null)
+                {
+                    zone.DeliveryZone.SetIndividualQuota(quota);
+                }
+            }
+
+            // Store current selection for next day's exclusion
             _previousDayZoneIndices.Clear();
             _previousDayZoneIndices.AddRange(newlySelectedIndices);
+
+            // Set primary zone for UI reporting
+            SetPrimaryZoneForUI();
 
             if (enableServerLogs)
             {
@@ -392,11 +399,110 @@ namespace DeliverHere.GamePlay
                 foreach (var z in _activeZonesThisDay)
                 {
                     int idx = allDeliveryZones.IndexOf(z);
-                    Debug.Log($"  - [{idx}] {z.ZoneName} at {z.WorldPosition}");
+                    int quota = _zoneQuotas[z];
+                    bool isPrimary = z.DeliveryZone != null && z.DeliveryZone.IsPrimaryZone;
+                    Debug.Log($"  - [{idx}] {z.ZoneName} at {z.WorldPosition}, Quota: ${quota}{(isPrimary ? " [PRIMARY]" : "")}");
                 }
             }
 
             OnZonesSelectedForDay?.Invoke(_activeZonesThisDay);
+        }
+
+        private int CalculateTargetZoneCount(int dayIndex)
+        {
+            if (!enableProgressiveUnlock)
+                return zonesPerDay;
+
+            // Day 1-4: 1 zone
+            if (dayIndex < unlockSecondZoneDay)
+                return 1;
+
+            // Day 5+: progressively unlock more zones
+            int daysAfterUnlock = dayIndex - unlockSecondZoneDay;
+            int additionalZones = 1 + (daysAfterUnlock / additionalZoneEveryXDays);
+
+            return Mathf.Min(additionalZones, maxSimultaneousZones);
+        }
+
+        private void CalculateAndAssignQuotas(List<DeliveryZoneDefinition> zones, int dayIndex)
+        {
+            if (moneyTargetManager == null || zones.Count == 0)
+                return;
+
+            int totalQuota = moneyTargetManager.TargetMoney;
+
+            switch (quotaSplitMode)
+            {
+                case QuotaSplitMode.EqualSplit:
+                    AssignEqualQuotas(zones, totalQuota);
+                    break;
+
+                case QuotaSplitMode.WeightedByDistance:
+                    AssignWeightedQuotas(zones, totalQuota);
+                    break;
+
+                case QuotaSplitMode.PrimarySecondary:
+                    AssignPrimarySecondaryQuotas(zones, totalQuota);
+                    break;
+            }
+        }
+
+        private void AssignEqualQuotas(List<DeliveryZoneDefinition> zones, int totalQuota)
+        {
+            int quotaPerZone = Mathf.CeilToInt(totalQuota / (float)zones.Count);
+
+            foreach (var zone in zones)
+            {
+                _zoneQuotas[zone] = quotaPerZone;
+            }
+        }
+
+        private void AssignWeightedQuotas(List<DeliveryZoneDefinition> zones, int totalQuota)
+        {
+            Vector3 warehousePos = WarehousePosition;
+
+            // Calculate distances and weights
+            var distanceWeights = new Dictionary<DeliveryZoneDefinition, float>();
+            float totalWeight = 0f;
+
+            foreach (var zone in zones)
+            {
+                float distance = Vector3.Distance(warehousePos, zone.WorldPosition);
+                float weight = Mathf.Pow(distance / 100f, distanceQuotaMultiplier); // Normalize by 100m
+                distanceWeights[zone] = weight;
+                totalWeight += weight;
+            }
+
+            // Assign quotas based on weights
+            foreach (var zone in zones)
+            {
+                float normalizedWeight = distanceWeights[zone] / totalWeight;
+                int quota = Mathf.CeilToInt(totalQuota * normalizedWeight);
+                _zoneQuotas[zone] = quota;
+            }
+        }
+
+        private void AssignPrimarySecondaryQuotas(List<DeliveryZoneDefinition> zones, int totalQuota)
+        {
+            if (zones.Count == 1)
+            {
+                _zoneQuotas[zones[0]] = totalQuota;
+                return;
+            }
+
+            // Primary zone gets 70% of quota
+            int primaryQuota = Mathf.CeilToInt(totalQuota * 0.7f);
+            _zoneQuotas[zones[0]] = primaryQuota;
+
+            // Remaining zones share 30%
+            int remainingQuota = totalQuota - primaryQuota;
+            int secondaryCount = zones.Count - 1;
+            int quotaPerSecondary = Mathf.CeilToInt(remainingQuota / (float)secondaryCount);
+
+            for (int i = 1; i < zones.Count; i++)
+            {
+                _zoneQuotas[zones[i]] = quotaPerSecondary;
+            }
         }
 
         private List<DeliveryZoneDefinition> GetZonesWithinRadius(float radius)
@@ -421,13 +527,20 @@ namespace DeliverHere.GamePlay
             foreach (var zone in allDeliveryZones)
             {
                 if (zone != null)
+                {
                     zone.DeactivateZone();
+
+                    if (zone.DeliveryZone != null)
+                    {
+                        zone.DeliveryZone.ResetForNewDay();
+                    }
+                }
             }
 
             _activeZonesThisDay.Clear();
+            _zoneQuotas.Clear();
         }
 
-        // Network synchronization callbacks
         private void OnNetworkDayChanged(int previousDay, int newDay)
         {
             _currentDay = newDay;
@@ -439,7 +552,7 @@ namespace DeliverHere.GamePlay
 
         private void OnNetworkActiveZonesChanged(NetworkListEvent<int> changeEvent)
         {
-            if (IsServer) return; // Server handles this locally
+            if (IsServer) return;
 
             if (enableClientLogs)
                 Debug.Log($"[DailyDeliveryZoneManager] Client received zone list change, syncing...");
@@ -447,38 +560,52 @@ namespace DeliverHere.GamePlay
             SyncActiveZonesFromNetwork();
         }
 
+        private void OnNetworkQuotasChanged(NetworkListEvent<int> changeEvent)
+        {
+            if (IsServer) return;
+
+            if (enableClientLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Client received quota list change, syncing...");
+
+            SyncActiveZonesFromNetwork();
+        }
+
         private void SyncActiveZonesFromNetwork()
         {
-            // Ensure zones are discovered before trying to sync
             if (allDeliveryZones.Count == 0 && autoDiscoverZones)
             {
-                if (enableClientLogs || enableServerLogs)
-                    Debug.Log("[DailyDeliveryZoneManager] No zones discovered yet, discovering now...");
                 DiscoverAllZones();
             }
 
             DeactivateAllZones();
             _activeZonesThisDay.Clear();
+            _zoneQuotas.Clear();
 
             int syncedCount = 0;
-            foreach (int zoneIndex in nvActiveZoneIndices)
+            for (int i = 0; i < nvActiveZoneIndices.Count; i++)
             {
+                int zoneIndex = nvActiveZoneIndices[i];
+                int quota = i < nvZoneQuotas.Count ? nvZoneQuotas[i] : 0;
+
                 if (zoneIndex >= 0 && zoneIndex < allDeliveryZones.Count)
                 {
                     var zone = allDeliveryZones[zoneIndex];
                     if (zone != null)
                     {
                         _activeZonesThisDay.Add(zone);
+                        _zoneQuotas[zone] = quota;
                         zone.ActivateZone();
+
+                        if (zone.DeliveryZone != null)
+                        {
+                            zone.DeliveryZone.SetIndividualQuota(quota);
+                        }
+
                         syncedCount++;
 
                         if (enableClientLogs)
-                            Debug.Log($"[DailyDeliveryZoneManager] Client activated zone [{zoneIndex}] {zone.ZoneName}");
+                            Debug.Log($"[DailyDeliveryZoneManager] Client activated zone [{zoneIndex}] {zone.ZoneName}, Quota: ${quota}");
                     }
-                }
-                else if (!IsServer && enableClientLogs)
-                {
-                    Debug.LogWarning($"[DailyDeliveryZoneManager] Client: Invalid zone index {zoneIndex} (have {allDeliveryZones.Count} zones)");
                 }
             }
 
@@ -488,9 +615,75 @@ namespace DeliverHere.GamePlay
             OnZonesSelectedForDay?.Invoke(_activeZonesThisDay);
         }
 
-        /// <summary>
-        /// Gets user-friendly string describing active zones for UI display.
-        /// </summary>
+        private void SetPrimaryZoneForUI()
+        {
+            if (!IsServer) return;
+
+            // Clear primary status from all zones
+            foreach (var zoneDef in allDeliveryZones)
+            {
+                if (zoneDef != null && zoneDef.DeliveryZone != null)
+                {
+                    zoneDef.DeliveryZone.SetPrimaryZone(false);
+                }
+            }
+
+            // Set first active zone as primary
+            if (_activeZonesThisDay.Count > 0)
+            {
+                var firstZone = _activeZonesThisDay[0];
+                if (firstZone != null && firstZone.DeliveryZone != null)
+                {
+                    firstZone.DeliveryZone.SetPrimaryZone(true);
+
+                    if (enableServerLogs)
+                        Debug.Log($"[DailyDeliveryZoneManager] Set '{firstZone.ZoneName}' as primary UI zone.");
+                }
+            }
+        }
+
+        // ========== PUBLIC API METHODS ==========
+
+        public int GetZoneQuota(DeliveryZoneDefinition zoneDef)
+        {
+            if (_zoneQuotas.TryGetValue(zoneDef, out int quota))
+                return quota;
+
+            return moneyTargetManager != null ? moneyTargetManager.TargetMoney : 0;
+        }
+
+        public bool AreAllZoneQuotasMet()
+        {
+            foreach (var zoneDef in _activeZonesThisDay)
+            {
+                if (zoneDef.DeliveryZone != null)
+                {
+                    if (!zoneDef.DeliveryZone.IsQuotaMet)
+                        return false;
+                }
+            }
+
+            return _activeZonesThisDay.Count > 0;
+        }
+
+        public Dictionary<string, (int current, int quota, bool met)> GetZoneQuotaSummary()
+        {
+            var summary = new Dictionary<string, (int, int, bool)>();
+
+            foreach (var zoneDef in _activeZonesThisDay)
+            {
+                if (zoneDef != null && zoneDef.DeliveryZone != null)
+                {
+                    int quota = GetZoneQuota(zoneDef);
+                    int current = zoneDef.DeliveryZone.TotalValueInZone;
+                    bool met = zoneDef.DeliveryZone.IsQuotaMet;
+                    summary[zoneDef.ZoneName] = (current, quota, met);
+                }
+            }
+
+            return summary;
+        }
+
         public string GetActiveZonesDisplayText()
         {
             if (_activeZonesThisDay.Count == 0)
@@ -502,7 +695,9 @@ namespace DeliverHere.GamePlay
             string result = "Deliver to:\n";
             for (int i = 0; i < _activeZonesThisDay.Count; i++)
             {
-                result += $"  � {_activeZonesThisDay[i].ZoneName}\n";
+                var zone = _activeZonesThisDay[i];
+                int quota = GetZoneQuota(zone);
+                result += $"  • {zone.ZoneName} (${quota})\n";
             }
             return result.TrimEnd();
         }
@@ -528,7 +723,7 @@ namespace DeliverHere.GamePlay
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireCube(center, Vector3.one * 5f);
 
-            // NEW: Draw previous day's zones in orange
+            // Draw previous day's zones in orange
             if (_previousDayZoneIndices != null && _previousDayZoneIndices.Count > 0)
             {
                 Gizmos.color = new Color(1f, 0.5f, 0f, 0.6f);
@@ -544,57 +739,46 @@ namespace DeliverHere.GamePlay
                     }
                 }
             }
+
+            // Draw active zones with quota labels
+            if (Application.isPlaying && _activeZonesThisDay != null)
+            {
+                foreach (var zone in _activeZonesThisDay)
+                {
+                    if (zone == null) continue;
+
+                    Gizmos.color = Color.green;
+                    Gizmos.DrawWireSphere(zone.WorldPosition, 5f);
+
+                    if (_zoneQuotas.TryGetValue(zone, out int quota))
+                    {
+                        UnityEditor.Handles.Label(zone.WorldPosition + Vector3.up * 7f, $"${quota}");
+                    }
+                }
+            }
         }
 #endif
 
         [ContextMenu("Debug/Select Zones for Current Day")]
         private void Debug_SelectZonesNow()
         {
-            if (!Application.isPlaying)
-            {
-                Debug.LogWarning("Only available in Play mode.");
-                return;
-            }
-
-            if (!IsServer)
-            {
-                Debug.LogWarning("Only server can select zones.");
-                return;
-            }
-
+            if (!Application.isPlaying || !IsServer) return;
             SelectZonesForDay(_currentDay > 0 ? _currentDay : 1);
         }
 
-        [ContextMenu("Debug/Discover All Zones")]
-        private void Debug_DiscoverZones()
+        [ContextMenu("Debug/Log Zone Quota Summary")]
+        private void Debug_LogQuotaSummary()
         {
-            DiscoverAllZones();
-            Debug.Log($"Discovered {allDeliveryZones.Count} zones.");
-        }
+            if (!Application.isPlaying) return;
 
-        [ContextMenu("Debug/Server Setup After Level Load")]
-        private void Debug_ServerSetup()
-        {
-            if (!Application.isPlaying)
+            var summary = GetZoneQuotaSummary();
+            Debug.Log($"=== Zone Quota Summary (Day {_currentDay}) ===");
+            foreach (var kvp in summary)
             {
-                Debug.LogWarning("Only available in Play mode.");
-                return;
+                string status = kvp.Value.met ? "✓ MET" : "✗ NOT MET";
+                Debug.Log($"  {kvp.Key}: ${kvp.Value.current} / ${kvp.Value.quota} {status}");
             }
-
-            _hasBeenSetup = false; // Reset to allow re-setup
-            ServerSetupAfterLevelLoad();
-        }
-
-        [ContextMenu("Debug/Client Discover and Sync")]
-        private void Debug_ClientSync()
-        {
-            if (!Application.isPlaying)
-            {
-                Debug.LogWarning("Only available in Play mode.");
-                return;
-            }
-
-            ClientDiscoverAndSync();
+            Debug.Log($"All Quotas Met: {AreAllZoneQuotasMet()}");
         }
     }
 }

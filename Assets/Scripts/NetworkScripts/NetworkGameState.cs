@@ -122,14 +122,7 @@ public class NetworkGameState : NetworkBehaviour
         {
             DebugLog($"nvCurrentDay changed: {oldVal} -> {newVal}");
             uiController?.SetDay(newVal);
-
-            if (moneyTargetManager != null && uiController != null)
-            {
-                uiController.SetDailyEarnings(
-                    moneyTargetManager.BankedMoney,
-                    moneyTargetManager.TargetMoney,
-                    moneyTargetManager.Progress);
-            }
+            // REMOVED: SetDailyEarnings - now handled by delivery zone
         };
 
         // Drive UIStateManager from replicated state
@@ -224,7 +217,7 @@ public class NetworkGameState : NetworkBehaviour
             if (moneyTargetManager != null)
             {
                 moneyTargetManager.OnBankedMoneyChanged -= OnBankedMoneyChangedUi;
-                moneyTargetManager.OnTargetChanged -= OnTargetChangedUi;
+                // REMOVED: OnTargetChanged subscription - no longer used
             }
         }
         finally
@@ -249,15 +242,11 @@ public class NetworkGameState : NetworkBehaviour
 
         // Avoid duplicate subscription
         moneyTargetManager.OnBankedMoneyChanged -= OnBankedMoneyChangedUi;
-        moneyTargetManager.OnTargetChanged -= OnTargetChangedUi;
 
         moneyTargetManager.OnBankedMoneyChanged += OnBankedMoneyChangedUi;
-        moneyTargetManager.OnTargetChanged += OnTargetChangedUi;
 
-        // Initial push
+        // Initial push - only day and banked money (delivery zone quota handled by PackageDeliveryZone)
         uiController.SetDay(moneyTargetManager.CurrentDay);
-        uiController.SetTarget(moneyTargetManager.TargetMoney);
-        uiController.SetDailyEarnings(moneyTargetManager.BankedMoney, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
         uiController.SetBankedMoney(moneyTargetManager.BankedMoney);
         
         DebugLog("Money UI bound successfully");
@@ -265,17 +254,12 @@ public class NetworkGameState : NetworkBehaviour
 
     private void OnBankedMoneyChangedUi(int banked)
     {
-        if (uiController == null || moneyTargetManager == null) return;
+        if (uiController == null) return;
         uiController.SetBankedMoney(banked);
-        uiController.SetDailyEarnings(banked, moneyTargetManager.TargetMoney, moneyTargetManager.Progress);
+        // REMOVED: SetDailyEarnings - now handled by delivery zone
     }
 
-    private void OnTargetChangedUi(int target)
-    {
-        if (uiController == null || moneyTargetManager == null) return;
-        uiController.SetTarget(target);
-        uiController.SetDailyEarnings(moneyTargetManager.BankedMoney, target, moneyTargetManager.Progress);
-    }
+    // REMOVED: OnTargetChangedUi method - no longer needed
 
     private void ApplyUiStateToLocal(GameState state, bool paused)
     {

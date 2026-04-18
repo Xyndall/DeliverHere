@@ -30,9 +30,6 @@ public class GameManager : NetworkBehaviour
     // NEW: if true, we ended the day with failure and are waiting for host to close/restart.
     private bool _pendingLossReturnToLobby;
 
-    // Money model: banked money is the only currency. Track banked at start of day to compute "earned today".
-    private int _bankedAtDayStart;
-
     public void SetGameplayActive(bool active)
     {
         IsGameplayActive = active;
@@ -153,8 +150,8 @@ public class GameManager : NetworkBehaviour
             _onDayTimerAboutToExpireHandler = () => { /* optional */ };
             _onDayEndedEvaluatedHandler = (metQuota) =>
             {
+                int earnedToday = GetEarnedToday();
                 int bankedNow = GetBankedMoney();
-                int earnedToday = Mathf.Max(0, bankedNow - _bankedAtDayStart);
                 bool hostHasControl = NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
 
                 IsGameplayActive = false;
@@ -279,9 +276,10 @@ public class GameManager : NetworkBehaviour
     {
         if (uiController == null || moneyTargetManager == null) return;
         uiController.SetDay(GetCurrentDay());
-        uiController.SetTarget(GetTargetMoney());
-        uiController.SetDailyEarnings(GetBankedMoney(), GetTargetMoney(), GetProgress());
         uiController.SetBankedMoney(GetBankedMoney());
+        
+        // Initial delivery zone value (will be 0 at start)
+        OnDeliveryZoneValueChanged(0, GetTargetMoney()); // FIXED: Added quota parameter
     }
 
     public void StartGame()
@@ -309,16 +307,13 @@ public class GameManager : NetworkBehaviour
             }
         }
 
+        // CHANGED: Use StartNewDay instead of AdvanceDay for proper tracking
         if (moneyTargetManager != null && moneyTargetManager.CurrentDay <= 0 && IsServerOrStandalone)
-            moneyTargetManager.AdvanceDay();
-
+            moneyTargetManager.StartNewDay();
 
         dailyPackagesDelivered = 0;
         currentDayTargetMoney = GetTargetMoney();
         endOfDayPopupShown = false;
-
-        // Track day-start money so "earned today" can be computed at day end.
-        _bankedAtDayStart = GetBankedMoney();
 
         SyncAllUI();
 
@@ -408,7 +403,8 @@ public class GameManager : NetworkBehaviour
         uiController.HideDayEndSummary();
         endOfDayPopupShown = false;
 
-        moneyTargetManager?.AdvanceDay();
+        // Use StartNewDay explicitly instead of AdvanceDay
+        moneyTargetManager?.StartNewDay();
     }
 
     public void HostRestartRun()
@@ -429,43 +425,34 @@ public class GameManager : NetworkBehaviour
         dailyPackagesDelivered = 0;
         lastSpawnedDay = -1;
         endOfDayPopupShown = false;
-        moneyTargetManager?.AdvanceDay();
+        moneyTargetManager?.StartNewDay();
     }
 
-    public void AdvanceDay() => moneyTargetManager.AdvanceDay();
+    public void AdvanceDay() => moneyTargetManager?.StartNewDay();
     public void AdvanceDays(int days) => moneyTargetManager?.AdvanceDays(days);
 
     public void ResetRun()
     {
-        moneyTargetManager.ResetProgress();
+        moneyTargetManager?.ResetProgress();
         currentDayTargetMoney = GetTargetMoney();
-    }
-
-    public void SetTargetMoney(int value)
-    {
-        if (moneyTargetManager == null) return;
-        moneyTargetManager.TargetMoney = value;
-        uiController?.SetTarget(value);
-        uiController?.SetDailyEarnings(GetBankedMoney(), value, GetProgress());
-        currentDayTargetMoney = value;
     }
 
     public int GetBankedMoney() => moneyTargetManager != null ? moneyTargetManager.BankedMoney : 0;
     public int GetTargetMoney() => moneyTargetManager != null ? moneyTargetManager.TargetMoney : 0;
     public int GetCurrentDay() => moneyTargetManager != null ? moneyTargetManager.CurrentDay : 0;
+    public int GetEarnedToday() => moneyTargetManager != null ? moneyTargetManager.EarnedToday : 0;
     public float GetProgress() => moneyTargetManager != null ? moneyTargetManager.Progress : 0f;
 
     private void HandleTargetChanged(int newTarget)
     {
-        uiController.SetTarget(newTarget);
-        uiController.SetDailyEarnings(GetBankedMoney(), newTarget, GetProgress());
         currentDayTargetMoney = newTarget;
+        // Update the delivery zone display with new target
+        OnDeliveryZoneValueChanged(0, newTarget); // FIXED: Added quota parameter
     }
 
     private void HandleDayAdvanced(int newDayIndex)
     {
-        uiController.SetDay(newDayIndex);
-        uiController.SetDailyEarnings(GetBankedMoney(), GetTargetMoney(), GetProgress());
+        uiController?.SetDay(newDayIndex);
         currentDayTargetMoney = GetTargetMoney();
         dailyPackagesDelivered = 0;
         endOfDayPopupShown = false;
@@ -477,12 +464,11 @@ public class GameManager : NetworkBehaviour
         if (uiStateManager != null)
             uiStateManager.SetGameState(GameState.InGame);
 
-        // New day: reset baseline for "earned today"
-        _bankedAtDayStart = GetBankedMoney();
-
-        uiController.HideDayEndSummary();
-        uiController.ShowHUD();
-
+        uiController?.HideDayEndSummary();
+        uiController?.ShowHUD();
+        
+        // Reset delivery zone value display
+        OnDeliveryZoneValueChanged(0, GetTargetMoney()); // FIXED: Added quota parameter
     }
 
     private void HandleTargetReached()
@@ -493,13 +479,13 @@ public class GameManager : NetworkBehaviour
     private void TriggerWinCondition()
     {
         OnWinCondition?.Invoke();
-        uiController.ShowWinPanel();
+        uiController?.ShowWinPanel();
         Debug.Log("[GameManager] Win condition met.");
     }
 
     private void TriggerLoseCondition()
     {
-        Debug.Log("[GameManager] Lose condition triggered � quota not met. Performing full reset and returning players to hub.");
+        Debug.Log("[GameManager] Lose condition triggered – quota not met. Performing full reset and returning players to hub.");
 
         IsGameplayActive = false;
         endOfDayPopupShown = false;
@@ -513,9 +499,8 @@ public class GameManager : NetworkBehaviour
             currentDayTargetMoney = GetTargetMoney();
 
             uiController?.SetDay(GetCurrentDay());
-            uiController?.SetTarget(currentDayTargetMoney);
-            uiController?.SetDailyEarnings(GetBankedMoney(), currentDayTargetMoney, GetProgress());
             uiController?.SetBankedMoney(GetBankedMoney());
+            OnDeliveryZoneValueChanged(0, GetTargetMoney()); // FIXED: Added quota parameter
         }
 
         if (_netState == null)
@@ -567,7 +552,7 @@ public class GameManager : NetworkBehaviour
     public void SetUIController(GameUIController controller)
     {
         uiController = controller;
-        uiController.ConfigureDayEndButtons(HostAdvanceToNextDay, HostRestartRun);
+        uiController?.ConfigureDayEndButtons(HostAdvanceToNextDay, HostRestartRun);
         SyncAllUI();
     }
 
@@ -580,5 +565,11 @@ public class GameManager : NetworkBehaviour
         SyncAllUI();
     }
 
-    
+    public void OnDeliveryZoneValueChanged(int totalValue, int quota)
+    {
+        if (uiController != null)
+        {
+            uiController.SetDeliveryZoneValue(totalValue, quota);
+        }
+    }
 }

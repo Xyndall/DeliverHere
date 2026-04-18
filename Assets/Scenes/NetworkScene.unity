@@ -3298,15 +3298,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::GameUIController
   hudRoot: {fileID: 422955008}
   dayText: {fileID: 784064381}
-  targetMoneyText: {fileID: 1301847670}
+  deliveryZoneValueText: {fileID: 1301847670}
   bankedMoneyText: {fileID: 42608494}
   timerText: {fileID: 1216634913}
   staminaSlider: {fileID: 18571466}
   upgradePromptText: {fileID: 15635146}
   winPanel: {fileID: 1533124399}
   dayEndSummaryPanel: {fileID: 1950053991}
-  dayEarnedText: {fileID: 1734071485}
-  dayNewBankedText: {fileID: 1025365382}
   packagesDeliveredText: {fileID: 168581540}
   quotaStatusText: {fileID: 231151267}
   nextDayButton: {fileID: 641623031}
@@ -5439,7 +5437,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DayChangeCoordinator
   ShowTopMostFoldoutHeaderGroup: 1
-  moneyTargetManager: {fileID: 0}
+  moneyTargetManager: {fileID: 1657870874}
   shops: []
   rescanShopsOnDayAdvance: 1
 --- !u!1 &1501302132
@@ -5841,6 +5839,12 @@ MonoBehaviour:
   allowDuplicateZones: 0
   autoDiscoverZones: 1
   avoidLastDayZone: 1
+  quotaSplitMode: 0
+  distanceQuotaMultiplier: 1.2
+  enableProgressiveUnlock: 1
+  unlockSecondZoneDay: 2
+  additionalZoneEveryXDays: 3
+  maxSimultaneousZones: 4
   allDeliveryZones: []
   autoSetupOnSpawn: 0
   showDebugGizmos: 1

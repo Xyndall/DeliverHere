@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
 using System;
+using DeliverHere.GamePlay;
 
 [DisallowMultipleComponent]
 public class GameTimer : MonoBehaviour
@@ -169,7 +170,20 @@ public class GameTimer : MonoBehaviour
 
         OnDayTimerAboutToExpire?.Invoke();
 
-        bool success = money != null && money.IsTargetReached;
+        // NEW: Check if all zones met their individual quotas
+        bool success = false;
+        var zoneManager = FindFirstObjectByType<DailyDeliveryZoneManager>();
+        
+        if (zoneManager != null)
+        {
+            success = zoneManager.AreAllZoneQuotasMet();
+        }
+        else if (money != null)
+        {
+            // Fallback to global quota check
+            success = money.CompleteDayAndEvaluate();
+        }
+
         lastDaySuccess = success;
         awaitingNextDay = success;
 
@@ -177,11 +191,11 @@ public class GameTimer : MonoBehaviour
 
         if (!success)
         {
-            Debug.Log("[GameTimer] Time up. Target NOT reached. Showing failure popup.");
+            Debug.Log("[GameTimer] Time up. Not all zone quotas were met.");
         }
         else
         {
-            Debug.Log("[GameTimer] Time up. Target reached. Awaiting next day confirmation.");
+            Debug.Log("[GameTimer] Time up. All zone quotas met!");
             if (autoAdvanceOnSuccess)
             {
                 ConfirmStartNextDay();

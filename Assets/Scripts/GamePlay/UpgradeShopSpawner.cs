@@ -76,13 +76,8 @@ public sealed class UpgradeShopSpawner : NetworkBehaviour
                 continue;
             }
 
-            // Instantiate unparented first to avoid inheriting parent scale during creation.
+            // Instantiate at the spawn point position/rotation
             var inst = Instantiate(pickupPrefab, point.position, point.rotation);
-
-            // Preserve the instantiated object's authored local scale, then parent while keeping world transform.
-            Vector3 prefabLocalScale = inst.transform.localScale;
-            inst.transform.SetParent(transform, true);
-            inst.transform.localScale = prefabLocalScale;
 
             // Ensure the pickup can resolve indices (prefab should also have this assigned)
             if (enableServerLogs && inst.Definition == null && inst.DefinitionIndex < 0)
@@ -100,7 +95,14 @@ public sealed class UpgradeShopSpawner : NetworkBehaviour
                 continue;
             }
 
+            // Spawn the NetworkObject FIRST
             no.Spawn(true);
+
+            // THEN parent it after spawning (NetworkObject requires this order)
+            Vector3 prefabLocalScale = inst.transform.localScale;
+            inst.transform.SetParent(transform, true);
+            inst.transform.localScale = prefabLocalScale;
+
             _spawned.Add(no);
 
             if (enableServerLogs)
