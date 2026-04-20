@@ -26,6 +26,8 @@ public class GameUIController : MonoBehaviour
     [SerializeField] private GameObject dayEndSummaryPanel;
 
     [Header("Day End Summary UI")]
+    [SerializeField] private TMP_Text earnedTodayText; // NEW: Shows money earned today
+    [SerializeField] private TMP_Text totalBankedText; // NEW: Shows total banked money
     [SerializeField] private TMP_Text packagesDeliveredText;
     [SerializeField] private TMP_Text quotaStatusText;
     [SerializeField] private Button nextDayButton;
@@ -163,12 +165,22 @@ public class GameUIController : MonoBehaviour
 
     public void SetBankedMoney(int banked) { if (bankedMoneyText != null) bankedMoneyText.text = $"Banked: ${banked}"; }
 
-    // New extended summary (simplified - removed earned today display)
+    // NEW: Enhanced day-end summary with earned today and total banked displays
     public void ShowDayEndSummary(int earnedToday, int newBanked, int packagesDelivered, bool metQuota, bool hostHasControl)
     {
         if (dayEndSummaryPanel != null) dayEndSummaryPanel.SetActive(true);
 
-        if (packagesDeliveredText != null) packagesDeliveredText.text = $"Packages Delivered: {packagesDelivered}";
+        // NEW: Display earned today
+        if (earnedTodayText != null) 
+            earnedTodayText.text = $"Earned Today: ${earnedToday}";
+
+        // NEW: Display total banked money
+        if (totalBankedText != null) 
+            totalBankedText.text = $"Total Banked: ${newBanked}";
+
+        if (packagesDeliveredText != null) 
+            packagesDeliveredText.text = $"Packages Delivered: {packagesDelivered}";
+
         if (quotaStatusText != null)
         {
             quotaStatusText.text = metQuota ? "Quota: PASSED" : "Quota: FAILED";
@@ -216,6 +228,5 @@ public class GameUIController : MonoBehaviour
             uiStateManager.SetPaused(isPaused);
             uiStateManager.SetGameState(isPaused ? GameState.Paused : GameState.InGame);
         }
-
     }
 }

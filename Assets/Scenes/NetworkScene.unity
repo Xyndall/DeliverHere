@@ -3305,6 +3305,8 @@ MonoBehaviour:
   upgradePromptText: {fileID: 15635146}
   winPanel: {fileID: 1533124399}
   dayEndSummaryPanel: {fileID: 1950053991}
+  earnedTodayText: {fileID: 1734071485}
+  totalBankedText: {fileID: 1025365382}
   packagesDeliveredText: {fileID: 168581540}
   quotaStatusText: {fileID: 231151267}
   nextDayButton: {fileID: 641623031}
@@ -5832,17 +5834,17 @@ MonoBehaviour:
   moneyTargetManager: {fileID: 1657870874}
   warehouseSpawnPoint: {fileID: 0}
   autoFindWarehouse: 1
-  initialRadius: 50
+  initialRadius: 100
   radiusIncreasePerDay: 50
   maxRadius: 500
-  zonesPerDay: 1
+  zonesPerDay: 2
   allowDuplicateZones: 0
   autoDiscoverZones: 1
   avoidLastDayZone: 1
   quotaSplitMode: 0
   distanceQuotaMultiplier: 1.2
   enableProgressiveUnlock: 1
-  unlockSecondZoneDay: 2
+  unlockSecondZoneDay: 1
   additionalZoneEveryXDays: 3
   maxSimultaneousZones: 4
   allDeliveryZones: []

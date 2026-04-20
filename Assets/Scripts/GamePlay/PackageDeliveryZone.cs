@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 using DeliverHere.Items;
+using TMPro;
 
 namespace DeliverHere.GamePlay
 {
@@ -33,6 +34,12 @@ namespace DeliverHere.GamePlay
         [Tooltip("Ignore repeated trigger hits from the same object (safety window).")]
         [SerializeField] private float reEntryIgnoreSeconds = 0.25f;
 
+        [Header("World Text Display")]
+        [Tooltip("Optional: World text prefab to spawn and display quota progress.")]
+        [SerializeField] private DeliveryZoneWorldText worldTextPrefab;
+        [SerializeField] private bool autoCreateWorldText = true;
+        [SerializeField] private Vector3 worldTextOffset = new Vector3(0f, 5f, 0f);
+
         private Collider _zoneCollider;
 
         // Tracking packages currently inside the zone (pending delivery)
@@ -62,6 +69,8 @@ namespace DeliverHere.GamePlay
 
         // NEW: Track if this zone should report to GameManager UI
         private bool _isPrimaryZone = false;
+
+        private DeliveryZoneWorldText _worldTextInstance;
 
         public int TotalValueInZone => _totalValueInZone.Value;
         public int IndividualQuota => _individualQuota.Value;
@@ -94,6 +103,12 @@ namespace DeliverHere.GamePlay
             
             // Push initial value to UI immediately on spawn if this is primary
             UpdateGameManagerUI(_totalValueInZone.Value);
+
+            // NEW: Create world text display
+            if (autoCreateWorldText)
+            {
+                CreateOrUpdateWorldText();
+            }
         }
 
         public override void OnNetworkDespawn()
@@ -101,6 +116,14 @@ namespace DeliverHere.GamePlay
             _totalValueInZone.OnValueChanged -= OnTotalValueChanged;
             _individualQuota.OnValueChanged -= OnQuotaChanged;
             _quotaMet.OnValueChanged -= OnQuotaMetChanged;
+            
+            // Cleanup world text
+            if (_worldTextInstance != null)
+            {
+                Destroy(_worldTextInstance.gameObject);
+                _worldTextInstance = null;
+            }
+            
             base.OnNetworkDespawn();
         }
 
@@ -109,12 +132,24 @@ namespace DeliverHere.GamePlay
             // This callback fires on ALL clients when the value changes
             // Update the UI on every client if this is the primary zone
             UpdateGameManagerUI(current);
+            
+            // Update world text
+            if (_worldTextInstance != null)
+            {
+                _worldTextInstance.ForceUpdate();
+            }
         }
 
         private void OnQuotaChanged(int previous, int current)
         {
             // Update UI when quota changes
             UpdateGameManagerUI(_totalValueInZone.Value);
+            
+            // Update world text
+            if (_worldTextInstance != null)
+            {
+                _worldTextInstance.ForceUpdate();
+            }
         }
 
         private void OnQuotaMetChanged(bool previous, bool current)
@@ -123,6 +158,12 @@ namespace DeliverHere.GamePlay
             if (current && !previous)
             {
                 Debug.Log($"[PackageDeliveryZone] Quota met! ${_totalValueInZone.Value} / ${_individualQuota.Value}");
+            }
+            
+            // Update world text
+            if (_worldTextInstance != null)
+            {
+                _worldTextInstance.ForceUpdate();
             }
         }
 
@@ -189,6 +230,41 @@ namespace DeliverHere.GamePlay
             if (IsProcessingAuthority() && IsSpawned)
             {
                 _totalValueInZone.Value = 0;
+            }
+        }
+
+        private void CreateOrUpdateWorldText()
+        {
+            // Only create on clients (server doesn't need to see it, but can if desired)
+            // You can remove this check if you want server to see it too
+            
+            if (_worldTextInstance == null)
+            {
+                if (worldTextPrefab != null)
+                {
+                    _worldTextInstance = Instantiate(worldTextPrefab, transform);
+                    _worldTextInstance.transform.localPosition = worldTextOffset;
+                }
+                else if (autoCreateWorldText)
+                {
+                    // Create a simple TextMeshPro if no prefab assigned
+                    var textObj = new GameObject("ZoneQuotaText");
+                    textObj.transform.SetParent(transform);
+                    textObj.transform.localPosition = worldTextOffset;
+                    
+                    var tmp = textObj.AddComponent<TextMeshPro>();
+                    tmp.fontSize = 4;
+                    tmp.alignment = TextAlignmentOptions.Center;
+                    tmp.color = Color.white;
+                    
+                    _worldTextInstance = textObj.AddComponent<DeliveryZoneWorldText>();
+                }
+            }
+
+            // Update the world text reference to this zone
+            if (_worldTextInstance != null)
+            {
+                _worldTextInstance.ForceUpdate();
             }
         }
 
