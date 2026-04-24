@@ -5844,13 +5844,13 @@ MonoBehaviour:
   quotaSplitMode: 0
   distanceQuotaMultiplier: 1.2
   enableProgressiveUnlock: 1
-  unlockSecondZoneDay: 1
+  unlockSecondZoneDay: 2
   additionalZoneEveryXDays: 3
   maxSimultaneousZones: 4
   allDeliveryZones: []
   autoSetupOnSpawn: 0
   showDebugGizmos: 1
-  enableServerLogs: 0
+  enableServerLogs: 1
   enableClientLogs: 0
 --- !u!1 &1734071482
 GameObject:

@@ -68,14 +68,16 @@ namespace DeliverHere.GamePlay
             new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         // NEW: Track if this zone should report to GameManager UI
-        private bool _isPrimaryZone = false;
-
-        private DeliveryZoneWorldText _worldTextInstance;
+        // CHANGED: Make this a NetworkVariable so clients know which zone is primary
+        private readonly NetworkVariable<bool> _isPrimaryZone = 
+            new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         public int TotalValueInZone => _totalValueInZone.Value;
         public int IndividualQuota => _individualQuota.Value;
         public bool IsQuotaMet => _quotaMet.Value;
-        public bool IsPrimaryZone => _isPrimaryZone;
+        public bool IsPrimaryZone => _isPrimaryZone.Value;
+
+        private DeliveryZoneWorldText _worldTextInstance;
 
         private void Awake()
         {
@@ -100,6 +102,7 @@ namespace DeliverHere.GamePlay
             _totalValueInZone.OnValueChanged += OnTotalValueChanged;
             _individualQuota.OnValueChanged += OnQuotaChanged;
             _quotaMet.OnValueChanged += OnQuotaMetChanged;
+            _isPrimaryZone.OnValueChanged += OnPrimaryZoneChanged; // NEW: Subscribe to primary zone changes
             
             // Push initial value to UI immediately on spawn if this is primary
             UpdateGameManagerUI(_totalValueInZone.Value);
@@ -116,6 +119,7 @@ namespace DeliverHere.GamePlay
             _totalValueInZone.OnValueChanged -= OnTotalValueChanged;
             _individualQuota.OnValueChanged -= OnQuotaChanged;
             _quotaMet.OnValueChanged -= OnQuotaMetChanged;
+            _isPrimaryZone.OnValueChanged -= OnPrimaryZoneChanged; // NEW: Unsubscribe
             
             // Cleanup world text
             if (_worldTextInstance != null)
@@ -125,6 +129,24 @@ namespace DeliverHere.GamePlay
             }
             
             base.OnNetworkDespawn();
+        }
+
+        // NEW: Callback when primary zone status changes
+        private void OnPrimaryZoneChanged(bool previous, bool current)
+        {
+            // When we become primary, push current value
+            if (current && !previous)
+            {
+                UpdateGameManagerUI(_totalValueInZone.Value);
+            }
+            // When we lose primary status, reset UI to 0
+            else if (!current && previous)
+            {
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.OnDeliveryZoneValueChanged(0, _individualQuota.Value);
+                }
+            }
         }
 
         private void OnTotalValueChanged(int previous, int current)
@@ -170,7 +192,7 @@ namespace DeliverHere.GamePlay
         private void UpdateGameManagerUI(int totalValue)
         {
             // Only update UI if this is the primary zone
-            if (!_isPrimaryZone) return;
+            if (!_isPrimaryZone.Value) return;
 
             // This runs on all clients, not just server
             if (GameManager.Instance != null)
@@ -184,22 +206,9 @@ namespace DeliverHere.GamePlay
         /// </summary>
         public void SetPrimaryZone(bool isPrimary)
         {
-            bool wasChanged = _isPrimaryZone != isPrimary; // FIXED: typo
-            _isPrimaryZone = isPrimary;
+            if (!IsProcessingAuthority()) return; // Only server can set this
 
-            // If we just became primary, push current value immediately
-            if (wasChanged && _isPrimaryZone)
-            {
-                UpdateGameManagerUI(_totalValueInZone.Value);
-            }
-            // If we just lost primary status, reset UI to 0
-            else if (wasChanged && !_isPrimaryZone)
-            {
-                if (GameManager.Instance != null)
-                {
-                    GameManager.Instance.OnDeliveryZoneValueChanged(0, _individualQuota.Value); // FIXED: added quota parameter
-                }
-            }
+            _isPrimaryZone.Value = isPrimary;
         }
 
         private void OnEnable()
@@ -207,9 +216,9 @@ namespace DeliverHere.GamePlay
             FindTimerAndSubscribe();
             
             // Push current value to UI when zone becomes active (only if primary)
-            if (_isPrimaryZone && GameManager.Instance != null)
+            if (_isPrimaryZone.Value && GameManager.Instance != null)
             {
-                GameManager.Instance.OnDeliveryZoneValueChanged(_totalValueInZone.Value, _individualQuota.Value); // FIXED: added quota parameter
+                GameManager.Instance.OnDeliveryZoneValueChanged(_totalValueInZone.Value, _individualQuota.Value);
             }
         }
 
@@ -218,9 +227,9 @@ namespace DeliverHere.GamePlay
             UnsubscribeTimer();
             
             // Reset UI to 0 when this zone is disabled (only if primary)
-            if (_isPrimaryZone && GameManager.Instance != null)
+            if (_isPrimaryZone.Value && GameManager.Instance != null)
             {
-                GameManager.Instance.OnDeliveryZoneValueChanged(0, _individualQuota.Value); // FIXED: added quota parameter
+                GameManager.Instance.OnDeliveryZoneValueChanged(0, _individualQuota.Value);
             }
             
             // Clear pending packages when zone is disabled
@@ -463,9 +472,9 @@ namespace DeliverHere.GamePlay
             _processedInstanceIdUntil.Clear();
             _lastDeliveredDay = -1;
 
-            if (_isPrimaryZone && GameManager.Instance != null)
+            if (_isPrimaryZone.Value && GameManager.Instance != null)
             {
-                GameManager.Instance.OnDeliveryZoneValueChanged(0, _individualQuota.Value); // This one is already correct
+                GameManager.Instance.OnDeliveryZoneValueChanged(0, _individualQuota.Value);
             }
         }
 
@@ -480,37 +489,57 @@ namespace DeliverHere.GamePlay
                 if (p != null) toDeliver.Add(p);
             }
 
+            Debug.Log($"[PackageDeliveryZone] Starting delivery. Pending packages: {_pendingPackages.Count}, Valid packages: {toDeliver.Count}");
+
             int totalReward = 0;
             int deliveredCount = 0;
             for (int i = 0; i < toDeliver.Count; i++)
             {
                 var props = toDeliver[i];
                 if (props == null) continue;
-                if (IsAlreadyProcessed(props)) continue;
+                if (IsAlreadyProcessed(props))
+                {
+                    Debug.LogWarning($"[PackageDeliveryZone] Package {i} already processed, skipping");
+                    continue;
+                }
 
                 int reward = Mathf.Max(0, props.GetDeliveryReward());
-                if (reward <= 0) continue;
+                if (reward <= 0)
+                {
+                    Debug.LogWarning($"[PackageDeliveryZone] Package {i} has no reward, skipping");
+                    continue;
+                }
 
                 DepositReward(reward);
                 MarkProcessed(props);
                 totalReward += reward;
                 deliveredCount++;
+                
+                Debug.Log($"[PackageDeliveryZone] Delivered package {deliveredCount}: ${reward}");
 
                 if (consumePackageOnDeposit)
                 {
                     DespawnOrDestroy(props.gameObject);
-                }
-
-                // Inform GameManager about each package delivered
-                if (GameManager.Instance != null)
-                {
-                    GameManager.Instance.RegisterPackagesDelivered(1);
                 }
             }
 
             if (deliveredCount > 0)
             {
                 Debug.Log($"[PackageDeliveryZone] Batch delivered {deliveredCount} packages for total ${totalReward}.");
+                
+                // CHANGED: Register all packages at once instead of one by one
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.RegisterPackagesDelivered(deliveredCount);
+                }
+                else
+                {
+                    Debug.LogWarning($"[PackageDeliveryZone] GameManager.Instance is null, {deliveredCount} packages not registered!");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[PackageDeliveryZone] No packages were delivered. Pending: {_pendingPackages.Count}, ToDeliver: {toDeliver.Count}");
             }
 
             // Remove consumed/destroyed from pending
@@ -666,7 +695,7 @@ namespace DeliverHere.GamePlay
             if (_zoneCollider == null) return;
 
             // Draw in special color if primary zone
-            Gizmos.color = _isPrimaryZone 
+            Gizmos.color = _isPrimaryZone.Value 
                 ? new Color(1f, 0.5f, 0f, 0.45f)  // Orange for primary
                 : new Color(0.2f, 1f, 0.2f, 0.35f); // Green for normal
 

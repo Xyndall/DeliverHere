@@ -26,7 +26,6 @@ namespace DeliverHere.GamePlay
         [SerializeField] private Color quotaFailedColor = Color.red;
 
         [Header("Behavior")]
-        [SerializeField] private bool billboardToCamera = true;
         [SerializeField] private bool hideWhenInactive = true;
         [SerializeField] private float updateInterval = 0.1f; // Update every 0.1 seconds
 
@@ -68,13 +67,6 @@ namespace DeliverHere.GamePlay
 
         private void Update()
         {
-            // Billboard to camera
-            if (billboardToCamera && Camera.main != null)
-            {
-                transform.LookAt(transform.position + Camera.main.transform.rotation * Vector3.forward,
-                                 Camera.main.transform.rotation * Vector3.up);
-            }
-
             // Update text at intervals (not every frame for performance)
             if (Time.time - _lastUpdateTime >= updateInterval)
             {

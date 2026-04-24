@@ -182,7 +182,7 @@ public class MoneyTargetManager : NetworkBehaviour
 
         int startMoney = Mathf.Max(0, startingMoney);
         nvBankedMoney.Value = startMoney;
-        nvDayStartMoney.Value = startMoney;
+        nvDayStartMoney.Value = startMoney; // FIXED: Set baseline to starting money
 
         targetReached = false;
         currentDay = 0;
@@ -217,7 +217,8 @@ public class MoneyTargetManager : NetworkBehaviour
 
         currentDay++;
 
-        // Set the new baseline for today's earnings
+        // FIXED: Set the baseline BEFORE any deliveries happen this day
+        // This should equal the total banked money at the start of this day
         nvDayStartMoney.Value = nvBankedMoney.Value;
         targetReached = false;
 
@@ -241,6 +242,9 @@ public class MoneyTargetManager : NetworkBehaviour
 
         OnDayAdvanced?.Invoke(currentDay);
         EvaluateTargetReached();
+        
+        // ADDED: Log for debugging
+        Debug.Log($"[MoneyTargetManager] Day {currentDay} started. Baseline: ${nvDayStartMoney.Value}, Target: ${targetMoney}");
     }
 
     public void AdvanceDay()

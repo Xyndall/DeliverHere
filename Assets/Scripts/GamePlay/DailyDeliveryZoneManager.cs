@@ -217,6 +217,9 @@ namespace DeliverHere.GamePlay
             _currentDay = newDayIndex;
             nvCurrentDay.Value = newDayIndex;
 
+            if (enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] OnDayAdvanced called with day {newDayIndex}");
+
             SelectZonesForDay(newDayIndex);
         }
 
@@ -279,6 +282,9 @@ namespace DeliverHere.GamePlay
             // Calculate how many zones to activate based on day
             int targetZoneCount = CalculateTargetZoneCount(dayIndex);
 
+            if (enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] SelectZonesForDay: Day {dayIndex}, TargetZoneCount={targetZoneCount}");
+
             // Calculate radius for this day
             _currentRadius = Mathf.Min(initialRadius + (radiusIncreasePerDay * (dayIndex - 1)), maxRadius);
 
@@ -287,6 +293,9 @@ namespace DeliverHere.GamePlay
 
             // Get zones within radius
             var eligibleZones = GetZonesWithinRadius(_currentRadius);
+
+            if (enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Found {eligibleZones.Count} zones within radius {_currentRadius:F1}m");
 
             if (eligibleZones.Count == 0)
             {
@@ -299,6 +308,9 @@ namespace DeliverHere.GamePlay
 
             if (avoidLastDayZone && _previousDayZoneIndices.Count > 0)
             {
+                if (enableServerLogs)
+                    Debug.Log($"[DailyDeliveryZoneManager] Filtering out {_previousDayZoneIndices.Count} zones from previous day");
+
                 for (int i = candidateZones.Count - 1; i >= 0; i--)
                 {
                     int globalIndex = allDeliveryZones.IndexOf(candidateZones[i]);
@@ -316,6 +328,9 @@ namespace DeliverHere.GamePlay
                 }
             }
 
+            if (enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] {candidateZones.Count} candidate zones after filtering");
+
             // Select random zones
             _activeZonesThisDay.Clear();
             _zoneQuotas.Clear();
@@ -323,6 +338,10 @@ namespace DeliverHere.GamePlay
             nvZoneQuotas.Clear();
 
             int actualZoneCount = Mathf.Min(targetZoneCount, candidateZones.Count);
+
+            if (enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Selecting {actualZoneCount} zones (targetZoneCount={targetZoneCount}, candidateZones={candidateZones.Count})");
+
             var newlySelectedIndices = new List<int>();
             var selectedZones = new List<DeliveryZoneDefinition>();
 
@@ -410,18 +429,33 @@ namespace DeliverHere.GamePlay
 
         private int CalculateTargetZoneCount(int dayIndex)
         {
+            if (enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] CalculateTargetZoneCount called: dayIndex={dayIndex}, enableProgressiveUnlock={enableProgressiveUnlock}, zonesPerDay={zonesPerDay}, unlockSecondZoneDay={unlockSecondZoneDay}");
+
             if (!enableProgressiveUnlock)
+            {
+                if (enableServerLogs)
+                    Debug.Log($"[DailyDeliveryZoneManager] Progressive unlock DISABLED, returning zonesPerDay={zonesPerDay}");
                 return zonesPerDay;
+            }
 
-            // Day 1-4: 1 zone
+            // Before unlock day: 1 zone
             if (dayIndex < unlockSecondZoneDay)
+            {
+                if (enableServerLogs)
+                    Debug.Log($"[DailyDeliveryZoneManager] Day {dayIndex} < unlockSecondZoneDay({unlockSecondZoneDay}), returning 1 zone");
                 return 1;
+            }
 
-            // Day 5+: progressively unlock more zones
+            // On unlock day and after: start with 2 zones, add more progressively
             int daysAfterUnlock = dayIndex - unlockSecondZoneDay;
-            int additionalZones = 1 + (daysAfterUnlock / additionalZoneEveryXDays);
+            int additionalZones = 2 + (daysAfterUnlock / additionalZoneEveryXDays);  // CHANGED: Start with 2 instead of 1
+            int result = Mathf.Min(additionalZones, maxSimultaneousZones);
 
-            return Mathf.Min(additionalZones, maxSimultaneousZones);
+            if (enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Day {dayIndex} >= unlockSecondZoneDay({unlockSecondZoneDay}), daysAfter={daysAfterUnlock}, additionalZones={additionalZones}, result={result}, maxCap={maxSimultaneousZones}");
+
+            return result;
         }
 
         private void CalculateAndAssignQuotas(List<DeliveryZoneDefinition> zones, int dayIndex)

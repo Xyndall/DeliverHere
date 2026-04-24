@@ -307,9 +307,15 @@ public class GameManager : NetworkBehaviour
             }
         }
 
-        // CHANGED: Use StartNewDay instead of AdvanceDay for proper tracking
-        if (moneyTargetManager != null && moneyTargetManager.CurrentDay <= 0 && IsServerOrStandalone)
-            moneyTargetManager.StartNewDay();
+        // FIXED: Always start with Day 1, and ensure baseline is set BEFORE any deliveries
+        if (moneyTargetManager != null && IsServerOrStandalone)
+        {
+            if (moneyTargetManager.CurrentDay <= 0)
+            {
+                // First time starting - call StartNewDay to properly initialize Day 1
+                moneyTargetManager.StartNewDay();
+            }
+        }
 
         dailyPackagesDelivered = 0;
         currentDayTargetMoney = GetTargetMoney();
@@ -324,6 +330,8 @@ public class GameManager : NetworkBehaviour
         uiController.HideWinPanel();
         uiController.HideDayEndSummary();
         uiController.ShowHUD();
+        
+        Debug.Log($"[GameManager] Game started. Day: {GetCurrentDay()}, Baseline: ${moneyTargetManager?.DayStartMoney ?? 0}, Target: ${GetTargetMoney()}");
     }
 
     public void PositionPlayersToSpawnPoints()
@@ -390,6 +398,9 @@ public class GameManager : NetworkBehaviour
     {
         if (count <= 0) return;
         dailyPackagesDelivered += count;
+        
+        // ADDED: Debug log to track package counting
+        Debug.Log($"[GameManager] Package delivered. Total today: {dailyPackagesDelivered}");
     }
 
     public void HostAdvanceToNextDay()
@@ -454,7 +465,10 @@ public class GameManager : NetworkBehaviour
     {
         uiController?.SetDay(newDayIndex);
         currentDayTargetMoney = GetTargetMoney();
+        
+        // FIXED: Reset package count BEFORE new deliveries can happen
         dailyPackagesDelivered = 0;
+        
         endOfDayPopupShown = false;
         _pendingLossReturnToLobby = false;
 
@@ -468,7 +482,9 @@ public class GameManager : NetworkBehaviour
         uiController?.ShowHUD();
         
         // Reset delivery zone value display
-        OnDeliveryZoneValueChanged(0, GetTargetMoney()); // FIXED: Added quota parameter
+        OnDeliveryZoneValueChanged(0, GetTargetMoney());
+        
+        Debug.Log($"[GameManager] Day {newDayIndex} advanced. Package count reset. Baseline: ${moneyTargetManager?.DayStartMoney ?? 0}, Target: ${GetTargetMoney()}");
     }
 
     private void HandleTargetReached()

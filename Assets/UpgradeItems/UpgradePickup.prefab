@@ -156,4 +156,4 @@ MonoBehaviour:
   definition: {fileID: 0}
   serverPickRandomIfUnset: 1
   serverRandomPickDelaySeconds: 0.05
-  enableServerLogs: 1
+  enableServerLogs: 0
