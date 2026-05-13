@@ -291,6 +291,18 @@ public class GameManager : NetworkBehaviour
 
         if (IsServerOrStandalone)
         {
+            // ADDED: Setup delivery zone manager before starting the game
+            var zoneManager = FindFirstObjectByType<DailyDeliveryZoneManager>();
+            if (zoneManager != null)
+            {
+                zoneManager.ServerSetupAfterLevelLoad();
+                Debug.Log("[GameManager] DailyDeliveryZoneManager setup triggered.");
+            }
+            else
+            {
+                Debug.LogWarning("[GameManager] DailyDeliveryZoneManager not found in scene!");
+            }
+
             if (_netState != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
             {
                 // NEW: end Loading for everyone when we actually start gameplay
@@ -298,12 +310,12 @@ public class GameManager : NetworkBehaviour
 
                 _netState.BeginClientReadyHandshake(() =>
                 {
-                    PositionPlayersToSpawnPoints();
+                    //PositionPlayersToSpawnPoints();
                 }, timeoutSeconds: 5f);
             }
             else
             {
-                PositionPlayersToSpawnPoints();
+                //PositionPlayersToSpawnPoints();
             }
         }
 
@@ -426,7 +438,18 @@ public class GameManager : NetworkBehaviour
         if (_pendingLossReturnToLobby)
         {
             _pendingLossReturnToLobby = false;
-            TriggerLoseCondition();
+            
+            // Use the comprehensive reset manager if available
+            var resetManager = FindFirstObjectByType<GameResetManager>();
+            if (resetManager != null)
+            {
+                resetManager.PerformFullReset();
+            }
+            else
+            {
+                // Fallback to existing logic
+                TriggerLoseCondition();
+            }
             return;
         }
 

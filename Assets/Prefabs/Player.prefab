@@ -452,7 +452,7 @@ MonoBehaviour:
   sprintCostPerSecond: 22
   regenPerSecond: 15
   regenDelay: 0.75
-  jumpCost: 18
+  jumpCost: 0
   cameraTransform: {fileID: 0}
   upgradableStats: {fileID: -7515118946062083735}
   playerHold: {fileID: 1258810096796857199}
