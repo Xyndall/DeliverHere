@@ -9,6 +9,7 @@ public enum GameState
     MainMenu,
     Lobby,
     Loading,
+    ReadyToStart,  // NEW: Intermediate state showing start game UI after loading completes
     InGame,
     Paused,
     GameOver
@@ -409,22 +410,58 @@ public class NetworkGameState : NetworkBehaviour
         Debug.Log($"[NetworkGameState] Client-ready handshake completed. allClientsReported={allClientsReported}");
     }
 
+    /// <summary>
+    /// Called by host to begin loading the level and transition to Loading state.
+    /// After loading completes, LevelFlowController should call ServerTransitionToReadyToStart().
+    /// </summary>
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     public void RequestStartGameServerRpc()
     {
         if (gameStarted.Value) return;
 
-        DebugLog("RequestStartGameServerRpc called");
+        DebugLog("RequestStartGameServerRpc called - transitioning to Loading state");
 
         nvPaused.Value = false;
         nvGameState.Value = GameState.Loading;
-
-        gameStarted.Value = true;
 
         levelFlow.StartLoadNextLevel();
 
         ServerPushSnapshot();
         HideDayEndSummaryClientRpc();
+    }
+
+    /// <summary>
+    /// Called by LevelFlowController after level loading completes.
+    /// Transitions from Loading -> ReadyToStart and shows the start game UI.
+    /// </summary>
+    public void ServerTransitionToReadyToStart()
+    {
+        if (!IsServer) return;
+
+        DebugLog("ServerTransitionToReadyToStart - showing start game UI");
+        
+        nvGameState.Value = GameState.ReadyToStart;
+    }
+
+    /// <summary>
+    /// Called when the host/player presses the start game button after loading.
+    /// Transitions from ReadyToStart -> InGame and actually starts gameplay.
+    /// </summary>
+    public void ServerBeginGameplay()
+    {
+        if (!IsServer) return;
+        if (nvGameState.Value != GameState.ReadyToStart)
+        {
+            Debug.LogWarning($"[NetworkGameState] ServerBeginGameplay called but state is {nvGameState.Value}, expected ReadyToStart");
+            return;
+        }
+
+        DebugLog("ServerBeginGameplay - starting actual gameplay");
+
+        gameStarted.Value = true;
+        nvGameState.Value = GameState.InGame;
+
+        ServerPushSnapshot();
     }
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]

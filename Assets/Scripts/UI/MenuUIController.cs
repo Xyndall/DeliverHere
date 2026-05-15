@@ -40,6 +40,11 @@ public class MenuUIController : MonoBehaviour
             NetworkGameState.Instance.OnGameStartedChangedEvent += HandleGameStartedChanged;
             HandleGameStartedChanged(NetworkGameState.Instance.GameStarted);
         }
+        else
+        {
+            // If NetworkGameState doesn't exist yet, start coroutine to wait for it
+            StartCoroutine(WaitForNetworkGameStateAndSubscribe());
+        }
 
         // Set a sane initial state
         EvaluateVisibility();
@@ -62,6 +67,32 @@ public class MenuUIController : MonoBehaviour
 
         if (endGameButton != null)
             endGameButton.onClick.RemoveListener(OnEndGameClicked);
+    }
+
+    private IEnumerator WaitForNetworkGameStateAndSubscribe()
+    {
+        // Wait for NetworkGameState to exist
+        float timeout = 5f;
+        float elapsed = 0f;
+        
+        while (NetworkGameState.Instance == null && elapsed < timeout)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        if (NetworkGameState.Instance != null)
+        {
+            NetworkGameState.Instance.OnGameStartedChangedEvent += HandleGameStartedChanged;
+            HandleGameStartedChanged(NetworkGameState.Instance.GameStarted);
+            
+            if (logVisibilityDebug)
+                Debug.Log($"[MenuUIController] Subscribed to NetworkGameState. GameStarted={NetworkGameState.Instance.GameStarted}");
+        }
+        else if (logVisibilityDebug)
+        {
+            Debug.LogWarning("[MenuUIController] NetworkGameState not found within timeout.");
+        }
     }
 
     private void TrySetupNetworkSubscriptionsOrQueue()
@@ -158,12 +189,18 @@ public class MenuUIController : MonoBehaviour
 
     private void HandleGameStartedChanged(bool started)
     {
-        if (menuRoot != null) menuRoot.SetActive(!started);
+        if (menuRoot != null)
+        {
+            menuRoot.SetActive(!started);
+            
+            if (logVisibilityDebug)
+                Debug.Log($"[MenuUIController] HandleGameStartedChanged: started={started}, menuRoot.activeSelf={menuRoot.activeSelf}");
+        }
     }
 
     private void OnStartGameClicked()
     {
-            NetworkGameState.Instance.RequestStartGameServerRpc();
+        NetworkGameState.Instance.RequestStartGameServerRpc();
     }
 
     private void OnEndGameClicked()

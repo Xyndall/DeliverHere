@@ -187,8 +187,19 @@ public class GameUIController : MonoBehaviour
             quotaStatusText.color = metQuota ? Color.green : Color.red;
         }
 
-        if (nextDayButton != null) nextDayButton.gameObject.SetActive(hostHasControl && metQuota);
-        if (restartButton != null) restartButton.gameObject.SetActive(hostHasControl);
+        // Show next day button only if quota was met
+        if (nextDayButton != null)
+        {
+            nextDayButton.gameObject.SetActive(metQuota);
+            nextDayButton.interactable = hostHasControl;
+        }
+        
+        // Show restart button only if quota was NOT met
+        if (restartButton != null)
+        {
+            restartButton.gameObject.SetActive(!metQuota);
+            restartButton.interactable = hostHasControl;
+        }
     }
 
     public void HideDayEndSummary()
@@ -226,7 +237,6 @@ public class GameUIController : MonoBehaviour
         if (uiStateManager != null)
         {
             uiStateManager.SetPaused(isPaused);
-            uiStateManager.SetGameState(isPaused ? GameState.Paused : GameState.InGame);
         }
     }
 }

@@ -36,7 +36,13 @@ public class UIStateManager : MonoBehaviour
     public void SetPaused(bool paused)
     {
         _isPaused = paused;
-        ApplyState(_currentState, _isPaused);
+        
+        // Only toggle pause menu visibility, don't change state
+        foreach (var go in pauseOnlyUI)
+        {
+            if (go != null)
+                go.SetActive(_isPaused);
+        }
     }
 
     private void ApplyState(GameState state, bool paused)
@@ -52,9 +58,8 @@ public class UIStateManager : MonoBehaviour
             }
         }
 
-        // Gameplay vs Pause overlays
-        bool showGameplayHUD = (state == GameState.InGame || state == GameState.Paused) && !paused;
-        bool showPauseUI = (state == GameState.Paused && paused);
+        // Keep gameplay HUD visible during InGame and Paused states
+        bool showGameplayHUD = (state == GameState.InGame || state == GameState.Paused);
 
         foreach (var go in gameplayHUD)
         {
@@ -62,10 +67,11 @@ public class UIStateManager : MonoBehaviour
                 go.SetActive(showGameplayHUD);
         }
 
+        // Apply pause menu visibility based on current pause state
         foreach (var go in pauseOnlyUI)
         {
             if (go != null)
-                go.SetActive(showPauseUI);
+                go.SetActive(paused);
         }
     }
 }

@@ -96,7 +96,7 @@ public partial class LevelFlowController : MonoBehaviour
             {
                 netState.BeginClientReadyHandshake(() =>
                 {
-                    Debug.Log("[LevelFlowController] All clients ready (or timeout) — positioning players...");
+                    Debug.Log("[LevelFlowController] All clients ready (or timeout) – positioning players...");
 
                     // Ensure timer doesn't tick while we teleport/settle.
                     GameManager.Instance?.SetGameplayActive(false);
@@ -126,10 +126,8 @@ public partial class LevelFlowController : MonoBehaviour
         if (loadingScreen != null)
             loadingScreen.gameObject.SetActive(false);
 
-        // Setup level but don't auto-start game
+        // Setup level and transition to ReadyToStart state
         OnLevelFullyLoaded_Server();
-
-        // The WorldStartGameButton will call GameManager.StartGame() when pressed
     }
 
     private void OnLevelFullyLoaded_Server()
@@ -149,14 +147,14 @@ public partial class LevelFlowController : MonoBehaviour
             GameManager.Instance.PositionPlayersToSpawnPoints();
         }
 
-        // IMPORTANT: Set game state to Lobby so players can move and interact with the start button
+        // FIXED: Set game state to ReadyToStart so the start game button UI shows
         var netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
         if (netState != null)
         {
-            netState.ServerSetGameState(GameState.Lobby, paused: false);
+            netState.ServerTransitionToReadyToStart();
         }
 
-        Debug.Log("[LevelFlowController] Level loaded and setup complete. Waiting for start button press...");
+        Debug.Log("[LevelFlowController] Level loaded and setup complete. Showing ReadyToStart UI...");
     }
 
     /// <summary>
