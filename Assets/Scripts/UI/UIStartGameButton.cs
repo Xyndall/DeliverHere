@@ -30,7 +30,9 @@ namespace DeliverHere.UI
         [Header("Debug")]
         [SerializeField] private bool enableLogs = true;
 
-        private bool _hasBeenActivated = false;
+        // Network variable to sync activation state across all clients
+        private NetworkVariable<bool> _hasBeenActivated = new NetworkVariable<bool>(
+            false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
         private void Awake()
         {
@@ -59,6 +61,9 @@ namespace DeliverHere.UI
         {
             base.OnNetworkSpawn();
             
+            // Subscribe to activation state changes
+            _hasBeenActivated.OnValueChanged += OnActivationStateChanged;
+            
             // Subscribe to game state changes to show/hide button
             if (NetworkGameState.Instance != null)
             {
@@ -73,6 +78,8 @@ namespace DeliverHere.UI
 
         public override void OnNetworkDespawn()
         {
+            _hasBeenActivated.OnValueChanged -= OnActivationStateChanged;
+            
             if (NetworkGameState.Instance != null)
             {
                 NetworkGameState.Instance.OnLocalGameStateChanged -= OnGameStateChanged;
@@ -81,10 +88,24 @@ namespace DeliverHere.UI
             base.OnNetworkDespawn();
         }
 
+        private void OnActivationStateChanged(bool previousValue, bool newValue)
+        {
+            if (enableLogs)
+                Debug.Log($"[UIStartGameButton] Activation state changed: {previousValue} -> {newValue}");
+            
+            UpdateButtonState();
+            
+            // Update visibility based on current game state
+            if (NetworkGameState.Instance != null)
+            {
+                OnGameStateChanged(NetworkGameState.Instance.LocalGameState);
+            }
+        }
+
         private void OnGameStateChanged(GameState newState)
         {
-            // Show button panel only in ReadyToStart state
-            bool shouldShow = newState == GameState.ReadyToStart && !_hasBeenActivated;
+            // Show button panel in Lobby (after reset) or ReadyToStart (after level load)
+            bool shouldShow = (newState == GameState.ReadyToStart || newState == GameState.Lobby) && !_hasBeenActivated.Value;
             
             if (panelToHide != null)
             {
@@ -96,7 +117,7 @@ namespace DeliverHere.UI
             }
             
             if (enableLogs)
-                Debug.Log($"[UIStartGameButton] State changed to {newState}, button visible: {shouldShow}");
+                Debug.Log($"[UIStartGameButton] State changed to {newState}, button visible: {shouldShow}, activated: {_hasBeenActivated.Value}");
         }
 
         /// <summary>
@@ -111,18 +132,29 @@ namespace DeliverHere.UI
                          (NetworkManager.Singleton.IsServer || NetworkManager.Singleton.IsHost);
 
             // Button is only interactable if player is host and game hasn't started
-            startButton.interactable = isHost && !_hasBeenActivated;
+            startButton.interactable = isHost && !_hasBeenActivated.Value;
 
             // Update button text if available
             if (buttonText != null)
             {
-                if (_hasBeenActivated)
+                if (_hasBeenActivated.Value)
                 {
                     buttonText.text = "Game Started";
                 }
                 else
                 {
-                    buttonText.text = isHost ? defaultText : waitingText;
+                    // Show appropriate text based on whether we need to load a level first
+                    bool needsLevelLoad = NetworkGameState.Instance != null && 
+                                         NetworkGameState.Instance.LocalGameState == GameState.Lobby;
+                    
+                    if (isHost)
+                    {
+                        buttonText.text = needsLevelLoad ? "Load & Start Game" : defaultText;
+                    }
+                    else
+                    {
+                        buttonText.text = waitingText;
+                    }
                 }
             }
         }
@@ -132,7 +164,7 @@ namespace DeliverHere.UI
         /// </summary>
         private void OnButtonClicked()
         {
-            if (_hasBeenActivated)
+            if (_hasBeenActivated.Value)
             {
                 if (enableLogs)
                     Debug.Log("[UIStartGameButton] Already activated, ignoring.");
@@ -164,14 +196,44 @@ namespace DeliverHere.UI
 
         private void ServerStartGame()
         {
-            if (_hasBeenActivated)
+            if (_hasBeenActivated.Value)
+            {
+                if (enableLogs)
+                    Debug.Log("[UIStartGameButton] Already activated on server, ignoring.");
                 return;
+            }
 
-            _hasBeenActivated = true;
+            // Set activation state on server (will replicate to all clients)
+            _hasBeenActivated.Value = true;
 
             if (enableLogs)
                 Debug.Log("[UIStartGameButton] Starting game setup...");
 
+            // Check if we're in Lobby state and need to load a level first
+            bool needsLevelLoad = NetworkGameState.Instance != null && 
+                                 NetworkGameState.Instance.LocalGameState == GameState.Lobby;
+
+            if (needsLevelLoad)
+            {
+                // Trigger level load flow which will eventually call back to start the game
+                if (enableLogs)
+                    Debug.Log("[UIStartGameButton] Triggering level load from Lobby state...");
+                
+                if (NetworkGameState.Instance != null)
+                {
+                    NetworkGameState.Instance.RequestStartGameServerRpc();
+                }
+                
+                // Hide button during load
+                if (hideAfterActivation)
+                {
+                    HideButtonClientRpc();
+                }
+                
+                return;
+            }
+
+            // Otherwise, we're in ReadyToStart state after a level load
             // 1. Find and setup delivery zone manager
             var zoneManager = FindFirstObjectByType<GamePlay.DailyDeliveryZoneManager>();
             if (zoneManager != null)
@@ -238,6 +300,59 @@ namespace DeliverHere.UI
             }
         }
 
+        /// <summary>
+        /// Resets the button state so it can be activated again.
+        /// Should be called when returning to lobby or resetting the game.
+        /// Server-only method.
+        /// </summary>
+        public void ServerResetButton()
+        {
+            if (!IsServer)
+            {
+                Debug.LogWarning("[UIStartGameButton] ServerResetButton can only be called on server!");
+                return;
+            }
+
+            if (enableLogs)
+                Debug.Log($"[UIStartGameButton] ServerResetButton called. Current activation state: {_hasBeenActivated.Value}");
+
+            // Reset the network variable (will replicate to all clients)
+            _hasBeenActivated.Value = false;
+            
+            if (enableLogs)
+                Debug.Log($"[UIStartGameButton] Activation state reset to: {_hasBeenActivated.Value}. Current game state: {NetworkGameState.Instance?.LocalGameState}");
+            
+            // Force show the button on all clients
+            ShowButtonClientRpc();
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        private void ShowButtonClientRpc()
+        {
+            // Force visibility update based on current game state
+            if (NetworkGameState.Instance != null)
+            {
+                OnGameStateChanged(NetworkGameState.Instance.LocalGameState);
+            }
+            else
+            {
+                // Fallback: show button by default
+                if (panelToHide != null)
+                {
+                    panelToHide.SetActive(true);
+                }
+                else if (startButton != null)
+                {
+                    startButton.gameObject.SetActive(true);
+                }
+            }
+            
+            UpdateButtonState();
+            
+            if (enableLogs)
+                Debug.Log("[UIStartGameButton] Button shown on client via RPC.");
+        }
+
 #if UNITY_EDITOR
         [ContextMenu("Test Activate")]
         private void TestActivate()
@@ -249,6 +364,24 @@ namespace DeliverHere.UI
             }
 
             OnButtonClicked();
+        }
+
+        [ContextMenu("Test Reset (Server Only)")]
+        private void TestReset()
+        {
+            if (!Application.isPlaying)
+            {
+                Debug.LogWarning("Only works in Play mode.");
+                return;
+            }
+
+            if (!IsServer)
+            {
+                Debug.LogWarning("Reset can only be called on server.");
+                return;
+            }
+
+            ServerResetButton();
         }
 
         private void OnValidate()

@@ -24,7 +24,6 @@ public class PlayerInteractions : NetworkBehaviour
 
     // Cached results of the continuous raycast
     private WorldSpawnButton _lookedAtSpawnButton;
-    private WorldStartGameButton _lookedAtStartButton;
     private float _lastLookDistance;
 
     // UI controller
@@ -32,7 +31,6 @@ public class PlayerInteractions : NetworkBehaviour
 
     // Prompt texts
     private const string SpawnPromptText = "Press [E] to Spawn Packages";
-    private const string StartGamePromptText = "Press [E] to Start Game";
 
     private void Awake()
     {
@@ -61,7 +59,6 @@ public class PlayerInteractions : NetworkBehaviour
         if (IsOwner && _ui != null)
         {
             _ui.ClearUpgradePromptIfEquals(SpawnPromptText);
-            _ui.ClearUpgradePromptIfEquals(StartGamePromptText);
         }
     }
 
@@ -103,7 +100,6 @@ public class PlayerInteractions : NetworkBehaviour
 
         // Cache the interactable components if present on the hit object or its parents
         _lookedAtSpawnButton = hit.collider.GetComponentInParent<WorldSpawnButton>();
-        _lookedAtStartButton = hit.collider.GetComponentInParent<WorldStartGameButton>();
         _lastLookDistance = hit.distance;
 
         // Show appropriate prompt based on what we're looking at
@@ -113,12 +109,10 @@ public class PlayerInteractions : NetworkBehaviour
     private void ClearLookedAt()
     {
         _lookedAtSpawnButton = null;
-        _lookedAtStartButton = null;
         
         if (showUiPrompt && _ui != null)
         {
             _ui.ClearUpgradePromptIfEquals(SpawnPromptText);
-            _ui.ClearUpgradePromptIfEquals(StartGamePromptText);
         }
     }
 
@@ -128,29 +122,18 @@ public class PlayerInteractions : NetworkBehaviour
             return;
 
         // Priority: Start button takes precedence over spawn button
-        if (_lookedAtStartButton != null)
-        {
-            _ui.SetUpgradePrompt(StartGamePromptText);
-        }
-        else if (_lookedAtSpawnButton != null)
+        if (_lookedAtSpawnButton != null)
         {
             _ui.SetUpgradePrompt(SpawnPromptText);
         }
         else
         {
             _ui.ClearUpgradePromptIfEquals(SpawnPromptText);
-            _ui.ClearUpgradePromptIfEquals(StartGamePromptText);
         }
     }
 
     private void TryInteract()
     {
-        // Priority: Start button takes precedence
-        if (_lookedAtStartButton != null)
-        {
-            _lookedAtStartButton.ActivateLocal();
-            return;
-        }
 
         if (_lookedAtSpawnButton != null)
         {

@@ -3,6 +3,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using Unity.Netcode;
+using DeliverHere.UI;
 
 public class MenuUIController : MonoBehaviour
 {
@@ -10,6 +11,10 @@ public class MenuUIController : MonoBehaviour
     [SerializeField] private GameObject menuRoot; // Optional: assign to hide/show menu
     [SerializeField] private Button startGameButton;
     [SerializeField] private Button endGameButton;
+
+    [Header("UI References")]
+    [Tooltip("Reference to the in-game start button that needs to be reset when starting from menu")]
+    [SerializeField] private UIStartGameButton uiStartGameButton;
 
     [Header("Debug")]
     [SerializeField] private bool logVisibilityDebug = false;
@@ -200,6 +205,20 @@ public class MenuUIController : MonoBehaviour
 
     private void OnStartGameClicked()
     {
+        // Reset the UIStartGameButton activation state before starting the game
+        // This ensures it can be clicked again after level loads
+        if (uiStartGameButton != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer)
+        {
+            uiStartGameButton.ServerResetButton();
+            
+            if (logVisibilityDebug)
+                Debug.Log("[MenuUIController] Reset UIStartGameButton activation state before starting game.");
+        }
+        else if (uiStartGameButton == null)
+        {
+            Debug.LogWarning("[MenuUIController] UIStartGameButton reference is null! Please assign it in the inspector.");
+        }
+
         NetworkGameState.Instance.RequestStartGameServerRpc();
     }
 

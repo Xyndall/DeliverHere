@@ -412,12 +412,12 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 15635143}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 2102985914}
+  m_Father: {fileID: 422955009}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
@@ -623,14 +623,14 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 18571464}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 548282967}
   - {fileID: 1045109089}
-  m_Father: {fileID: 2102985914}
+  m_Father: {fileID: 422955009}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
@@ -2603,6 +2603,8 @@ RectTransform:
   m_LocalScale: {x: 0, y: 0, z: 0}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 18571465}
+  - {fileID: 15635144}
   - {fileID: 2102985914}
   - {fileID: 1533124400}
   - {fileID: 1239369997}
@@ -4489,6 +4491,7 @@ MonoBehaviour:
   menuRoot: {fileID: 1146428890}
   startGameButton: {fileID: 1206027987}
   endGameButton: {fileID: 0}
+  uiStartGameButton: {fileID: 1188344951}
   logVisibilityDebug: 0
 --- !u!1 &726784822
 GameObject:
@@ -7348,6 +7351,7 @@ MonoBehaviour:
   menuRoot: {fileID: 0}
   startGameButton: {fileID: 0}
   endGameButton: {fileID: 0}
+  uiStartGameButton: {fileID: 0}
   logVisibilityDebug: 0
 --- !u!114 &1422039946
 MonoBehaviour:
@@ -8123,7 +8127,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 780369539fd610143b239a11948f86df, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameTimer
-  durationSeconds: 180
+  durationSeconds: 10
   autoStartFirstDay: 1
   autoAdvanceOnSuccess: 0
   uiController: {fileID: 726784823}
@@ -9569,11 +9573,9 @@ RectTransform:
   m_Children:
   - {fileID: 784064379}
   - {fileID: 5522521}
-  - {fileID: 15635144}
   - {fileID: 1301847668}
   - {fileID: 42608492}
   - {fileID: 1216634915}
-  - {fileID: 18571465}
   m_Father: {fileID: 422955009}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}

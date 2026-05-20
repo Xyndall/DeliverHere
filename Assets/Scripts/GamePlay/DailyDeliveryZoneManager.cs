@@ -814,5 +814,40 @@ namespace DeliverHere.GamePlay
             }
             Debug.Log($"All Quotas Met: {AreAllZoneQuotasMet()}");
         }
+
+        // Resets the DailyDeliveryZoneManager for a new game/session
+        public void ServerResetForNewGame()
+        {
+            if (!IsServer)
+            {
+                Debug.LogWarning("[DailyDeliveryZoneManager] ServerResetForNewGame can only be called on server.");
+                return;
+            }
+
+            if (enableServerLogs)
+                Debug.Log("[DailyDeliveryZoneManager] Resetting for new game...");
+
+            // Reset the setup flag so zones can be re-initialized
+            _hasBeenSetup = false;
+            
+            // Clear all runtime state
+            _currentDay = 0;
+            _currentRadius = 0f;
+            _previousDayZoneIndices.Clear();
+            _activeZonesThisDay.Clear();
+            _zoneQuotas.Clear();
+            _usedZoneIndices.Clear();
+            
+            // Reset network variables
+            nvCurrentDay.Value = 0;
+            nvActiveZoneIndices.Clear();
+            nvZoneQuotas.Clear();
+            
+            // Deactivate all zones
+            DeactivateAllZones();
+            
+            if (enableServerLogs)
+                Debug.Log("[DailyDeliveryZoneManager] Reset complete, ready for new game setup.");
+        }
     }
 }

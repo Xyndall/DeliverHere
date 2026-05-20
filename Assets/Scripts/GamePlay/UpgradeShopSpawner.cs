@@ -31,7 +31,7 @@ public sealed class UpgradeShopSpawner : NetworkBehaviour
 
     public override void OnNetworkDespawn()
     {
-        if (IsServer && clearOnShopDisabled)
+        if (IsServer)
             ServerClearSpawned();
 
         base.OnNetworkDespawn();
@@ -149,6 +149,8 @@ public sealed class UpgradeShopSpawner : NetworkBehaviour
 
     private void ServerClearSpawned()
     {
+        if (!IsServer) return;
+
         for (int i = _spawned.Count - 1; i >= 0; i--)
         {
             var no = _spawned[i];
@@ -158,8 +160,11 @@ public sealed class UpgradeShopSpawner : NetworkBehaviour
 
             if (no.IsSpawned)
                 no.Despawn(true);
-            else
+            else if (no.gameObject != null)
                 Destroy(no.gameObject);
         }
+
+        if (enableServerLogs)
+            Debug.Log($"[UpgradeShopSpawner] Cleared {_spawned.Count} spawned upgrade pickups. Shop='{name}'");
     }
 }

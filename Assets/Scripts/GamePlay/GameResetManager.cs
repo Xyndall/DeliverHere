@@ -1,6 +1,7 @@
 using System.Collections;
 using Unity.Netcode;
 using UnityEngine;
+using DeliverHere.UI;
 
 namespace DeliverHere.GamePlay
 {
@@ -26,7 +27,7 @@ namespace DeliverHere.GamePlay
         [SerializeField] private LevelLoader levelLoader;
 
         [Header("Auto-Find References")]
-        [SerializeField] private bool autoFindReferences = true;
+        [SerializeField] private bool autoFindReferences = false;
 
         [Header("Debug")]
         [SerializeField] private bool enableLogs = true;
@@ -72,6 +73,7 @@ namespace DeliverHere.GamePlay
 
             if (levelLoader == null)
                 levelLoader = LevelLoader.Instance ?? FindFirstObjectByType<LevelLoader>();
+
         }
 
         /// <summary>
@@ -191,23 +193,17 @@ namespace DeliverHere.GamePlay
 
             yield return null;
 
-            // Step 7: Timer will reset on next day start
+            // Step 7: Reset UI
             if (enableLogs)
-                Debug.Log("[GameResetManager] Step 7: Timer will reset on next day start...");
-
-            yield return null;
-
-            // Step 8: Reset UI
-            if (enableLogs)
-                Debug.Log("[GameResetManager] Step 8: Resetting UI...");
+                Debug.Log("[GameResetManager] Step 7: Resetting UI...");
 
             ResetUIClientRpc();
 
             yield return null;
 
-            // Step 9: Teleport players to spawn
+            // Step 8: Teleport players to spawn
             if (enableLogs)
-                Debug.Log("[GameResetManager] Step 9: Repositioning players to hub spawn...");
+                Debug.Log("[GameResetManager] Step 8: Repositioning players to hub spawn...");
 
             if (networkGameState != null)
             {
@@ -220,9 +216,9 @@ namespace DeliverHere.GamePlay
 
             yield return new WaitForSeconds(0.5f);
 
-            // Step 10: Return to lobby state and ensure game can be restarted
+            // Step 9: Return to lobby state and ensure game can be restarted
             if (enableLogs)
-                Debug.Log("[GameResetManager] Step 10: Returning to lobby state...");
+                Debug.Log("[GameResetManager] Step 9: Returning to lobby state...");
 
             // Call RequestEndGameServerRpc to properly reset the gameStarted flag
             if (networkGameState != null)
@@ -244,7 +240,25 @@ namespace DeliverHere.GamePlay
                 }
             }
 
-            yield return new WaitForSeconds(0.2f);
+            // Wait for state change to propagate
+            yield return new WaitForSeconds(0.5f);
+
+            // Step 10: Force re-enable player inputs
+            if (enableLogs)
+                Debug.Log("[GameResetManager] Step 10: Re-enabling player inputs...");
+
+            var allPlayerInputs = FindObjectsByType<PlayerInputController>(FindObjectsSortMode.None);
+            foreach (var input in allPlayerInputs)
+            {
+                if (input != null && input.IsOwner)
+                {
+                    input.SetInputLocked(false);
+                    if (enableLogs)
+                        Debug.Log($"[GameResetManager] Unlocked input for player {input.OwnerClientId}");
+                }
+            }
+
+            yield return null;
 
             if (enableLogs)
                 Debug.Log("[GameResetManager] Full reset complete! Ready to start new game.");
@@ -281,9 +295,14 @@ namespace DeliverHere.GamePlay
             // Reset the daily zone manager if present
             if (deliveryZoneManager != null)
             {
-                // The zone manager will handle deactivating all zones when reset
+                deliveryZoneManager.ServerResetForNewGame();
+                
                 if (enableLogs)
-                    Debug.Log("[GameResetManager] Daily delivery zone manager found and will be reset on next day start.");
+                    Debug.Log("[GameResetManager] Daily delivery zone manager has been reset.");
+            }
+            else
+            {
+                Debug.LogWarning("[GameResetManager] DailyDeliveryZoneManager reference is null!");
             }
 
             // Also manually reset all delivery zone definitions
@@ -335,8 +354,22 @@ namespace DeliverHere.GamePlay
                 }
             }
 
+            // NEW: Clear all upgrade pickups as well
+            var allUpgradePickups = FindObjectsByType<StatUpgradePickup>(FindObjectsSortMode.None);
+            foreach (var pickup in allUpgradePickups)
+            {
+                if (pickup != null && pickup.TryGetComponent<NetworkObject>(out var netObj))
+                {
+                    if (netObj.IsSpawned)
+                    {
+                        netObj.Despawn(true);
+                        clearedCount++;
+                    }
+                }
+            }
+
             if (enableLogs)
-                Debug.Log($"[GameResetManager] Cleared {clearedCount} spawned packages.");
+                Debug.Log($"[GameResetManager] Cleared {clearedCount} spawned packages and upgrade pickups.");
         }
 
         /// <summary>
@@ -367,6 +400,7 @@ namespace DeliverHere.GamePlay
                 Debug.Log("[GameResetManager] UI reset on client.");
         }
 
+
         #region Context Menu Debug Methods
 #if UNITY_EDITOR
         [ContextMenu("Debug/Perform Full Reset (Server Only)")]
@@ -392,6 +426,28 @@ namespace DeliverHere.GamePlay
         {
             FindReferences();
             Debug.Log("[GameResetManager] References found and assigned.");
+        }
+
+        [ContextMenu("Debug/Validate References")]
+        private void Debug_ValidateReferences()
+        {
+            int missingCount = 0;
+            
+            if (gameManager == null) { Debug.LogWarning("Missing: GameManager"); missingCount++; }
+            if (moneyTargetManager == null) { Debug.LogWarning("Missing: MoneyTargetManager"); missingCount++; }
+            if (networkGameState == null) { Debug.LogWarning("Missing: NetworkGameState"); missingCount++; }
+            if (uiController == null) { Debug.LogWarning("Missing: GameUIController"); missingCount++; }
+            if (uiStateManager == null) { Debug.LogWarning("Missing: UIStateManager"); missingCount++; }
+            if (gameTimer == null) { Debug.LogWarning("Missing: GameTimer"); missingCount++; }
+            if (deliveryZoneManager == null) { Debug.LogWarning("Missing: DailyDeliveryZoneManager"); missingCount++; }
+            if (packageSpawner == null) { Debug.LogWarning("Missing: PackageSpawner"); missingCount++; }
+            if (levelFlowController == null) { Debug.LogWarning("Missing: LevelFlowController"); missingCount++; }
+            if (levelLoader == null) { Debug.LogWarning("Missing: LevelLoader"); missingCount++; }
+            
+            if (missingCount == 0)
+                Debug.Log("[GameResetManager] All references are assigned!");
+            else
+                Debug.LogWarning($"[GameResetManager] {missingCount} references are missing!");
         }
 #endif
         #endregion
