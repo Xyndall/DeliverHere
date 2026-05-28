@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9357f08c7d1958141ba303828d55a14c, type: 3}
+  m_Name: DefaultControlsConfig
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Settings.ControlsConfig
+  controls:
+  - displayName: Move
+    actionReference: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    keyboardMouseIcon: {fileID: 0}
+    controllerIcon: {fileID: 0}
+    keyboardGroup: 
+    gamepadGroup: 
+  - displayName: Jump
+    actionReference: {fileID: -2099379676528639254, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    keyboardMouseIcon: {fileID: 0}
+    controllerIcon: {fileID: 0}
+    keyboardGroup: 
+    gamepadGroup: 
+  - displayName: Interact
+    actionReference: {fileID: 1781555164194001046, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    keyboardMouseIcon: {fileID: 0}
+    controllerIcon: {fileID: 0}
+    keyboardGroup: 
+    gamepadGroup: 
+  - displayName: Open Menu
+    actionReference: {fileID: 2243250104342449552, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    keyboardMouseIcon: {fileID: 0}
+    controllerIcon: {fileID: 0}
+    keyboardGroup: 
+    gamepadGroup: 
