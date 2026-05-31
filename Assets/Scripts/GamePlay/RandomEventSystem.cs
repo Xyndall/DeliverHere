@@ -1,9 +1,10 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 
-public class RandomEventSystem : MonoBehaviour
+public class RandomEventSystem : NetworkBehaviour
 {
     [Header("References")]
     [SerializeField] private GameTimer gameTimer;
@@ -19,12 +20,20 @@ public class RandomEventSystem : MonoBehaviour
     [Tooltip("Optional parent transform for spawned event prefabs.")]
     [SerializeField] private Transform eventParent;
 
+    [Header("Warning Indicator")]
+    [Tooltip("The persistent EventWarningUI object already in the canvas (disabled by default).")]
+    [SerializeField] private EventWarningUI warningUI;
+
+    [Tooltip("How many seconds the warning is shown before the event actually triggers.")]
+    [SerializeField] private float warningDurationSeconds = 3f;
+
     private class EventRuntime
     {
         public RandomEventDefinition def;
         public int triggersThisDay;
         public float nextEligibleTime;     // world time when cooldown ends
         public float nextEvaluationTime;   // world time when next eval can occur
+        public bool isPending;             // true while the warning countdown is running
     }
 
     private readonly List<EventRuntime> runtime = new List<EventRuntime>();
@@ -83,7 +92,8 @@ public class RandomEventSystem : MonoBehaviour
                 def = def,
                 triggersThisDay = 0,
                 nextEligibleTime = 0f,
-                nextEvaluationTime = 0f
+                nextEvaluationTime = 0f,
+                isPending = false
             });
         }
     }
@@ -113,6 +123,9 @@ public class RandomEventSystem : MonoBehaviour
             var def = evt.def;
             if (def == null) continue;
 
+            // Skip if already waiting to trigger
+            if (evt.isPending) continue;
+
             // Respect max triggers
             if (evt.triggersThisDay >= Mathf.Max(0, def.maxTriggersPerDay)) continue;
 
@@ -141,10 +154,44 @@ public class RandomEventSystem : MonoBehaviour
 
             if (fired)
             {
-                TriggerEvent(evt);
-                OnEventTriggered?.Invoke(def);
+                StartCoroutine(WarnThenTrigger(evt));
             }
         }
+    }
+
+    private IEnumerator WarnThenTrigger(EventRuntime evt)
+    {
+        evt.isPending = true;
+
+        string message = !string.IsNullOrEmpty(evt.def.warningMessage)
+            ? evt.def.warningMessage
+            : evt.def.eventId;
+
+        // Show warning on all clients (and the host itself)
+        if (warningUI != null)
+        {
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
+                ShowWarningClientRpc(message);
+            else
+                warningUI.Show(message); // standalone / editor without NGO
+        }
+
+        yield return new WaitForSeconds(warningDurationSeconds);
+
+        TriggerEvent(evt);
+        OnEventTriggered?.Invoke(evt.def);
+
+        evt.isPending = false;
+    }
+
+    /// <summary>
+    /// Runs on every connected client and the host to show the local warning UI.
+    /// </summary>
+    [ClientRpc]
+    private void ShowWarningClientRpc(string message)
+    {
+        if (warningUI != null)
+            warningUI.Show(message);
     }
 
     private void TriggerEvent(EventRuntime evt)
@@ -179,6 +226,7 @@ public class RandomEventSystem : MonoBehaviour
             evt.triggersThisDay = 0;
             evt.nextEligibleTime = now;
             evt.nextEvaluationTime = now;
+            evt.isPending = false;
         }
     }
 
@@ -190,7 +238,6 @@ public class RandomEventSystem : MonoBehaviour
     private void ForceTriggerFirstEvent()
     {
         if (runtime.Count == 0) return;
-        TriggerEvent(runtime[0]);
-        OnEventTriggered?.Invoke(runtime[0].def);
+        StartCoroutine(WarnThenTrigger(runtime[0]));
     }
 }

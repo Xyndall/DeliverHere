@@ -21,3 +21,4 @@ MonoBehaviour:
   windowEnd01: 0.8
   evaluationIntervalSeconds: 5
   eventPrefab: {fileID: 4342616253148699227, guid: be19139a53dc0334d8a9776e00e8e85e, type: 3}
+  warningMessage: Meteors are FALLING!!!

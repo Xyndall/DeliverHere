@@ -31,4 +31,8 @@ public class RandomEventDefinition : ScriptableObject
     [Header("Payload")]
     [Tooltip("Prefab or handler to invoke when event fires (optional).")]
     public GameObject eventPrefab;
+
+    [Header("Warning")]
+    [Tooltip("Message shown in the warning indicator before the event starts.")]
+    public string warningMessage = "Incoming event!";
 }
