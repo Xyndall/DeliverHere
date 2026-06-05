@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 using DeliverHere.GamePlay;
+using DeliverHere.NetworkScripts;
 
 public class GameManager : NetworkBehaviour
 {
@@ -29,6 +30,8 @@ public class GameManager : NetworkBehaviour
 
     // NEW: if true, we ended the day with failure and are waiting for host to close/restart.
     private bool _pendingLossReturnToLobby;
+
+    private NetworkUISync _uiSync;
 
     public void SetGameplayActive(bool active)
     {
@@ -142,6 +145,8 @@ public class GameManager : NetworkBehaviour
     private void FindTimerAndNetState()
     {
         _netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+        _uiSync = NetworkUISync.Instance ?? FindFirstObjectByType<NetworkUISync>();
+        
         var timer = gameTimer != null ? gameTimer : FindFirstObjectByType<GameTimer>();
         if (timer != null)
         {
@@ -275,11 +280,28 @@ public class GameManager : NetworkBehaviour
     private void SyncAllUI()
     {
         if (uiController == null || moneyTargetManager == null) return;
-        uiController.SetDay(GetCurrentDay());
-        uiController.SetBankedMoney(GetBankedMoney());
         
-        // Initial delivery zone value (will be 0 at start)
-        OnDeliveryZoneValueChanged(0, GetTargetMoney()); // FIXED: Added quota parameter
+        int day = GetCurrentDay();
+        int banked = GetBankedMoney();
+        int target = GetTargetMoney();
+        
+        uiController.SetDay(day);
+        uiController.SetBankedMoney(banked);
+        uiController.SetDeliveryZoneValue(0, target);
+        
+        // ADDED: Sync to network
+        if (IsServerOrStandalone && _uiSync != null)
+        {
+            _uiSync.ServerRefreshAllUI(day, banked, 0, target, 0f, false, false);
+        }
+    }
+
+    // Add this new ClientRpc method to GameManager
+    [Rpc(SendTo.ClientsAndHost)]
+    private void ShowHUDClientRpc()
+    {
+        uiController?.ShowHUD();
+        Debug.Log("[GameManager] HUD shown via ClientRpc");
     }
 
     public void StartGame()
@@ -342,6 +364,13 @@ public class GameManager : NetworkBehaviour
         uiController.HideWinPanel();
         uiController.HideDayEndSummary();
         uiController.ShowHUD();
+        
+        // ADDED: Sync HUD visibility to all clients
+        if (IsServerOrStandalone && _uiSync != null)
+        {
+            _uiSync.ServerSetHudVisible(true);
+            _uiSync.ServerSetTimerVisible(true);
+        }
         
         Debug.Log($"[GameManager] Game started. Day: {GetCurrentDay()}, Baseline: ${moneyTargetManager?.DayStartMoney ?? 0}, Target: ${GetTargetMoney()}");
     }
@@ -609,6 +638,12 @@ public class GameManager : NetworkBehaviour
         if (uiController != null)
         {
             uiController.SetDeliveryZoneValue(totalValue, quota);
+        }
+        
+        // ADDED: Sync to network
+        if (IsServerOrStandalone && _uiSync != null)
+        {
+            _uiSync.ServerSetDeliveryZoneValue(totalValue, quota);
         }
     }
 }

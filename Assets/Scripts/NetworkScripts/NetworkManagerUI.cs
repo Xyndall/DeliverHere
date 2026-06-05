@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Unity.Services.Core;
 using Unity.Services.Authentication;
+using DeliverHere.NetworkScripts;
 
 public class NetworkManagerUI : MonoBehaviour
 {
@@ -31,7 +32,6 @@ public class NetworkManagerUI : MonoBehaviour
         if (joinCodeInput != null) joinCodeInput.onValueChanged.RemoveListener(OnJoinCodeValueChanged);
     }
 
-
     public async void OnClickHost()
     {
         if (Relay.Instance == null)
@@ -47,6 +47,9 @@ public class NetworkManagerUI : MonoBehaviour
             if (!string.IsNullOrEmpty(code))
             {
                 SetJoinCodeText(code);
+
+                // ADDED: Wait for NetworkUISync to spawn, then set join code on it
+                await WaitForNetworkUISyncAndSetCode(code);
 
                 // Move to Lobby or InGame, depending on your flow
                 if (uiStateManager != null)
@@ -68,6 +71,30 @@ public class NetworkManagerUI : MonoBehaviour
         finally
         {
             SetInteractable(true);
+        }
+    }
+
+    // ADDED: Wait for NetworkUISync to be ready and set join code
+    private async Task WaitForNetworkUISyncAndSetCode(string code)
+    {
+        // Wait up to 5 seconds for NetworkUISync to spawn
+        float timeout = 5f;
+        float elapsed = 0f;
+
+        while (NetworkUISync.Instance == null && elapsed < timeout)
+        {
+            await Task.Delay(100);
+            elapsed += 0.1f;
+        }
+
+        if (NetworkUISync.Instance != null)
+        {
+            NetworkUISync.Instance.ServerSetJoinCode(code);
+            Debug.Log($"[NetworkManagerUI] Set join code on NetworkUISync: {code}");
+        }
+        else
+        {
+            Debug.LogWarning("[NetworkManagerUI] NetworkUISync not found after timeout. Join code won't sync to clients.");
         }
     }
 
@@ -121,7 +148,6 @@ public class NetworkManagerUI : MonoBehaviour
         }
     }
 
-
     private void SetJoinCodeText(string code)
     {
         if (joinCodeText != null)
@@ -136,6 +162,4 @@ public class NetworkManagerUI : MonoBehaviour
         if (joinButton != null) joinButton.interactable = interactable;
         if (joinCodeInput != null) joinCodeInput.interactable = interactable;
     }
-
-
 }

@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Netcode;
 using System;
 using DeliverHere.GamePlay;
+using DeliverHere.NetworkScripts;
 
 [DisallowMultipleComponent]
 public class GameTimer : MonoBehaviour
@@ -11,7 +12,7 @@ public class GameTimer : MonoBehaviour
     [SerializeField] private float durationSeconds = 180f;
 
     [Tooltip("Automatically start the first timer if no day has started yet.")]
-    [SerializeField] private bool autoStartFirstDay = false; // CHANGED: Set to false by default
+    [SerializeField] private bool autoStartFirstDay = false;
 
     [Tooltip("If true, immediately advance to the next day on success without requiring a button press.")]
     [SerializeField] private bool autoAdvanceOnSuccess = false;
@@ -19,6 +20,9 @@ public class GameTimer : MonoBehaviour
     [Header("UI")]
     [SerializeField] private GameUIController uiController;
     [SerializeField] private bool autoFindUIController = true;
+
+    [Header("Debug")]
+    [SerializeField] private bool enableDebugLogs = false;
 
     // Runtime state
     private float remainingTime;
@@ -30,6 +34,7 @@ public class GameTimer : MonoBehaviour
     private MoneyTargetManager money;
     private GameManager gm;
     private NetworkGameState netState;
+    private NetworkUISync _uiSync;
 
     // Public read-only
     public float RemainingTime => Mathf.Max(0f, remainingTime);
@@ -65,7 +70,6 @@ public class GameTimer : MonoBehaviour
         if (totalTime <= 0f)
             totalTime = Mathf.Max(1f, durationSeconds);
 
-        // CHANGED: Only auto-start if explicitly enabled
         if (autoStartFirstDay && money != null && money.CurrentDay <= 0 && IsServerOrStandalone)
         {
             money.AdvanceDay();
@@ -100,6 +104,9 @@ public class GameTimer : MonoBehaviour
 
         if (netState == null)
             netState = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
+        
+        if (_uiSync == null)
+            _uiSync = NetworkUISync.Instance ?? FindFirstObjectByType<NetworkUISync>();
     }
 
     private void HandleDayAdvanced(int newDayIndex)
@@ -118,7 +125,10 @@ public class GameTimer : MonoBehaviour
         running = true;
 
         uiController?.SetTimerVisible(true);
-        PushTimerUI(); // Ensure text shows start value immediately
+        PushTimerUI();
+
+        if (enableDebugLogs)
+            Debug.Log($"[GameTimer] Timer started: {totalTime}s");
     }
 
     private void Update()
@@ -140,13 +150,17 @@ public class GameTimer : MonoBehaviour
         }
         else
         {
-            float t = Mathf.Clamp01(netState.TimerProgress);
-
-            // Compute remaining seconds from normalized progress (0..1, where 1 == time over)
-            // remaining = (1 - t) * totalTime
-            remainingTime = Mathf.Clamp((1f - t) * Mathf.Max(1f, totalTime), 0f, Mathf.Max(1f, totalTime));
-
-            PushTimerUI();
+            // CHANGED: Clients get timer from NetworkGameState's replicated progress
+            if (netState != null)
+            {
+                float t = Mathf.Clamp01(netState.TimerProgress);
+                remainingTime = Mathf.Clamp((1f - t) * totalTime, 0f, totalTime);
+                PushTimerUI();
+            }
+            else if (enableDebugLogs && Time.frameCount % 60 == 0)
+            {
+                Debug.LogWarning("[GameTimer] Client: NetworkGameState not found, timer won't update");
+            }
         }
     }
 
@@ -154,14 +168,11 @@ public class GameTimer : MonoBehaviour
     {
         if (uiController == null) return;
         uiController.SetTimerSeconds(remainingTime);
-    }
-
-    private static string FormatTime(float seconds)
-    {
-        if (seconds < 0f) seconds = 0f;
-        int mins = Mathf.FloorToInt(seconds / 60f);
-        int secs = Mathf.FloorToInt(seconds % 60f);
-        return $"{mins:00}:{secs:00}";
+        
+        if (IsServerOrStandalone && _uiSync != null)
+        {
+            _uiSync.ServerSetTimer(remainingTime);
+        }
     }
 
     private void OnTimeExpired()
@@ -170,7 +181,6 @@ public class GameTimer : MonoBehaviour
 
         OnDayTimerAboutToExpire?.Invoke();
 
-        // NEW: Check if all zones met their individual quotas
         bool success = false;
         var zoneManager = FindFirstObjectByType<DailyDeliveryZoneManager>();
         
@@ -180,7 +190,6 @@ public class GameTimer : MonoBehaviour
         }
         else if (money != null)
         {
-            // Fallback to global quota check
             success = money.CompleteDayAndEvaluate();
         }
 
@@ -189,17 +198,12 @@ public class GameTimer : MonoBehaviour
 
         OnDayEndedEvaluated?.Invoke(success);
 
-        if (!success)
+        if (enableDebugLogs)
+            Debug.Log($"[GameTimer] Time expired. Success: {success}");
+
+        if (success && autoAdvanceOnSuccess)
         {
-            Debug.Log("[GameTimer] Time up. Not all zone quotas were met.");
-        }
-        else
-        {
-            Debug.Log("[GameTimer] Time up. All zone quotas met!");
-            if (autoAdvanceOnSuccess)
-            {
-                ConfirmStartNextDay();
-            }
+            ConfirmStartNextDay();
         }
     }
 
@@ -223,13 +227,11 @@ public class GameTimer : MonoBehaviour
             Debug.LogWarning("[GameTimer] ConfirmStartNextDay called but MoneyTargetManager not found.");
         }
 
-        // Ensure next round starts
         StartNewTimer();
     }
 
     public void StartTimerNowIfNeeded()
     {
-        // Server/standalone only; clients render from networked progress
         if (!IsServerOrStandalone) return;
         if (running || awaitingNextDay) return;
         StartNewTimer();

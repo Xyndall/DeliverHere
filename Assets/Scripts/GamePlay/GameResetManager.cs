@@ -82,11 +82,13 @@ namespace DeliverHere.GamePlay
         /// </summary>
         public void PerformFullReset()
         {
-            if (!NetworkManager.Singleton.IsServer)
+            if (!IsServer)
             {
                 Debug.LogWarning("[GameResetManager] PerformFullReset can only be called on server.");
                 return;
             }
+
+            Debug.Log("[GameResetManager] ===== PERFORMING FULL GAME RESET =====");
 
             if (enableLogs)
                 Debug.Log("[GameResetManager] Starting full game reset...");
@@ -243,9 +245,27 @@ namespace DeliverHere.GamePlay
             // Wait for state change to propagate
             yield return new WaitForSeconds(0.5f);
 
-            // Step 10: Force re-enable player inputs
+            // Step 10: Force zone resync on all clients
             if (enableLogs)
-                Debug.Log("[GameResetManager] Step 10: Re-enabling player inputs...");
+                Debug.Log("[GameResetManager] Step 10: Forcing zone resync on all clients...");
+
+            if (deliveryZoneManager != null)
+            {
+                deliveryZoneManager.ForceClientZoneResyncClientRpc();
+            }
+
+            // Step 11: Force UI state update on all clients
+            if (enableLogs)
+                Debug.Log("[GameResetManager] Step 11: Updating UI state on all clients...");
+
+            if (networkGameState != null)
+            {
+                networkGameState.ServerSetGameState(GameState.Lobby, paused: false);
+            }
+
+            // Step 12: Force re-enable player inputs
+            if (enableLogs)
+                Debug.Log("[GameResetManager] Step 12: Re-enabling player inputs...");
 
             var allPlayerInputs = FindObjectsByType<PlayerInputController>(FindObjectsSortMode.None);
             foreach (var input in allPlayerInputs)
@@ -261,7 +281,7 @@ namespace DeliverHere.GamePlay
             yield return null;
 
             if (enableLogs)
-                Debug.Log("[GameResetManager] Full reset complete! Ready to start new game.");
+                Debug.Log("[GameResetManager] ===== FULL RESET COMPLETE =====");
         }
 
         /// <summary>

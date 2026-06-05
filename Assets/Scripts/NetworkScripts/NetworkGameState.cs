@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
+using DeliverHere.NetworkScripts;
 
 public enum GameState
 {
@@ -32,6 +33,8 @@ public class NetworkGameState : NetworkBehaviour
 
     [Header("Debug")]
     [SerializeField] private bool enableDebugLogs = true;
+
+    private NetworkUISync _uiSync;
 
     public Transform DefaultSpawnPoint => defaultSpawnPoint;
 
@@ -209,6 +212,14 @@ public class NetworkGameState : NetworkBehaviour
             if (moneyTargetManager == null && IsServer)
                 Debug.LogWarning("[NetworkGameState] MoneyTargetManager not found!");
         }
+        
+        // ADDED: Get UI sync
+        if (_uiSync == null)
+        {
+            _uiSync = NetworkUISync.Instance ?? FindFirstObjectByType<NetworkUISync>();
+            if (_uiSync != null)
+                DebugLog("Found NetworkUISync");
+        }
     }
 
     public override void OnNetworkDespawn()
@@ -257,7 +268,12 @@ public class NetworkGameState : NetworkBehaviour
     {
         if (uiController == null) return;
         uiController.SetBankedMoney(banked);
-        // REMOVED: SetDailyEarnings - now handled by delivery zone
+        
+        // ADDED: Sync to network
+        if (IsServer && _uiSync != null)
+        {
+            _uiSync.ServerSetBankedMoney(banked);
+        }
     }
 
     // REMOVED: OnTargetChangedUi method - no longer needed

@@ -425,6 +425,26 @@ namespace DeliverHere.GamePlay
             }
 
             OnZonesSelectedForDay?.Invoke(_activeZonesThisDay);
+
+            // ADDED: Force UI refresh on all clients
+            RefreshDeliveryZoneUIClientRpc();
+        }
+
+        /// <summary>
+        /// Forces clients to refresh delivery zone UI.
+        /// </summary>
+        [Rpc(SendTo.ClientsAndHost)]
+        public void RefreshDeliveryZoneUIClientRpc()
+        {
+            // Trigger UI update on all clients
+            var deliveryZoneUI = FindFirstObjectByType<DeliveryZoneUI>();
+            if (deliveryZoneUI != null)
+            {
+                deliveryZoneUI.ForceUpdate();
+                
+                if (enableClientLogs || enableServerLogs)
+                    Debug.Log("[DailyDeliveryZoneManager] Refreshed delivery zone UI");
+            }
         }
 
         private int CalculateTargetZoneCount(int dayIndex)
@@ -848,6 +868,31 @@ namespace DeliverHere.GamePlay
             
             if (enableServerLogs)
                 Debug.Log("[DailyDeliveryZoneManager] Reset complete, ready for new game setup.");
+        }
+
+        /// <summary>
+        /// Forces clients to re-discover and sync zones after a game reset.
+        /// Call this after returning to lobby.
+        /// </summary>
+        [Rpc(SendTo.ClientsAndHost)]
+        public void ForceClientZoneResyncClientRpc()
+        {
+            if (enableClientLogs || enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Force zone resync called (IsServer={IsServer})");
+
+            // Re-discover zones in case any were added/removed
+            if (autoDiscoverZones)
+            {
+                DiscoverAllZones();
+            }
+
+            // Sync from network state
+            _currentDay = nvCurrentDay.Value;
+            _currentRadius = Mathf.Min(initialRadius + (radiusIncreasePerDay * (_currentDay - 1)), maxRadius);
+            SyncActiveZonesFromNetwork();
+
+            if (enableClientLogs || enableServerLogs)
+                Debug.Log($"[DailyDeliveryZoneManager] Resync complete: Day {_currentDay}, {_activeZonesThisDay.Count} active zones");
         }
     }
 }

@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.UI;
 using Unity.Netcode;
+using Unity.Services;
+using System.Collections;
 
 namespace DeliverHere.UI
 {
@@ -74,6 +76,28 @@ namespace DeliverHere.UI
             }
             
             UpdateButtonState();
+            
+            // ADDED: Force a delayed update to ensure proper synchronization on clients
+            if (!IsServer)
+            {
+                StartCoroutine(DelayedClientButtonUpdate());
+            }
+        }
+
+        private IEnumerator DelayedClientButtonUpdate()
+        {
+            // Wait for network variables to fully synchronize
+            yield return new WaitForSeconds(0.5f);
+            
+            if (enableLogs)
+                Debug.Log($"[UIStartGameButton] Client delayed update - State: {NetworkGameState.Instance?.LocalGameState}, Activated: {_hasBeenActivated.Value}");
+            
+            UpdateButtonState();
+            
+            if (NetworkGameState.Instance != null)
+            {
+                OnGameStateChanged(NetworkGameState.Instance.LocalGameState);
+            }
         }
 
         public override void OnNetworkDespawn()

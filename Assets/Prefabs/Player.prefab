@@ -959,11 +959,12 @@ MonoBehaviour:
   cameraTransform: {fileID: 0}
   interactLayer:
     serializedVersion: 2
-    m_Bits: 4096
+    m_Bits: 4128
   range: 3
   triggerInteraction: 1
   drawGizmos: 1
   showUiPrompt: 1
+  controlsConfig: {fileID: 11400000, guid: c51852afef09727499aaa28c53cce0a2, type: 2}
 --- !u!114 &2663285105819128262
 MonoBehaviour:
   m_ObjectHideFlags: 0

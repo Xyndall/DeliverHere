@@ -47,6 +47,8 @@ public class UIStateManager : MonoBehaviour
 
     private void ApplyState(GameState state, bool paused)
     {
+        Debug.Log($"[UIStateManager] Applying state: {state}, paused: {paused}");
+        
         // Base visibility by state
         foreach (var group in uiGroups)
         {
@@ -58,13 +60,16 @@ public class UIStateManager : MonoBehaviour
             }
         }
 
-        // Keep gameplay HUD visible during InGame and Paused states
-        bool showGameplayHUD = (state == GameState.InGame || state == GameState.Paused);
+        // Keep gameplay HUD visible during InGame and ReadyToStart states (CHANGED: Added ReadyToStart)
+        bool showGameplayHUD = (state == GameState.InGame || state == GameState.Paused || state == GameState.ReadyToStart);
 
         foreach (var go in gameplayHUD)
         {
             if (go != null)
+            {
                 go.SetActive(showGameplayHUD);
+                Debug.Log($"[UIStateManager] Set gameplay HUD '{go.name}' active: {showGameplayHUD}");
+            }
         }
 
         // Apply pause menu visibility based on current pause state
