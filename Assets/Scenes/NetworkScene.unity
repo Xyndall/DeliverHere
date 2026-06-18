@@ -119,6 +119,72 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &647561
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 647562}
+  - component: {fileID: 647564}
+  - component: {fileID: 647563}
+  m_Layer: 0
+  m_Name: packageSafeArea
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &647562
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 647561}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 902411858}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &647563
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 647561}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 46343bc2ac27908489f1c47ae1e26914, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Items.PackageSafeZone
+--- !u!65 &647564
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 647561}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 12.156681, y: 6.418086, z: 9.046694}
+  m_Center: {x: 0.34401345, y: 3.7298222, z: 1.1045284}
 --- !u!1 &4139066
 GameObject:
   m_ObjectHideFlags: 0
@@ -2519,6 +2585,128 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!1 &190273918
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 190273919}
+  - component: {fileID: 190273922}
+  - component: {fileID: 190273921}
+  - component: {fileID: 190273920}
+  m_Layer: 0
+  m_Name: Conveyor (1)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &190273919
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 190273918}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.5000008, y: 0.49999925, z: 0.49999928, w: 0.5000007}
+  m_LocalPosition: {x: -7.5905, y: 0.29652, z: 9.78}
+  m_LocalScale: {x: 122.09409, y: 336.2151, z: 110.26946}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1567255825}
+  m_LocalEulerAnglesHint: {x: -90, y: 0, z: 90}
+--- !u!114 &190273920
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 190273918}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86295d59cb50c654192c6a39f19631d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ConveyorBelt
+  ShowTopMostFoldoutHeaderGroup: 1
+  beltSpeed: 3
+  beltDirection: {x: 1, y: 0, z: 0}
+  movementMethod: 0
+  velocityStrength: 0.8
+  maintainHeight: 1
+  targetHeight: 0.06
+  heightCorrectionStrength: 4.5
+  useBeltSurfaceAsReference: 1
+  applyPerpendicularFriction: 0
+  perpendicularDamping: 0.688
+  preventRotation: 0
+  rotationDamping: 0.5
+  alignToSurface: 1
+  alignmentSpeed: 10
+  beltPhysicsMaterial: {fileID: 13400000, guid: 97391756ecd01834a8934ce9032b7894, type: 2}
+  detectionMethod: 0
+  affectedLayers:
+    serializedVersion: 2
+    m_Bits: 64
+  requiredTag: 
+  beltTrigger: {fileID: 190273922}
+  beltSurfaceCollider: {fileID: 801219344}
+  beltRenderer: {fileID: 0}
+  uvOffsetPropertyName: _MainTex
+  uvScrollSpeed: 1
+  showDebugGizmos: 1
+  logObjectsOnBelt: 0
+  logCollisionEvents: 0
+  showHeightDebug: 0
+--- !u!114 &190273921
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 190273918}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 785283733
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!65 &190273922
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 190273918}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.04000538, y: 0.007491754, z: 0.01021945}
+  m_Center: {x: 0.01659669, y: -0.0000377751, z: -0.00039609527}
 --- !u!1 &196464791
 GameObject:
   m_ObjectHideFlags: 0
@@ -5207,6 +5395,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      propertyPath: m_Name
+      value: Conveyor
+      objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       propertyPath: m_Name
       value: map
@@ -5214,6 +5406,12 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      insertIndex: 2
+      addedObject: {fileID: 190273919}
+    - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      insertIndex: 3
+      addedObject: {fileID: 1404314515}
     - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       insertIndex: -1
       addedObject: {fileID: 600332371}
@@ -5223,7 +5421,19 @@ PrefabInstance:
       addedObject: {fileID: 550200952}
     - targetCorrespondingSourceObject: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       insertIndex: -1
+      addedObject: {fileID: 801219344}
+    - targetCorrespondingSourceObject: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      insertIndex: -1
       addedObject: {fileID: 801219337}
+    - targetCorrespondingSourceObject: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 801219340}
+    - targetCorrespondingSourceObject: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 801219338}
+    - targetCorrespondingSourceObject: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 801219339}
     - targetCorrespondingSourceObject: {fileID: -516098083770646512, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       insertIndex: -1
       addedObject: {fileID: 939155630}
@@ -8661,6 +8871,115 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: -5495902117074765545, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+--- !u!114 &801219338
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 801219333}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 1443157177
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &801219339
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 801219333}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86295d59cb50c654192c6a39f19631d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ConveyorBelt
+  ShowTopMostFoldoutHeaderGroup: 1
+  beltSpeed: 3
+  beltDirection: {x: 1, y: 0, z: 0}
+  movementMethod: 0
+  velocityStrength: 0.8
+  maintainHeight: 1
+  targetHeight: 0.06
+  heightCorrectionStrength: 0.1
+  useBeltSurfaceAsReference: 1
+  applyPerpendicularFriction: 0
+  perpendicularDamping: 0.688
+  preventRotation: 0
+  rotationDamping: 0.5
+  alignToSurface: 1
+  alignmentSpeed: 10
+  beltPhysicsMaterial: {fileID: 13400000, guid: 97391756ecd01834a8934ce9032b7894, type: 2}
+  detectionMethod: 0
+  affectedLayers:
+    serializedVersion: 2
+    m_Bits: 64
+  requiredTag: 
+  beltTrigger: {fileID: 801219340}
+  beltSurfaceCollider: {fileID: 801219344}
+  beltRenderer: {fileID: 0}
+  uvOffsetPropertyName: _MainTex
+  uvScrollSpeed: 1
+  showDebugGizmos: 1
+  logObjectsOnBelt: 0
+  logCollisionEvents: 0
+  showHeightDebug: 0
+--- !u!65 &801219340
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 801219333}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.030580614, y: 0.0032110324, z: 0.010280547}
+  m_Center: {x: 0.011884226, y: 0.002102587, z: -0.0003655493}
+--- !u!65 &801219344
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 801219333}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.035829127, y: 0.0074917544, z: 0.008347722}
+  m_Center: {x: 0.014508557, y: -0.00003777506, z: -0.0013319558}
 --- !u!1 &830140219 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: -9041267756353341082, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
@@ -9453,6 +9772,40 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 901059855}
   m_CullTransparentMesh: 1
+--- !u!1 &902411857
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 902411858}
+  m_Layer: 0
+  m_Name: GameObjects
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &902411858
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 902411857}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1920933965}
+  - {fileID: 1160823497}
+  - {fileID: 647562}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &910610803 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 2596957926113402938, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
@@ -11220,6 +11573,91 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: -5859505246589164098, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+--- !u!1 &1160823494
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1160823497}
+  - component: {fileID: 1160823495}
+  - component: {fileID: 1160823496}
+  m_Layer: 0
+  m_Name: packageSpawner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1160823495
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1160823494}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 1829464053
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &1160823496
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1160823494}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 02f46feacb0394a4796a63c38b58d147, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ContinuousPackageSpawner
+  ShowTopMostFoldoutHeaderGroup: 1
+  packagePrefab: {fileID: -122704528989098008, guid: 41173a9fe6a77ce46acc137dfe4daa63, type: 3}
+  spawnPoint: {fileID: 1160823497}
+  spawnInterval: 2
+  spawnIntervalVariation: 0
+  spawnForce: 0
+  spawnForceVariation: 0
+  autoStart: 1
+  maxSpawnCount: 0
+  spawnParent: {fileID: 1160823497}
+  useNetworkParenting: 1
+  spawnPositionVariation: {x: 0, y: 0, z: 0}
+  spawnRotationVariation: {x: 0, y: 0, z: 0}
+  logSpawns: 0
+  showDebugGizmos: 1
+--- !u!4 &1160823497
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1160823494}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -4.16, y: 2.29, z: 5.14}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 902411858}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1160958615
 GameObject:
   m_ObjectHideFlags: 0
@@ -13341,6 +13779,128 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1394926584}
   m_CullTransparentMesh: 1
+--- !u!1 &1404314514
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1404314515}
+  - component: {fileID: 1404314518}
+  - component: {fileID: 1404314517}
+  - component: {fileID: 1404314516}
+  m_Layer: 0
+  m_Name: Conveyor (2)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1404314515
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1404314514}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.49999797, y: 0.5000021, z: 0.50000226, w: -0.49999774}
+  m_LocalPosition: {x: 1.61, y: 0.29652, z: 4.06}
+  m_LocalScale: {x: 122.09409, y: 336.2151, z: 110.26946}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1567255825}
+  m_LocalEulerAnglesHint: {x: -90, y: 0, z: 269.999}
+--- !u!114 &1404314516
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1404314514}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86295d59cb50c654192c6a39f19631d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ConveyorBelt
+  ShowTopMostFoldoutHeaderGroup: 1
+  beltSpeed: 3
+  beltDirection: {x: 1, y: 0, z: 0}
+  movementMethod: 0
+  velocityStrength: 0.8
+  maintainHeight: 1
+  targetHeight: 0.06
+  heightCorrectionStrength: 0.1
+  useBeltSurfaceAsReference: 1
+  applyPerpendicularFriction: 0
+  perpendicularDamping: 0.688
+  preventRotation: 0
+  rotationDamping: 0.5
+  alignToSurface: 1
+  alignmentSpeed: 10
+  beltPhysicsMaterial: {fileID: 13400000, guid: 97391756ecd01834a8934ce9032b7894, type: 2}
+  detectionMethod: 0
+  affectedLayers:
+    serializedVersion: 2
+    m_Bits: 64
+  requiredTag: 
+  beltTrigger: {fileID: 1404314518}
+  beltSurfaceCollider: {fileID: 801219344}
+  beltRenderer: {fileID: 0}
+  uvOffsetPropertyName: _MainTex
+  uvScrollSpeed: 1
+  showDebugGizmos: 1
+  logObjectsOnBelt: 0
+  logCollisionEvents: 0
+  showHeightDebug: 0
+--- !u!114 &1404314517
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1404314514}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 2118072225
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!65 &1404314518
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1404314514}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.035829127, y: 0.006198555, z: 0.010331071}
+  m_Center: {x: 0.014508558, y: 0.0006088208, z: -0.0003402849}
 --- !u!1 &1408856410 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1998131547146259539, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
@@ -16531,6 +17091,109 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1910607824}
   m_CullTransparentMesh: 1
+--- !u!1 &1920933964
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1920933965}
+  - component: {fileID: 1920933968}
+  - component: {fileID: 1920933966}
+  - component: {fileID: 1920933967}
+  m_Layer: 0
+  m_Name: PackageDestroyer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1920933965
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1920933964}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 4.46, y: 1.62, z: 4.55}
+  m_LocalScale: {x: 1.3453, y: 1.9067, z: 3.3429644}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 902411858}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1920933966
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1920933964}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 631652406
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &1920933967
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1920933964}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1bf826f87662852449ecb6c0c8571af3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.PackageDestroyer
+  ShowTopMostFoldoutHeaderGroup: 1
+  destroyLayers:
+    serializedVersion: 2
+    m_Bits: 2112
+  onlyDestroyPackages: 1
+  requiredTag: 
+  destroyVFX: {fileID: 0}
+  destroyAudioSource: {fileID: 0}
+  destroySFX: {fileID: 0}
+  reprocessCooldown: 0.1
+  logDestructions: 0
+--- !u!65 &1920933968
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1920933964}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1.5364054, y: 1, z: 0.3591779}
+  m_Center: {x: 0.26820335, y: 0, z: 0.32041338}
 --- !u!1 &1927730704
 GameObject:
   m_ObjectHideFlags: 0
@@ -19974,3 +20637,4 @@ SceneRoots:
   - {fileID: 493942018}
   - {fileID: 1163649966}
   - {fileID: 1462505869}
+  - {fileID: 902411858}
