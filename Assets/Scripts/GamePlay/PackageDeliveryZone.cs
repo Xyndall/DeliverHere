@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 using DeliverHere.Items;
+using DeliverHere.Audio;
 using TMPro;
 
 namespace DeliverHere.GamePlay
@@ -36,9 +37,12 @@ namespace DeliverHere.GamePlay
 
         [Header("World Text Display")]
         [Tooltip("Optional: World text prefab to spawn and display quota progress.")]
-        [SerializeField] private DeliveryZoneWorldText worldTextPrefab;
         [SerializeField] private bool autoCreateWorldText = true;
         [SerializeField] private Vector3 worldTextOffset = new Vector3(0f, 5f, 0f);
+
+        [Header("Audio")] // NEW: Audio section
+        [Tooltip("Play sound when package enters delivery zone")]
+        [SerializeField] private bool enableZoneEntrySound = true;
 
         private Collider _zoneCollider;
 
@@ -77,7 +81,6 @@ namespace DeliverHere.GamePlay
         public bool IsQuotaMet => _quotaMet.Value;
         public bool IsPrimaryZone => _isPrimaryZone.Value;
 
-        private DeliveryZoneWorldText _worldTextInstance;
 
         private void Awake()
         {
@@ -102,16 +105,11 @@ namespace DeliverHere.GamePlay
             _totalValueInZone.OnValueChanged += OnTotalValueChanged;
             _individualQuota.OnValueChanged += OnQuotaChanged;
             _quotaMet.OnValueChanged += OnQuotaMetChanged;
-            _isPrimaryZone.OnValueChanged += OnPrimaryZoneChanged; // NEW: Subscribe to primary zone changes
+            _isPrimaryZone.OnValueChanged += OnPrimaryZoneChanged;
             
             // Push initial value to UI immediately on spawn if this is primary
             UpdateGameManagerUI(_totalValueInZone.Value);
 
-            // NEW: Create world text display
-            if (autoCreateWorldText)
-            {
-                CreateOrUpdateWorldText();
-            }
         }
 
         public override void OnNetworkDespawn()
@@ -119,19 +117,11 @@ namespace DeliverHere.GamePlay
             _totalValueInZone.OnValueChanged -= OnTotalValueChanged;
             _individualQuota.OnValueChanged -= OnQuotaChanged;
             _quotaMet.OnValueChanged -= OnQuotaMetChanged;
-            _isPrimaryZone.OnValueChanged -= OnPrimaryZoneChanged; // NEW: Unsubscribe
-            
-            // Cleanup world text
-            if (_worldTextInstance != null)
-            {
-                Destroy(_worldTextInstance.gameObject);
-                _worldTextInstance = null;
-            }
+            _isPrimaryZone.OnValueChanged -= OnPrimaryZoneChanged;
             
             base.OnNetworkDespawn();
         }
 
-        // NEW: Callback when primary zone status changes
         private void OnPrimaryZoneChanged(bool previous, bool current)
         {
             // When we become primary, push current value
@@ -155,11 +145,6 @@ namespace DeliverHere.GamePlay
             // Update the UI on every client if this is the primary zone
             UpdateGameManagerUI(current);
             
-            // Update world text
-            if (_worldTextInstance != null)
-            {
-                _worldTextInstance.ForceUpdate();
-            }
         }
 
         private void OnQuotaChanged(int previous, int current)
@@ -167,11 +152,6 @@ namespace DeliverHere.GamePlay
             // Update UI when quota changes
             UpdateGameManagerUI(_totalValueInZone.Value);
             
-            // Update world text
-            if (_worldTextInstance != null)
-            {
-                _worldTextInstance.ForceUpdate();
-            }
         }
 
         private void OnQuotaMetChanged(bool previous, bool current)
@@ -181,12 +161,7 @@ namespace DeliverHere.GamePlay
             {
                 Debug.Log($"[PackageDeliveryZone] Quota met! ${_totalValueInZone.Value} / ${_individualQuota.Value}");
             }
-            
-            // Update world text
-            if (_worldTextInstance != null)
-            {
-                _worldTextInstance.ForceUpdate();
-            }
+
         }
 
         private void UpdateGameManagerUI(int totalValue)
@@ -242,40 +217,6 @@ namespace DeliverHere.GamePlay
             }
         }
 
-        private void CreateOrUpdateWorldText()
-        {
-            // Only create on clients (server doesn't need to see it, but can if desired)
-            // You can remove this check if you want server to see it too
-            
-            if (_worldTextInstance == null)
-            {
-                if (worldTextPrefab != null)
-                {
-                    _worldTextInstance = Instantiate(worldTextPrefab, transform);
-                    _worldTextInstance.transform.localPosition = worldTextOffset;
-                }
-                else if (autoCreateWorldText)
-                {
-                    // Create a simple TextMeshPro if no prefab assigned
-                    var textObj = new GameObject("ZoneQuotaText");
-                    textObj.transform.SetParent(transform);
-                    textObj.transform.localPosition = worldTextOffset;
-                    
-                    var tmp = textObj.AddComponent<TextMeshPro>();
-                    tmp.fontSize = 4;
-                    tmp.alignment = TextAlignmentOptions.Center;
-                    tmp.color = Color.white;
-                    
-                    _worldTextInstance = textObj.AddComponent<DeliveryZoneWorldText>();
-                }
-            }
-
-            // Update the world text reference to this zone
-            if (_worldTextInstance != null)
-            {
-                _worldTextInstance.ForceUpdate();
-            }
-        }
 
         private void FindTimerAndSubscribe()
         {
@@ -382,6 +323,12 @@ namespace DeliverHere.GamePlay
             // Add to pending if not already there
             if (_pendingPackages.Add(props))
             {
+                // NEW: Play zone entry sound
+                if (enableZoneEntrySound && AudioManager.Instance != null)
+                {
+                    AudioManager.Instance.PlaySFXByName("packageEnterZone", props.transform.position);
+                }
+
                 // Recalculate total value
                 RecalculateZoneValue();
             }
@@ -401,10 +348,7 @@ namespace DeliverHere.GamePlay
             if (_pendingPackages.Remove(props))
             {
                 // Recalculate total value
-                if (IsProcessingAuthority())
-                {
-                    RecalculateZoneValue();
-                }
+                RecalculateZoneValue();
             }
         }
 
@@ -412,35 +356,26 @@ namespace DeliverHere.GamePlay
         {
             if (!IsProcessingAuthority()) return;
 
-            int totalValue = 0;
-            var toRemove = new List<PackageProperties>();
+            int total = 0;
+            _pendingPackages.RemoveWhere(p => p == null || IsAlreadyProcessed(p));
 
             foreach (var p in _pendingPackages)
             {
-                if (p == null || IsAlreadyProcessed(p))
+                if (p != null && !IsAlreadyProcessed(p))
                 {
-                    toRemove.Add(p);
-                    continue;
+                    total += p.Value;
                 }
-
-                totalValue += Mathf.Max(0, p.GetDeliveryReward());
             }
 
-            // Clean up nulls
-            foreach (var p in toRemove)
-            {
-                _pendingPackages.Remove(p);
-            }
-
-            _totalValueInZone.Value = totalValue;
-
+            _totalValueInZone.Value = total;
+            
             // Check if quota is met
             if (_individualQuota.Value > 0)
             {
-                bool newQuotaMet = totalValue >= _individualQuota.Value;
-                if (_quotaMet.Value != newQuotaMet)
+                bool quotaMet = total >= _individualQuota.Value;
+                if (quotaMet != _quotaMet.Value)
                 {
-                    _quotaMet.Value = newQuotaMet;
+                    _quotaMet.Value = quotaMet;
                 }
             }
         }

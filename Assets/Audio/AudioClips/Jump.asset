@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 85e75afa8f7faa24aa4dc1c37434ebfe, type: 3}
+  m_Name: Jump
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Audio.AudioClipData
+  clip: {fileID: 8300000, guid: 9ecc6f031f342d24b9ea0531c421af34, type: 3}
+  volume: 1
+  pitch: 1
+  spatialBlend: 0
+  randomizePitch: 1
+  pitchVariation: 0.1
+  mixerGroup: {fileID: 3674870142515246219, guid: e42946e8c3a454a49b0bba71db2426f9, type: 2}
+  loop: 0
+  cooldown: 0.1

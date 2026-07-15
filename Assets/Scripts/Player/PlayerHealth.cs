@@ -62,6 +62,10 @@ public class PlayerHealth : MonoBehaviour, IPlayerDamageable
 
         currentHealth = Mathf.Max(0, currentHealth - amount);
         Debug.Log($"{gameObject.name} took {amount} damage at {hitPoint}, current health: {currentHealth}");
+
+        // Play hurt sound
+        PlayHurtSound(hitPoint);
+
         if (currentHealth <= 0)
         {
             Die();
@@ -110,4 +114,12 @@ public class PlayerHealth : MonoBehaviour, IPlayerDamageable
         }
     }
 
+    private void PlayHurtSound(Vector3 hitPoint)
+    {
+        if (DeliverHere.Audio.AudioManager.Instance != null)
+        {
+            // Play locally at hit point for spatial audio
+            DeliverHere.Audio.AudioManager.Instance.PlaySFXByName("hurt", hitPoint);
+        }
+    }
 }

@@ -46,6 +46,12 @@ public class PlayerMovement : NetworkBehaviour
     [Tooltip("Centralized input controller on this player.")]
     [SerializeField] private PlayerInputController inputController;
 
+    [Header("Footstep Audio")]
+    [Tooltip("Minimum time between footstep sounds (seconds).")]
+    [SerializeField] private float footstepInterval = 0.4f;
+    [Tooltip("Minimum speed required to play footstep sounds (m/s).")]
+    [SerializeField] private float minFootstepSpeed = 1f;
+
     public NetworkVariable<float> Stamina { get; private set; }
         = new NetworkVariable<float>(100f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
@@ -57,6 +63,10 @@ public class PlayerMovement : NetworkBehaviour
     private CharacterController _controller;
     private Vector3 _verticalVel;
     private float _regenCooldown;
+
+    // Footstep tracking
+    private float _nextFootstepTime;
+    private bool _wasGroundedLastFrame;
 
     private void Awake()
     {
@@ -118,6 +128,14 @@ public class PlayerMovement : NetworkBehaviour
         }
 
         bool grounded = _controller.isGrounded;
+        
+        // Landing detection and sound
+        if (grounded && !_wasGroundedLastFrame && _verticalVel.y < -2f)
+        {
+            PlayLandSound();
+        }
+        _wasGroundedLastFrame = grounded;
+
         if (grounded && _verticalVel.y < 0f)
             _verticalVel.y = -2f;
 
@@ -209,6 +227,9 @@ public class PlayerMovement : NetworkBehaviour
                     Stamina.Value = Mathf.Max(0f, Stamina.Value - jumpCost);
                     _regenCooldown = regenDelay;
                 }
+
+                // Play jump sound
+                PlayJumpSound();
             }
         }
 
@@ -218,6 +239,20 @@ public class PlayerMovement : NetworkBehaviour
         motion.y = _verticalVel.y;
 
         _controller.Move(motion * dt);
+
+        // Play footstep sounds while moving
+        if (grounded && hasMove)
+        {
+            float currentSpeed = horizontal.magnitude;
+            if (currentSpeed >= minFootstepSpeed && Time.time >= _nextFootstepTime)
+            {
+                PlayFootstepSound();
+                
+                // Adjust interval based on speed (faster = more frequent steps)
+                float speedRatio = currentSpeed / resolvedRunSpeed;
+                _nextFootstepTime = Time.time + (footstepInterval / Mathf.Max(0.5f, speedRatio));
+            }
+        }
 
         if (wantsSprint)
         {
@@ -231,6 +266,33 @@ public class PlayerMovement : NetworkBehaviour
         }
 
         IsSprinting = wantsSprint;
+    }
+
+    private void PlayFootstepSound()
+    {
+        if (DeliverHere.Audio.AudioManager.Instance != null)
+        {
+            // Play locally - footsteps don't need to be networked (too frequent)
+            DeliverHere.Audio.AudioManager.Instance.PlaySFXByName("footstep", transform.position);
+        }
+    }
+
+    private void PlayJumpSound()
+    {
+        if (DeliverHere.Audio.AudioManager.Instance != null)
+        {
+            // Play locally - jump is a player-specific action
+            DeliverHere.Audio.AudioManager.Instance.PlaySFXByName("jump", transform.position);
+        }
+    }
+
+    private void PlayLandSound()
+    {
+        if (DeliverHere.Audio.AudioManager.Instance != null)
+        {
+            // Play locally - landing is a player-specific action
+            DeliverHere.Audio.AudioManager.Instance.PlaySFXByName("land", transform.position);
+        }
     }
 
 #if UNITY_EDITOR
@@ -248,6 +310,9 @@ public class PlayerMovement : NetworkBehaviour
 
         speedMultiplierAtMaxPenalty = Mathf.Clamp(speedMultiplierAtMaxPenalty, 0.2f, 1f);
         rotateLerpMultiplierAtMaxPenalty = Mathf.Clamp(rotateLerpMultiplierAtMaxPenalty, 0.1f, 1f);
+
+        footstepInterval = Mathf.Max(0.1f, footstepInterval);
+        minFootstepSpeed = Mathf.Max(0f, minFootstepSpeed);
     }
 #endif
 }

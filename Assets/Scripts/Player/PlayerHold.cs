@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
 using System;
+using DeliverHere.Audio;
 
 [DisallowMultipleComponent]
 public class PlayerHold : NetworkBehaviour
@@ -145,6 +146,10 @@ public class PlayerHold : NetworkBehaviour
 
     [Header("Input")]
     [SerializeField] private PlayerInputController inputController;
+
+    [Header("Audio")]
+    [Tooltip("Play audio for pickup and drop events")]
+    [SerializeField] private bool enableAudio = true;
 
     private readonly NetworkVariable<NetworkObjectReference> _heldRef =
         new NetworkVariable<NetworkObjectReference>(default,
@@ -856,6 +861,12 @@ public class PlayerHold : NetworkBehaviour
         _holdingState.ServerAddHolder();
 
         CreateOrConfigureJoint();
+
+        // Play pickup sound
+        if (enableAudio && AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlaySFXByName("packagePickup", rb.position);
+        }
     }
 
     [ServerRpc]
@@ -932,6 +943,12 @@ public class PlayerHold : NetworkBehaviour
         _restoreCaptured = false;
         _exceededSeparationTime = 0f;
         _sag01 = 0f;
+
+        // Play drop sound
+        if (enableAudio && AudioManager.Instance != null)  // ADD THIS
+        {
+            AudioManager.Instance.PlaySFXByName("packageDrop", droppedBody.transform.position);
+        }
 
         Dropped?.Invoke(droppedBody);
     }

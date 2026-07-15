@@ -23,16 +23,6 @@ namespace DeliverHere.GamePlay
         [Tooltip("Optional required tag. Leave empty to destroy all matching objects.")]
         [SerializeField] private string requiredTag = "";
 
-        [Header("Feedback")]
-        [Tooltip("Optional particle effect to spawn when destroying an object.")]
-        [SerializeField] private ParticleSystem destroyVFX;
-
-        [Tooltip("Optional audio source for destruction sound.")]
-        [SerializeField] private AudioSource destroyAudioSource;
-
-        [Tooltip("Destruction sound clip.")]
-        [SerializeField] private AudioClip destroySFX;
-
         [Header("Cooldown")]
         [Tooltip("Minimum time between processing the same object (prevents double-destruction).")]
         [SerializeField, Min(0f)] private float reprocessCooldown = 0.1f;
@@ -123,9 +113,7 @@ namespace DeliverHere.GamePlay
                 Debug.Log($"[PackageDestroyer] Destroying object: {target.name} at position {target.transform.position}");
             }
 
-            // Spawn VFX/SFX at object position before destroying
-            Vector3 destroyPosition = target.transform.position;
-            PlayFeedbackClientRpc(destroyPosition);
+
 
             // Destroy the object (despawn if networked, otherwise destroy)
             if (netObj != null && netObj.IsSpawned)
@@ -138,26 +126,6 @@ namespace DeliverHere.GamePlay
             }
         }
 
-        [ClientRpc]
-        private void PlayFeedbackClientRpc(Vector3 position)
-        {
-            // Play VFX
-            if (destroyVFX != null)
-            {
-                // Instantiate temporary particle effect
-                ParticleSystem vfx = Instantiate(destroyVFX, position, Quaternion.identity);
-                vfx.Play();
-                
-                // Destroy after playing
-                Destroy(vfx.gameObject, vfx.main.duration + vfx.main.startLifetime.constantMax);
-            }
-
-            // Play SFX
-            if (destroyAudioSource != null && destroySFX != null)
-            {
-                AudioSource.PlayClipAtPoint(destroySFX, position);
-            }
-        }
 
         // Cleanup old entries from processed dictionary
         private void Update()

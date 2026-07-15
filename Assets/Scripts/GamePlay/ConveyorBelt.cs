@@ -267,13 +267,71 @@ namespace DeliverHere.GamePlay
             // Recalculate surface height each frame (in case belt moves)
             CalculateBeltSurfaceHeight();
 
+            // CHANGED: Create a temporary list to avoid modifying collection during iteration
+            // This prevents InvalidOperationException when objects are removed mid-iteration
+            var objectsToRemove = new List<Rigidbody>();
+
             // Apply conveyor movement to all objects on belt
             foreach (var rb in _objectsOnBelt)
             {
                 if (rb == null)
+                {
+                    objectsToRemove.Add(rb);
                     continue;
+                }
+
+                // Check if object's layer is still valid (handles runtime layer changes)
+                int currentLayer = rb.gameObject.layer;
+                bool layerStillValid = ((1 << currentLayer) & affectedLayers.value) != 0;
+                
+                if (!layerStillValid)
+                {
+                    // Mark for removal instead of removing immediately
+                    objectsToRemove.Add(rb);
+                    continue;
+                }
 
                 ApplyConveyorMovement(rb);
+            }
+
+            // ADDED: Remove objects after iteration is complete
+            foreach (var rb in objectsToRemove)
+            {
+                RemoveObjectFromBelt(rb);
+            }
+        }
+
+        // ADDED: Helper method to remove object and restore state
+        private void RemoveObjectFromBelt(Rigidbody rb)
+        {
+            if (rb == null) return;
+
+            if (_objectsOnBelt.Remove(rb))
+            {
+                // Restore original physics state
+                if (_originalStates.TryGetValue(rb, out PhysicsState state))
+                {
+                    rb.linearDamping = state.Drag;
+                    rb.angularDamping = state.AngularDrag;
+                    rb.constraints = state.Constraints;
+                    rb.useGravity = true;
+
+                    if (state.Material != null)
+                    {
+                        Collider objCollider = rb.GetComponent<Collider>();
+                        if (objCollider != null)
+                        {
+                            objCollider.material = state.Material;
+                        }
+                    }
+
+                    _originalStates.Remove(rb);
+                }
+
+                if (logObjectsOnBelt)
+                {
+                    Debug.Log($"[ConveyorBelt] ✗ Object REMOVED from belt (layer changed): {rb.name} (Total on belt: {_objectsOnBelt.Count})");
+                }
             }
         }
 

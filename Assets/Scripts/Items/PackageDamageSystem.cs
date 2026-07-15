@@ -1,6 +1,7 @@
-﻿using UnityEngine;
-using DeliverHere.Items;
+﻿using DeliverHere.Items;
+using DeliverHere.Audio;
 using Unity.Netcode;
+using UnityEngine;
 
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Rigidbody))]
@@ -39,11 +40,27 @@ public class PackageDamageSystem : MonoBehaviour
     [Tooltip("Local offset for spawned text relative to the package origin.")]
     [SerializeField] private Vector3 textLocalOffset = new Vector3(0f, 0.25f, 0f);
 
+    [Header("Audio")] // NEW: Audio section
+    [Tooltip("Play collision sound when package impacts")]
+    [SerializeField] private bool enableCollisionSound = true;
+
+    [Tooltip("Minimum impact speed to play collision sound (m/s)")]
+    [SerializeField] private float minCollisionSoundSpeed = 2f;
+
+    [Tooltip("Play damage sound when package loses value")]
+    [SerializeField] private bool enableDamageSound = true;
+
+    [Tooltip("Cooldown between collision sounds (prevents spam)")]
+    [SerializeField] private float collisionSoundCooldown = 0.15f;
+
     private Rigidbody _rb;
     private PackageProperties _props;
 
     // Global cooldown: last time the package took damage (any collider)
     private float _lastPackageDamageTime = -999f;
+    
+    // NEW: Audio cooldown
+    private float _lastCollisionSoundTime = -999f;
 
     private void Awake()
     {
@@ -65,6 +82,9 @@ public class PackageDamageSystem : MonoBehaviour
 
     private void OnCollisionEnter(Collision collision)
     {
+        // NEW: Play collision sound
+        PlayCollisionSound(collision);
+        
         TryApplyDamageFromCollision(collision);
     }
 
@@ -72,6 +92,30 @@ public class PackageDamageSystem : MonoBehaviour
     {
         // Allow damage on sustained scraping/drag collisions but respect cooldown
         TryApplyDamageFromCollision(collision);
+    }
+
+    // NEW: Play collision sound method
+    private void PlayCollisionSound(Collision collision)
+    {
+        if (!enableCollisionSound || AudioManager.Instance == null)
+            return;
+
+        float now = Time.time;
+        if (now - _lastCollisionSoundTime < collisionSoundCooldown)
+            return;
+
+        float impactSpeed = collision.relativeVelocity.magnitude;
+        if (impactSpeed < minCollisionSoundSpeed)
+            return;
+
+        _lastCollisionSoundTime = now;
+        
+        // Play at collision point
+        Vector3 soundPosition = collision.contacts.Length > 0 
+            ? collision.contacts[0].point 
+            : transform.position;
+            
+        AudioManager.Instance.PlaySFXByName("packageCollision", soundPosition);
     }
 
     private void TryApplyDamageFromCollision(Collision collision)
@@ -112,7 +156,7 @@ public class PackageDamageSystem : MonoBehaviour
         if (damage < minDamageAmount)
             return;
 
-        // Prefer package origin with a small upward local offset so it�s visible above geometry
+        // Prefer package origin with a small upward local offset so it's visible above geometry
         Vector3 localOffset = textLocalOffset;
 
         ApplyDamageToValue(damage, localOffset);
@@ -142,6 +186,12 @@ public class PackageDamageSystem : MonoBehaviour
                     {
                         feedbackBroadcaster.ShowDamageClientRpc(damage, localOffset);
                     }
+
+                    // NEW: Play damage sound when value is lost
+                    if (enableDamageSound && AudioManager.Instance != null)
+                    {
+                        AudioManager.Instance.PlaySFXByName("packageDamage", transform.position);
+                    }
                 }
             }
             // If not server, do nothing; server will apply and replicate and clients get the RPC.
@@ -155,6 +205,12 @@ public class PackageDamageSystem : MonoBehaviour
             if (feedbackBroadcaster != null)
             {
                 feedbackBroadcaster.ShowLocal(damage, localOffset);
+            }
+            
+            // NEW: Play damage sound in offline mode too
+            if (enableDamageSound && AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlaySFXByName("packageDamage", transform.position);
             }
         }
     }

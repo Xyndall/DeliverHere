@@ -130,12 +130,6 @@ namespace DeliverHere.Player
         [Tooltip("Optional particle effect to spawn on impact.")]
         [SerializeField] private ParticleSystem impactVFX;
 
-        [Tooltip("Optional audio source for impact sound.")]
-        [SerializeField] private AudioSource impactAudioSource;
-
-        [Tooltip("Impact sound clip.")]
-        [SerializeField] private AudioClip impactSFX;
-
         [Header("Debug")]
         [SerializeField] private bool logImpacts = false;
         [SerializeField] private bool logGroundContact = false;
@@ -846,7 +840,7 @@ namespace DeliverHere.Player
             // Enable ragdoll on server
             EnableRagdoll(force, impactPoint);
 
-            // Play feedback
+            // Play feedback (VFX + SFX via AudioManager)
             PlayImpactFeedbackClientRpc(impactPoint);
 
             // Send stun timing to clients so they know when to recover
@@ -1273,10 +1267,10 @@ namespace DeliverHere.Player
                 impactVFX.Play();
             }
 
-            // Play SFX
-            if (impactAudioSource != null && impactSFX != null)
+            // Play hurt sound via AudioManager
+            if (DeliverHere.Audio.AudioManager.Instance != null)
             {
-                impactAudioSource.PlayOneShot(impactSFX);
+                DeliverHere.Audio.AudioManager.Instance.PlaySFXByName("hurt", impactPoint);
             }
         }
 

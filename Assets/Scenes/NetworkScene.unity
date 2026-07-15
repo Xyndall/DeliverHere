@@ -640,14 +640,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 0.8349056, g: 0.9388462, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 10907, guid: 0000000000000000f000000000000000, type: 0}
+  m_Sprite: {fileID: 0}
   m_Type: 1
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -2515,8 +2515,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Package amount delivered
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -3069,8 +3069,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Quota Status
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -9919,8 +9919,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Restart
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -10961,8 +10961,8 @@ MonoBehaviour:
 
 '
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -14107,8 +14107,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Start game
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -14857,8 +14857,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Next Day
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -16105,8 +16105,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Day earned
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -17168,9 +17168,6 @@ MonoBehaviour:
     m_Bits: 2112
   onlyDestroyPackages: 1
   requiredTag: 
-  destroyVFX: {fileID: 0}
-  destroyAudioSource: {fileID: 0}
-  destroySFX: {fileID: 0}
   reprocessCooldown: 0.1
   logDestructions: 0
 --- !u!65 &1920933968
@@ -17955,6 +17952,83 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1958005317}
   m_CullTransparentMesh: 1
+--- !u!1 &1966758240
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1966758242}
+  - component: {fileID: 1966758243}
+  - component: {fileID: 1966758241}
+  m_Layer: 0
+  m_Name: AudioManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1966758241
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1966758240}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8330fbad67d7c4c49894fb2aace8094b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Audio.AudioManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  audioLibrary: {fileID: 11400000, guid: 1a8e9a6f6cf72284398478bfb9e185ba, type: 2}
+  audioMixer: {fileID: 24100000, guid: e42946e8c3a454a49b0bba71db2426f9, type: 2}
+  musicSource: {fileID: 0}
+  initialPoolSize: 10
+  maxPoolSize: 30
+  enableLogs: 0
+--- !u!4 &1966758242
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1966758240}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 129.78647, y: -4.09256, z: -62.15403}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1966758243
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1966758240}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 4253884990
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
 --- !u!1 &1968366879
 GameObject:
   m_ObjectHideFlags: 0
@@ -20638,3 +20712,4 @@ SceneRoots:
   - {fileID: 1163649966}
   - {fileID: 1462505869}
   - {fileID: 902411858}
+  - {fileID: 1966758242}
