@@ -10,15 +10,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a9b9352798254fa4db5c5eef12aac530, type: 3}
-  m_Name: MeteriteEvent
+  m_Name: BlockadeEvent
   m_EditorClassIdentifier: Assembly-CSharp::RandomEventDefinition
-  eventId: Meteorites
-  description: Spawns randome meteorites the crash down on the players
+  eventId: Blockades
+  description: Spawns bloackades at random set points around the map the quantity
+    and set points choseen are random and more can be added or removed while event
+    is ongiong.
   baseChance: 0.1
   maxTriggersPerDay: 1
   cooldownSeconds: 30
-  windowStart01: 0.1
-  windowEnd01: 0.8
+  windowStart01: 0
+  windowEnd01: 0.5
   evaluationIntervalSeconds: 5
-  eventPrefab: {fileID: 4342616253148699227, guid: be19139a53dc0334d8a9776e00e8e85e, type: 3}
-  warningMessage: Meteors are FALLING!!!
+  eventPrefab: {fileID: 2007545999415854658, guid: 1f2cce7ad254cf242ad13223c7a6bb16, type: 3}
+  warningMessage: The streets are BLOCKED!!

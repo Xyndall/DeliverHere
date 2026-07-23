@@ -864,8 +864,10 @@ MonoBehaviour:
   autoFindGameTimer: 0
   events:
   - {fileID: 11400000, guid: e9297b4eb56fb154b95202cb384bd731, type: 2}
+  - {fileID: 11400000, guid: 83329496737089a41bf6fd1552ba2b99, type: 2}
   serverAuthoritative: 1
   eventParent: {fileID: 24441902}
+  oneEventPerDay: 1
   warningUI: {fileID: 1998143070}
   warningDurationSeconds: 3
 --- !u!4 &24441902
@@ -13399,8 +13401,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Start Game
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -15602,7 +15604,7 @@ MonoBehaviour:
   allowDuplicateZones: 0
   autoDiscoverZones: 1
   avoidLastDayZone: 1
-  quotaSplitMode: 0
+  quotaSplitMode: 1
   distanceQuotaMultiplier: 1.2
   enableProgressiveUnlock: 1
   unlockSecondZoneDay: 2

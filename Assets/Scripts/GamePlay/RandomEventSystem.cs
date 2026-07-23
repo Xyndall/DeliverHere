@@ -20,6 +20,9 @@ public class RandomEventSystem : NetworkBehaviour
     [Tooltip("Optional parent transform for spawned event prefabs.")]
     [SerializeField] private Transform eventParent;
 
+    [Tooltip("If true, only one event can trigger per day across all event types.")]
+    [SerializeField] private bool oneEventPerDay = true;
+
     [Header("Warning Indicator")]
     [Tooltip("The persistent EventWarningUI object already in the canvas (disabled by default).")]
     [SerializeField] private EventWarningUI warningUI;
@@ -38,6 +41,7 @@ public class RandomEventSystem : NetworkBehaviour
 
     private readonly List<EventRuntime> runtime = new List<EventRuntime>();
     private GameManager gm;
+    private bool anyEventTriggeredToday = false; // NEW: Track if any event has triggered
 
     private bool IsServerOrStandalone =>
         NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
@@ -115,6 +119,9 @@ public class RandomEventSystem : NetworkBehaviour
         if (!gameTimer.IsRunning) return;
         if (runtime.Count == 0) return;
 
+        // NEW: Skip evaluation if one event per day limit is enabled and already triggered
+        if (oneEventPerDay && anyEventTriggeredToday) return;
+
         float normalizedProgress = gameTimer.Normalized; // 0 at start, 1 at end
         float now = Time.time;
 
@@ -155,6 +162,13 @@ public class RandomEventSystem : NetworkBehaviour
             if (fired)
             {
                 StartCoroutine(WarnThenTrigger(evt));
+                
+                // NEW: If oneEventPerDay is enabled, stop evaluating other events
+                if (oneEventPerDay)
+                {
+                    anyEventTriggeredToday = true;
+                    break; // Exit the foreach loop
+                }
             }
         }
     }
@@ -221,6 +235,8 @@ public class RandomEventSystem : NetworkBehaviour
     private void ResetForNewDay()
     {
         float now = Time.time;
+        anyEventTriggeredToday = false; // NEW: Reset the daily flag
+        
         foreach (var evt in runtime)
         {
             evt.triggersThisDay = 0;

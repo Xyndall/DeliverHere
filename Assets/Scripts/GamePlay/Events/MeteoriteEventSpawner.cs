@@ -6,7 +6,7 @@ using Unity.Netcode;
 /// <summary>
 /// Spawns meteorites over time for a set duration. One-shot payload invoked by RandomEventSystem.
 /// </summary>
-public class MeteoriteEventSpawner : MonoBehaviour
+public class MeteoriteEventSpawner : BaseEventSpawner
 {
     [Header("Spawn Areas")]
     [SerializeField] private List<BoxCollider> spawnAreas = new List<BoxCollider>();
@@ -24,30 +24,16 @@ public class MeteoriteEventSpawner : MonoBehaviour
     [SerializeField] private float horizontalPadding = 2f;
     [SerializeField] private Transform meteoriteParent;
 
-    [Header("Event Duration")]
-    [Tooltip("How long this event lasts in seconds.")]
-    [SerializeField] private float durationSeconds = 20f;
+    [Header("Meteorite Burst")]
     [Tooltip("If true, spawn a small burst at start, then stream the rest.")]
     [SerializeField] private int burstAtStart = 0;
 
-    [Header("Authority")]
-    [SerializeField] private bool serverAuthoritative = true;
-
-    private bool IsServerOrStandalone =>
-        NetworkManager.Singleton == null || NetworkManager.Singleton.IsServer;
-
-    private void Start()
+    protected override bool ValidateAndInitialize()
     {
-        if (serverAuthoritative && !IsServerOrStandalone)
-        {
-            Destroy(gameObject);
-            return;
-        }
-
         if (meteoritePrefab == null)
         {
-            Destroy(gameObject);
-            return;
+            Debug.LogError("MeteoriteEventSpawner: No meteorite prefab assigned!");
+            return false;
         }
 
         if (meteoriteParent == null)
@@ -74,8 +60,18 @@ public class MeteoriteEventSpawner : MonoBehaviour
         durationSeconds = Mathf.Max(0.1f, durationSeconds);
         burstAtStart = Mathf.Clamp(burstAtStart, 0, totalCount);
 
-        // Run spawns over time
+        return true;
+    }
+
+    protected override void OnEventStart()
+    {
         StartCoroutine(SpawnOverTimeCoroutine());
+    }
+
+    protected override void OnEventEnd()
+    {
+        // Meteorites are self-contained, no cleanup needed
+        // They destroy themselves after impact
     }
 
     private IEnumerator SpawnOverTimeCoroutine()
@@ -97,19 +93,26 @@ public class MeteoriteEventSpawner : MonoBehaviour
         int remaining = totalCount - burstAtStart;
         if (remaining <= 0)
         {
-            Destroy(gameObject);
+            EndEvent();
             yield break;
         }
 
         // Emit remaining evenly over duration
-        float streamDuration = durationSeconds;
-        float interval = streamDuration / Mathf.Max(1, remaining); // seconds per meteorite
+        float streamDuration = lastUntilDayEnd ? float.MaxValue : durationSeconds;
+        float interval = lastUntilDayEnd ? 1f : (streamDuration / Mathf.Max(1, remaining)); // 1 per second if no duration
         float nextTime = Time.time;
+        float elapsed = 0f;
 
-        while (remaining > 0)
+        while (remaining > 0 && ShouldContinueEvent(elapsed))
         {
-            while (Time.time < nextTime)
+            while (Time.time < nextTime && ShouldContinueEvent(elapsed))
+            {
                 yield return null;
+                elapsed += Time.deltaTime;
+            }
+
+            if (!ShouldContinueEvent(elapsed))
+                break;
 
             if (TrySpawnOneNetworked(out _))
             {
@@ -126,7 +129,7 @@ public class MeteoriteEventSpawner : MonoBehaviour
             nextTime += interval;
         }
 
-        Destroy(gameObject);
+        EndEvent();
     }
 
     private bool TrySpawnOneNetworked(out Vector3 spawnPosOut)
@@ -199,13 +202,14 @@ public class MeteoriteEventSpawner : MonoBehaviour
             return true;
         }
 
-        var halfFallback = fallbackSize * 0.5f - new Vector3(horizontalPadding, 0f, horizontalPadding);
-        var off = new Vector3(
-            Random.Range(-halfFallback.x, halfFallback.x),
+        // Fallback to simple random area
+        var halfSize = fallbackSize * 0.5f;
+        var randomOffset = new Vector3(
+            Random.Range(-halfSize.x, halfSize.x),
             0f,
-            Random.Range(-halfFallback.z, halfFallback.z)
+            Random.Range(-halfSize.z, halfSize.z)
         );
-        position = fallbackCenter + off;
+        position = fallbackCenter + randomOffset;
         return true;
     }
 }
