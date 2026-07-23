@@ -863,8 +863,8 @@ MonoBehaviour:
   gameTimer: {fileID: 1657870876}
   autoFindGameTimer: 0
   events:
-  - {fileID: 11400000, guid: e9297b4eb56fb154b95202cb384bd731, type: 2}
   - {fileID: 11400000, guid: 83329496737089a41bf6fd1552ba2b99, type: 2}
+  - {fileID: 11400000, guid: e9297b4eb56fb154b95202cb384bd731, type: 2}
   serverAuthoritative: 1
   eventParent: {fileID: 24441902}
   oneEventPerDay: 1

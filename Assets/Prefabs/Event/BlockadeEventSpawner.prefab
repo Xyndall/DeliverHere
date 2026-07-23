@@ -44,14 +44,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 296ad9cc3b8738f4ead9af5cf00b90d3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BlockadeEventSpawner
+  durationSeconds: 500
+  autoFindGameTimer: 1
+  gameTimer: {fileID: 0}
+  serverAuthoritative: 1
   spawnPoints: []
   autoFindPointsIfEmpty: 1
   blockadePrefab: {fileID: 7377917813158483050, guid: f02e86958e73ae94e92fc8f149fdac84, type: 3}
-  minInitialBlockades: 1
-  maxInitialBlockades: 3
+  minInitialBlockades: 5
+  maxInitialBlockades: 10
   blockadeParent: {fileID: 7271853150704856007}
-  durationSeconds: 500
-  minChangeInterval: 3
-  maxChangeInterval: 8
+  minChangeInterval: 20
+  maxChangeInterval: 30
   addChance: 0.5
-  serverAuthoritative: 1
