@@ -43,7 +43,11 @@ public class MenuUIController : MonoBehaviour
         if (NetworkGameState.Instance != null)
         {
             NetworkGameState.Instance.OnGameStartedChangedEvent += HandleGameStartedChanged;
+            NetworkGameState.Instance.OnLocalGameStateChanged += HandleGameStateChanged;
+            
+            // Apply initial state
             HandleGameStartedChanged(NetworkGameState.Instance.GameStarted);
+            HandleGameStateChanged(NetworkGameState.Instance.LocalGameState);
         }
         else
         {
@@ -62,6 +66,7 @@ public class MenuUIController : MonoBehaviour
         if (NetworkGameState.Instance != null)
         {
             NetworkGameState.Instance.OnGameStartedChangedEvent -= HandleGameStartedChanged;
+            NetworkGameState.Instance.OnLocalGameStateChanged -= HandleGameStateChanged;
         }
     }
 
@@ -89,10 +94,14 @@ public class MenuUIController : MonoBehaviour
         if (NetworkGameState.Instance != null)
         {
             NetworkGameState.Instance.OnGameStartedChangedEvent += HandleGameStartedChanged;
+            NetworkGameState.Instance.OnLocalGameStateChanged += HandleGameStateChanged;
+            
+            // Apply initial state
             HandleGameStartedChanged(NetworkGameState.Instance.GameStarted);
+            HandleGameStateChanged(NetworkGameState.Instance.LocalGameState);
             
             if (logVisibilityDebug)
-                Debug.Log($"[MenuUIController] Subscribed to NetworkGameState. GameStarted={NetworkGameState.Instance.GameStarted}");
+                Debug.Log($"[MenuUIController] Subscribed to NetworkGameState. GameStarted={NetworkGameState.Instance.GameStarted}, State={NetworkGameState.Instance.LocalGameState}");
         }
         else if (logVisibilityDebug)
         {
@@ -178,28 +187,66 @@ public class MenuUIController : MonoBehaviour
     private void EvaluateVisibility()
     {
         bool hasNM = NetworkManager.Singleton != null;
-        bool isHost = hasNM && NetworkManager.Singleton.IsHost;
+        bool isConnected = hasNM && NetworkManager.Singleton.IsListening;
 
-        if (startGameButton != null) startGameButton.gameObject.SetActive(isHost);
-        if (endGameButton != null) endGameButton.gameObject.SetActive(isHost);
+        // Show buttons if connected (either as host or client)
+        if (startGameButton != null) startGameButton.gameObject.SetActive(isConnected);
+        if (endGameButton != null) endGameButton.gameObject.SetActive(isConnected);
+
+        // Only host can actually interact with the buttons
+        bool isHost = hasNM && NetworkManager.Singleton.IsHost;
+        if (startGameButton != null) startGameButton.interactable = isHost;
+        if (endGameButton != null) endGameButton.interactable = isHost;
 
         if (logVisibilityDebug)
         {
             string reason = hasNM
                 ? $"IsServer={NetworkManager.Singleton.IsServer}, IsClient={NetworkManager.Singleton.IsClient}, IsHost={NetworkManager.Singleton.IsHost}, IsListening={NetworkManager.Singleton.IsListening}"
                 : "NetworkManager.Singleton == null";
-            Debug.Log($"[MenuUIController] EvaluateVisibility => host={isHost}. Reason: {reason}");
+            Debug.Log($"[MenuUIController] EvaluateVisibility => visible={isConnected}, interactable={isHost}. Reason: {reason}");
         }
     }
 
     private void HandleGameStartedChanged(bool started)
     {
-        if (menuRoot != null)
+        UpdateMenuVisibility();
+    }
+
+    private void HandleGameStateChanged(GameState state)
+    {
+        UpdateMenuVisibility();
+        
+        if (logVisibilityDebug)
+            Debug.Log($"[MenuUIController] HandleGameStateChanged: state={state}");
+    }
+
+    private void UpdateMenuVisibility()
+    {
+        if (menuRoot == null) return;
+
+        // Hide main menu if:
+        // 1. Game has started (gameStarted = true)
+        // 2. OR we're in Lobby state (connected to a game session)
+        // 3. OR we're in Loading/ReadyToStart/InGame/GameOver states
+        
+        bool shouldHideMenu = false;
+        
+        if (NetworkGameState.Instance != null)
         {
-            menuRoot.SetActive(!started);
+            GameState currentState = NetworkGameState.Instance.LocalGameState;
+            bool gameStarted = NetworkGameState.Instance.GameStarted;
             
-            if (logVisibilityDebug)
-                Debug.Log($"[MenuUIController] HandleGameStartedChanged: started={started}, menuRoot.activeSelf={menuRoot.activeSelf}");
+            // Show menu only in MainMenu state when game hasn't started
+            shouldHideMenu = gameStarted || currentState != GameState.MainMenu;
+        }
+        
+        menuRoot.SetActive(!shouldHideMenu);
+        
+        if (logVisibilityDebug)
+        {
+            string state = NetworkGameState.Instance != null ? NetworkGameState.Instance.LocalGameState.ToString() : "Unknown";
+            bool started = NetworkGameState.Instance != null ? NetworkGameState.Instance.GameStarted : false;
+            Debug.Log($"[MenuUIController] UpdateMenuVisibility: state={state}, started={started}, menuVisible={!shouldHideMenu}");
         }
     }
 

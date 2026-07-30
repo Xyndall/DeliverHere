@@ -170,6 +170,13 @@ public class GameManager : NetworkBehaviour
                     _netState.ServerSetGameState(GameState.GameOver, paused: false);
                 }
 
+                // ADDED: Hide the HUD for both success and failure before showing summary
+                uiController?.HideHUD();
+                if (IsServerOrStandalone && _uiSync != null)
+                {
+                    _uiSync.ServerSetHudVisible(false);
+                }
+
                 // Show summary for BOTH success and failure, for ALL clients.
                 if (IsServerOrStandalone && _netState != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
                 {

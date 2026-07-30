@@ -196,6 +196,14 @@ public class GameTimer : MonoBehaviour
         lastDaySuccess = success;
         awaitingNextDay = success;
 
+        // ADDED: Teleport players back to spawn points when day ends
+        if (IsServerOrStandalone && gm != null)
+        {
+            gm.PositionPlayersToSpawnPoints();
+            if (enableDebugLogs)
+                Debug.Log("[GameTimer] Players teleported to spawn points after day end.");
+        }
+
         OnDayEndedEvaluated?.Invoke(success);
 
         if (enableDebugLogs)
