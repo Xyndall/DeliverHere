@@ -7,6 +7,7 @@ using Unity.Services.Core;
 using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using UnityEngine;
+using DeliverHere.Steam; 
 
 public class Relay : MonoBehaviour
 {
@@ -35,6 +36,19 @@ public class Relay : MonoBehaviour
             Debug.Log("Signed in! Player ID: " + AuthenticationService.Instance.PlayerId);
         };
         await AuthenticationService.Instance.SignInAnonymouslyAsync();
+
+        // ADD THIS: Subscribe to Steam invite events
+        if (SteamInviteManager.Instance != null)
+        {
+            SteamInviteManager.Instance.OnInviteAccepted += HandleSteamInvite;
+        }
+    }
+
+    // ADD THIS: Handle when someone accepts a Steam invite
+    private void HandleSteamInvite(string joinCode)
+    {
+        Debug.Log($"Handling Steam invite with join code: {joinCode}");
+        JoinRelay(joinCode);
     }
 
     public async Task<string> CreateRelay()
@@ -52,6 +66,13 @@ public class Relay : MonoBehaviour
             NetworkManager.Singleton.GetComponent<UnityTransport>().SetRelayServerData(relayServerData);
 
             NetworkManager.Singleton.StartHost();
+
+            // ADD THIS: Set Steam Rich Presence with join code
+            if (SteamInviteManager.Instance != null)
+            {
+                SteamInviteManager.Instance.SetJoinCode(joinCode);
+            }
+
             return joinCode;
         }
         catch (RelayServiceException e)
@@ -73,6 +94,12 @@ public class Relay : MonoBehaviour
             var relayServerData = joinAllocation.ToRelayServerData(connectionType);
             NetworkManager.Singleton.GetComponent<UnityTransport>().SetRelayServerData(relayServerData);
             NetworkManager.Singleton.StartClient();
+
+            // ADD THIS: Update Steam Rich Presence
+            if (SteamInviteManager.Instance != null)
+            {
+                SteamInviteManager.Instance.SetInGame(joinCode);
+            }
         }
         catch (RelayServiceException e)
         {
@@ -80,5 +107,13 @@ public class Relay : MonoBehaviour
         }
     }
 
-
+    // ADD THIS: Clear Steam presence when leaving
+    private void OnDestroy()
+    {
+        if (SteamInviteManager.Instance != null)
+        {
+            SteamInviteManager.Instance.OnInviteAccepted -= HandleSteamInvite;
+            SteamInviteManager.Instance.ClearSession();
+        }
+    }
 }
