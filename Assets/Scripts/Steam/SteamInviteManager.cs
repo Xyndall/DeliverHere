@@ -29,11 +29,14 @@ namespace DeliverHere.Steam
 
         private void Start()
         {
-            if (SteamManager.Instance == null || !SteamManager.Instance.IsSteamInitialized)
+            // UPDATED: Use the built-in SteamManager.Initialized property
+            if (!SteamManager.Initialized)
             {
                 Debug.LogError("SteamInviteManager: Steam is not initialized!");
                 return;
             }
+
+            Debug.Log("SteamInviteManager: Steam is initialized! Ready for invites.");
 
             // Register callback for when someone clicks "Join Game" from Steam
             _joinRequestedCallback = Callback<GameRichPresenceJoinRequested_t>.Create(OnGameJoinRequested);
@@ -45,7 +48,7 @@ namespace DeliverHere.Steam
         /// </summary>
         public void OpenInviteDialog()
         {
-            if (!SteamManager.Instance.IsSteamInitialized)
+            if (!SteamManager.Initialized)
             {
                 Debug.LogWarning("Cannot open invite dialog - Steam not initialized.");
                 return;
@@ -57,9 +60,17 @@ namespace DeliverHere.Steam
                 return;
             }
 
-            // This opens Steam's overlay with the friends list to invite
-            SteamFriends.ActivateGameOverlayInviteDialog(CSteamID.Nil);
-            Debug.Log("Opened Steam invite dialog");
+            // UPDATED: Use ActivateGameOverlay with "friends" to show all friends (including offline)
+            // Alternative methods:
+            
+            // Option 1: General friends overlay (shows all friends, can filter)
+            SteamFriends.ActivateGameOverlay("friends");
+            
+            // Option 2: If you prefer the specific invite dialog (only shows online friends in game)
+            // Uncomment this and comment out the line above if you prefer:
+            // SteamFriends.ActivateGameOverlayInviteDialog(CSteamID.Nil);
+
+            Debug.Log("Opened Steam overlay");
         }
 
         /// <summary>
@@ -68,7 +79,7 @@ namespace DeliverHere.Steam
         /// </summary>
         public void SetJoinCode(string joinCode)
         {
-            if (!SteamManager.Instance.IsSteamInitialized)
+            if (!SteamManager.Initialized)
             {
                 Debug.LogWarning("Cannot set join code - Steam not initialized.");
                 return;
@@ -89,7 +100,7 @@ namespace DeliverHere.Steam
         /// </summary>
         public void SetInGame(string joinCode)
         {
-            if (!SteamManager.Instance.IsSteamInitialized) return;
+            if (!SteamManager.Initialized) return;
 
             _currentJoinCode = joinCode;
             SteamFriends.SetRichPresence("connect", joinCode);
@@ -102,7 +113,7 @@ namespace DeliverHere.Steam
         /// </summary>
         public void ClearSession()
         {
-            if (!SteamManager.Instance.IsSteamInitialized) return;
+            if (!SteamManager.Initialized) return;
 
             _currentJoinCode = null;
             SteamFriends.ClearRichPresence();

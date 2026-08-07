@@ -7,7 +7,7 @@ using Unity.Services.Core;
 using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using UnityEngine;
-using DeliverHere.Steam; 
+using DeliverHere.Steam;
 
 public class Relay : MonoBehaviour
 {
@@ -37,14 +37,14 @@ public class Relay : MonoBehaviour
         };
         await AuthenticationService.Instance.SignInAnonymouslyAsync();
 
-        // ADD THIS: Subscribe to Steam invite events
+        // Subscribe to Steam invite events
         if (SteamInviteManager.Instance != null)
         {
             SteamInviteManager.Instance.OnInviteAccepted += HandleSteamInvite;
         }
     }
 
-    // ADD THIS: Handle when someone accepts a Steam invite
+    // Handle when someone accepts a Steam invite
     private void HandleSteamInvite(string joinCode)
     {
         Debug.Log($"Handling Steam invite with join code: {joinCode}");
@@ -67,7 +67,7 @@ public class Relay : MonoBehaviour
 
             NetworkManager.Singleton.StartHost();
 
-            // ADD THIS: Set Steam Rich Presence with join code
+            // Set Steam Rich Presence with join code
             if (SteamInviteManager.Instance != null)
             {
                 SteamInviteManager.Instance.SetJoinCode(joinCode);
@@ -95,7 +95,7 @@ public class Relay : MonoBehaviour
             NetworkManager.Singleton.GetComponent<UnityTransport>().SetRelayServerData(relayServerData);
             NetworkManager.Singleton.StartClient();
 
-            // ADD THIS: Update Steam Rich Presence
+            // Update Steam Rich Presence
             if (SteamInviteManager.Instance != null)
             {
                 SteamInviteManager.Instance.SetInGame(joinCode);
@@ -107,7 +107,7 @@ public class Relay : MonoBehaviour
         }
     }
 
-    // ADD THIS: Clear Steam presence when leaving
+    // Clear Steam presence when leaving
     private void OnDestroy()
     {
         if (SteamInviteManager.Instance != null)
