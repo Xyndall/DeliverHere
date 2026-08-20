@@ -417,7 +417,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 363287109
+  GlobalObjectIdHash: 209272834
   InScenePlacedSourceGlobalObjectIdHash: 209272834
   DeferredDespawnTick: 0
   Ownership: 1
@@ -461,6 +461,8 @@ MonoBehaviour:
   rotateLerpMultiplierAtMaxPenalty: 0.4
   weightManager: {fileID: 8983411890034586755}
   inputController: {fileID: 1314525665084999406}
+  footstepInterval: 0.4
+  minFootstepSpeed: 1
 --- !u!54 &5082883330226292188
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -642,6 +644,7 @@ MonoBehaviour:
   maxPredictionError: 0.5
   clientRotationSmoothSpeed: 15
   inputController: {fileID: 1314525665084999406}
+  enableAudio: 1
   massForMaxSlowdown: 10
 --- !u!114 &276092387163634943
 MonoBehaviour:
@@ -979,15 +982,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Player.PlayerRagdollStun
   ShowTopMostFoldoutHeaderGroup: 1
   config: {fileID: 0}
-  minImpactSpeed: 1
-  stunDuration: 2
-  impactForceMultiplier: 1
+  minImpactSpeed: 50
+  stunDuration: 5
+  impactForceMultiplier: 2
   maxImpactForce: 25
   upwardForceBoost: 50
   stunCooldown: 1
   impactLayers:
     serializedVersion: 2
-    m_Bits: 8192
+    m_Bits: 31360
   minImpactMass: 1
   ragdollCollisionMode: 2
   ragdollDrag: 1
@@ -1050,8 +1053,6 @@ MonoBehaviour:
   autoRecover: 1
   recoveryBlendTime: 0.3
   impactVFX: {fileID: 0}
-  impactAudioSource: {fileID: 0}
-  impactSFX: {fileID: 0}
   logImpacts: 0
   logGroundContact: 0
 --- !u!114 &2705474573719322411

@@ -1,7 +1,7 @@
-using UnityEngine;
-using Unity.Netcode;
-using System;
 using DeliverHere.Audio;
+using System;
+using Unity.Netcode;
+using UnityEngine;
 
 [DisallowMultipleComponent]
 public class PlayerHold : NetworkBehaviour
@@ -126,30 +126,19 @@ public class PlayerHold : NetworkBehaviour
     [Tooltip("Extra downward force applied while held when heavy (helps it feel like gravity wins).")]
     [SerializeField] private float extraDownForceAtZeroLift = 120f;
 
-    [Header("Network Anchor Pose (Owner -> Server)")]
-    [Tooltip("How often the owner sends the desired anchor pose to the server (Hz). Higher = more responsive, more bandwidth.")]
-    [SerializeField] private float anchorPoseSendRateHz = 30f;
-    [Tooltip("Minimum distance change before sending another pose (meters).")]
-    [SerializeField] private float anchorPoseMinPosDelta = 0.0025f;
-    [Tooltip("Minimum rotation change before sending another pose (degrees).")]
-    [SerializeField] private float anchorPoseMinRotDeltaDeg = 0.5f;
-
-    [Header("Client-Side Prediction")]
-    [Tooltip("Enable client-side prediction for immediate visual feedback.")]
-    [SerializeField] private bool enableClientPrediction = true;
-    [Tooltip("How quickly client prediction reconciles with server position (higher = snappier but more jitter).")]
-    [SerializeField] private float clientReconciliationSpeed = 12f;
-    [Tooltip("Maximum allowed divergence before hard-snapping to server position (meters).")]
-    [SerializeField] private float maxPredictionError = 0.5f;
-    [Tooltip("Smoothing applied to held object rotation on clients.")]
-    [SerializeField] private float clientRotationSmoothSpeed = 15f;
-
     [Header("Input")]
     [SerializeField] private PlayerInputController inputController;
 
     [Header("Audio")]
     [Tooltip("Play audio for pickup and drop events")]
     [SerializeField] private bool enableAudio = true;
+
+    [Header("Release Smoothing")]
+    [Tooltip("Time (seconds) to smoothly relax the joint's hold strength before actually releasing. Prevents a sudden snap/jolt on drop or throw.")]
+    [SerializeField] private float releaseFadeTime = 0.08f;
+
+    private bool _isReleasing;
+    private float _releaseFadeElapsed;
 
     private readonly NetworkVariable<NetworkObjectReference> _heldRef =
         new NetworkVariable<NetworkObjectReference>(default,
@@ -177,6 +166,12 @@ public class PlayerHold : NetworkBehaviour
 
     private float _holdDistance;
     private Rigidbody _heldBody;
+    private NetworkObject _heldNetObj;
+
+    // Set true only on the peer that is the physics/movement authority for the
+    // currently held object (i.e. the client that picked it up). Cached at pickup
+    // time so drop-time cleanup doesn't race against the ownership change itself.
+    private bool _isLocalHoldAuthority;
 
     private Rigidbody _anchorRb;
     private ConfigurableJoint _joint;
@@ -209,21 +204,6 @@ public class PlayerHold : NetworkBehaviour
 
     public event Action<Rigidbody> PickedUp;
     public event Action<Rigidbody> Dropped;
-
-    // Owner->Server anchor pose state
-    private double _nextAnchorPoseSendTime;
-    private Vector3 _lastSentAnchorPos;
-    private Quaternion _lastSentAnchorRot;
-
-    // Server uses latest received pose
-    private Vector3 _serverDesiredAnchorPos;
-    private Quaternion _serverDesiredAnchorRot = Quaternion.identity;
-
-    // ADDED: Client-side prediction state
-    private Vector3 _clientPredictedPosition;
-    private Quaternion _clientPredictedRotation;
-    private Vector3 _clientPredictedVelocity;
-    private bool _hasClientPrediction;
 
     private void Awake()
     {
@@ -281,15 +261,15 @@ public class PlayerHold : NetworkBehaviour
     private void Update()
     {
         if (!IsOwner) return;
-        
-        // ADDED: Update handsRoot position to follow camera with offset
+
+        // Update handsRoot position to follow camera with offset
         if (handsRoot != null && cameraTransform != null)
         {
-            Vector3 forwardOffset = cameraTransform.forward * 1f; // Adjust 0.5f to your desired offset
+            Vector3 forwardOffset = cameraTransform.forward * 1f;
             handsRoot.position = cameraTransform.position + forwardOffset;
             handsRoot.rotation = Quaternion.LookRotation(cameraTransform.forward, Vector3.up);
         }
-        
+
         if (inputController == null) return;
 
         float axis = inputController.ExtendInput;
@@ -304,7 +284,8 @@ public class PlayerHold : NetworkBehaviour
 
         if (IsHolding)
         {
-            RequestDropServerRpc();
+            if (!_isReleasing)
+                BeginReleaseFade();
             return;
         }
 
@@ -329,15 +310,16 @@ public class PlayerHold : NetworkBehaviour
         float liftEffect01 = 1f;
         if (_weightManager != null)
         {
-            if (IsOwner)
-                liftEffect01 = _weightManager.GetLiftEffect01();
-            else
-                liftEffect01 = _weightManager.LiftEffect01.Value;
+            liftEffect01 = IsOwner
+                ? _weightManager.GetLiftEffect01()
+                : _weightManager.LiftEffect01.Value;
         }
 
         EnsureAnchorExists();
 
-        // Compute desired anchor pose (always)
+        // Compute desired anchor pose. Only meaningful for the local hold authority
+        // (the owner), since only they use it to drive the joint. Cheap to run for
+        // everyone (local anchor GO, not networked), so no gating needed here.
         Quaternion yawRot = GetYawRotation();
 
         float targetDist = _holdDistance;
@@ -357,51 +339,45 @@ public class PlayerHold : NetworkBehaviour
         Vector3 desiredAnchorPos = handsRoot.position + yawRot * local;
         Quaternion desiredAnchorRot = yawRot;
 
-        // Update anchor velocity (used for release)
         _anchorVel = (desiredAnchorPos - _prevAnchorPos) / Mathf.Max(1e-5f, Time.fixedDeltaTime);
         _prevAnchorPos = desiredAnchorPos;
 
-        // Owner: send desired pose to server (throttled)
-        if (IsOwner && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening && !IsServer)
-        {
-            TrySendAnchorPoseToServer(desiredAnchorPos, desiredAnchorRot);
-        }
-
-        // Server: apply latest received desired pose (or if host, use local)
-        if (IsServer)
-        {
-            if (IsOwner)
-            {
-                // Host: no RPC needed, just use local computed pose.
-                _serverDesiredAnchorPos = desiredAnchorPos;
-                _serverDesiredAnchorRot = desiredAnchorRot;
-            }
-
-            _anchorRb.position = _serverDesiredAnchorPos;
-            _anchorRb.rotation = _serverDesiredAnchorRot;
-        }
-        else
-        {
-            // Clients: keep local anchor in sync for local computations (doesn't affect server physics).
-            _anchorRb.position = desiredAnchorPos;
-            _anchorRb.rotation = desiredAnchorRot;
-        }
-
-        // ADDED: Client-side prediction for held object
-        if (!IsServer && IsOwner && IsHolding && _heldBody != null && enableClientPrediction)
-        {
-            ApplyClientPrediction(desiredAnchorPos, desiredAnchorRot);
-        }
+        _anchorRb.position = desiredAnchorPos;
+        _anchorRb.rotation = desiredAnchorRot;
 
         if (!IsHolding || _heldBody == null)
             return;
 
-        // Server-only: mutate physics / apply forces
-        if (!IsServer)
+        // Only the local hold authority (the client who picked it up) simulates
+        // the joint/physics for this object. Everyone else just observes the
+        // OwnerNetworkTransform-driven position.
+        if (!_isLocalHoldAuthority)
             return;
+
+        if (_isReleasing)
+        {
+            _releaseFadeElapsed += Time.fixedDeltaTime;
+            float fade = releaseFadeTime > 0f
+                ? 1f - Mathf.Clamp01(_releaseFadeElapsed / releaseFadeTime)
+                : 0f;
+
+            if (_joint != null)
+                ApplyJointStrengthForMass(_heldBody.mass, fade);
+
+            if (fade <= 0f)
+            {
+                _isReleasing = false;
+                RequestDropServerRpc();
+            }
+
+            // Skip the normal held-force logic below while fading out so it
+            // doesn't fight the release (e.g. extra down-force, auto-drop checks).
+            return;
+        }
 
         if (_joint != null)
             ApplyJointStrengthForMass(_heldBody.mass);
+
 
         if (!_heldBody.useGravity)
             _heldBody.useGravity = true;
@@ -423,7 +399,8 @@ public class PlayerHold : NetworkBehaviour
                     _exceededSeparationTime += Time.fixedDeltaTime;
                     if (_exceededSeparationTime >= autoDropDelay)
                     {
-                        ServerDropHeldInternal();
+                        RequestDropServerRpc();
+                        _exceededSeparationTime = 0f;
                         return;
                     }
                 }
@@ -442,86 +419,6 @@ public class PlayerHold : NetworkBehaviour
             _heldBody.angularVelocity = _heldBody.angularVelocity.normalized * maxOmegaRad;
     }
 
-    // ADDED: Client-side prediction logic
-    private void ApplyClientPrediction(Vector3 targetPos, Quaternion targetRot)
-    {
-        if (!_hasClientPrediction)
-        {
-            // Initialize prediction state
-            _clientPredictedPosition = _heldBody.position;
-            _clientPredictedRotation = _heldBody.rotation;
-            _clientPredictedVelocity = Vector3.zero;
-            _hasClientPrediction = true;
-        }
-
-        // Simulate spring-like behavior toward target (mimics ConfigurableJoint)
-        Vector3 toTarget = targetPos - _clientPredictedPosition;
-        float distance = toTarget.magnitude;
-
-        // Check for large deviations (reconciliation needed)
-        if (distance > maxPredictionError)
-        {
-            // Hard snap to server position if too far off
-            _clientPredictedPosition = _heldBody.position;
-            _clientPredictedVelocity = Vector3.zero;
-        }
-        else
-        {
-            // Apply spring force (simplified physics)
-            float mass = Mathf.Max(0.001f, _heldBody.mass);
-            float springForce = distance * (linearSpringBase + linearSpringPerKg * mass);
-            Vector3 acceleration = (toTarget.normalized * springForce) / mass;
-            
-            // Apply damping
-            Vector3 dampingForce = -_clientPredictedVelocity * linearDamper;
-            acceleration += dampingForce / mass;
-
-            // Update velocity and position
-            _clientPredictedVelocity += acceleration * Time.fixedDeltaTime;
-            _clientPredictedPosition += _clientPredictedVelocity * Time.fixedDeltaTime;
-
-            // Blend toward server position for smooth reconciliation
-            float serverWeight = 1f - Mathf.Exp(-clientReconciliationSpeed * Time.fixedDeltaTime);
-            _clientPredictedPosition = Vector3.Lerp(_clientPredictedPosition, _heldBody.position, serverWeight);
-        }
-
-        // Smooth rotation toward target
-        _clientPredictedRotation = Quaternion.Slerp(_clientPredictedRotation, targetRot, 
-            clientRotationSmoothSpeed * Time.fixedDeltaTime);
-
-        // Apply predicted transform (visual only, doesn't affect server physics)
-        _heldBody.transform.position = _clientPredictedPosition;
-        _heldBody.transform.rotation = _clientPredictedRotation;
-    }
-
-    private void TrySendAnchorPoseToServer(Vector3 pos, Quaternion rot)
-    {
-        float hz = Mathf.Max(1f, anchorPoseSendRateHz);
-        double now = NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalTime.Time : Time.timeAsDouble;
-
-        if (now < _nextAnchorPoseSendTime)
-            return;
-
-        float posDelta = Vector3.Distance(pos, _lastSentAnchorPos);
-        float rotDelta = Quaternion.Angle(rot, _lastSentAnchorRot);
-
-        if (posDelta < anchorPoseMinPosDelta && rotDelta < anchorPoseMinRotDeltaDeg)
-            return;
-
-        _nextAnchorPoseSendTime = now + (1.0 / hz);
-        _lastSentAnchorPos = pos;
-        _lastSentAnchorRot = rot;
-
-        SubmitAnchorPoseServerRpc(pos, rot);
-    }
-
-    [ServerRpc]
-    private void SubmitAnchorPoseServerRpc(Vector3 pos, Quaternion rot)
-    {
-        _serverDesiredAnchorPos = pos;
-        _serverDesiredAnchorRot = rot;
-    }
-
     private void EnsureAnchorExists()
     {
         if (_anchorRb != null) return;
@@ -535,11 +432,6 @@ public class PlayerHold : NetworkBehaviour
         _anchorRb.interpolation = RigidbodyInterpolation.None;
 
         _prevAnchorPos = _anchorRb.position;
-        _serverDesiredAnchorPos = _anchorRb.position;
-        _serverDesiredAnchorRot = _anchorRb.rotation;
-
-        _lastSentAnchorPos = _anchorRb.position;
-        _lastSentAnchorRot = _anchorRb.rotation;
     }
 
     private void OnHeldRefChanged(NetworkObjectReference previous, NetworkObjectReference current)
@@ -553,19 +445,16 @@ public class PlayerHold : NetworkBehaviour
         }
 
         _heldBody = netObj.GetComponent<Rigidbody>();
+        _heldNetObj = netObj;
         _holdingState = netObj.GetComponent<HoldableHoldingState>();
+
+        // Cache authority for the duration of this hold. Ownership is transferred
+        // to the picker in RequestPickupServerRpc before this callback fires for them.
+        _isLocalHoldAuthority = _heldNetObj.OwnerClientId == NetworkManager.Singleton.LocalClientId;
 
         _anchorRampElapsed = 0f;
         _prevAnchorPos = _anchorRb.position;
         _sag01 = 0f;
-
-        _nextAnchorPoseSendTime = 0;
-        _lastSentAnchorPos = _anchorRb.position;
-        _lastSentAnchorRot = _anchorRb.rotation;
-
-        // ADDED: Reset client prediction state
-        _hasClientPrediction = false;
-        _clientPredictedVelocity = Vector3.zero;
 
         if (_heldBody != null && !_restoreCaptured)
         {
@@ -585,17 +474,22 @@ public class PlayerHold : NetworkBehaviour
         if (_heldBody != null)
         {
             ApplyHeldPhysicsLocal();
-            
-            // Layer is now applied on server in RequestPickupServerRpc
+
             if (!IsServer)
             {
                 _heldBody.gameObject.layer = heldItemLayer;
             }
         }
 
-        if (IsServer && _heldBody != null)
+        // Only the local hold authority builds the actual joint. Everyone else
+        // (including the server, unless it's also the holder) just observes.
+        if (_isLocalHoldAuthority && _heldBody != null)
         {
             CreateOrConfigureJoint();
+        }
+
+        if (IsServer && _heldBody != null)
+        {
             _holdingState ??= netObj.gameObject.AddComponent<HoldableHoldingState>();
         }
 
@@ -613,26 +507,29 @@ public class PlayerHold : NetworkBehaviour
     {
         if (_heldBody == null) return;
 
-        bool isNetworked = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
-        bool isServer = NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
-
-        _heldBody.useGravity = true;
-
-        if (boostDragWhileHeld)
+        if (_isLocalHoldAuthority)
         {
-            _heldBody.linearDamping = Mathf.Max(_heldBody.linearDamping, heldDrag);
-            _heldBody.angularDamping = Mathf.Max(_heldBody.angularDamping, heldAngularDrag);
+            // We are simulating this object's physics locally.
+            _heldBody.useGravity = true;
+
+            if (boostDragWhileHeld)
+            {
+                _heldBody.linearDamping = Mathf.Max(_heldBody.linearDamping, heldDrag);
+                _heldBody.angularDamping = Mathf.Max(_heldBody.angularDamping, heldAngularDrag);
+            }
+
+            _heldBody.maxAngularVelocity = Mathf.Max(_heldBody.maxAngularVelocity, 100f);
+            _heldBody.interpolation = RigidbodyInterpolation.Interpolate;
+            _heldBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            _heldBody.isKinematic = false;
         }
-
-        _heldBody.maxAngularVelocity = Mathf.Max(_heldBody.maxAngularVelocity, 100f);
-        
-        // CHANGED: Use interpolation on clients for smoother visuals
-        _heldBody.interpolation = RigidbodyInterpolation.Interpolate;
-        _heldBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-
-        // CHANGED: Keep non-kinematic on clients to allow visual prediction
-        // Server snapshots will still override, but clients can predict between updates
-        _heldBody.isKinematic = false;
+        else
+        {
+            // We're just observing - let OwnerNetworkTransform drive the transform,
+            // don't simulate physics locally for this object.
+            _heldBody.isKinematic = true;
+            _heldBody.interpolation = RigidbodyInterpolation.Interpolate;
+        }
     }
 
     private void RestoreHeldPhysicsLocalIfCaptured()
@@ -645,8 +542,7 @@ public class PlayerHold : NetworkBehaviour
         _heldBody.angularDamping = _restore.AngularDrag;
         _heldBody.interpolation = _restore.Interp;
         _heldBody.collisionDetectionMode = _restore.CollisionMode;
-        
-        // Restore layer based on settings
+
         if (restoreOriginalLayerOnDrop)
         {
             _heldBody.gameObject.layer = _restore.Layer;
@@ -661,7 +557,7 @@ public class PlayerHold : NetworkBehaviour
     {
         UpdateHeldMassForPlayer();
 
-        if (IsServer && _heldBody != null && _joint != null)
+        if (_isLocalHoldAuthority && _heldBody != null && _joint != null)
             ApplyJointStrengthForMass(_heldBody.mass);
     }
 
@@ -687,15 +583,18 @@ public class PlayerHold : NetworkBehaviour
 
         RestoreHeldPhysicsLocalIfCaptured();
 
-        _heldBody = null;
         DestroyJoint();
+
+        _heldBody = null;
+        _heldNetObj = null;
+        _isLocalHoldAuthority = false;
 
         _restoreCaptured = false;
         _exceededSeparationTime = 0f;
         _sag01 = 0f;
 
-        // ADDED: Reset prediction state
-        _hasClientPrediction = false;
+        _isReleasing = false;
+        _releaseFadeElapsed = 0f;
 
         _weightManager?.SetHeldMass(null);
     }
@@ -752,8 +651,13 @@ public class PlayerHold : NetworkBehaviour
         _pickupTimestamp = Time.time;
         _exceededSeparationTime = 0f;
     }
-
-    private void ApplyJointStrengthForMass(float massKg)
+    private void BeginReleaseFade()
+    {
+        if (_isReleasing) return;
+        _isReleasing = true;
+        _releaseFadeElapsed = 0f;
+    }
+    private void ApplyJointStrengthForMass(float massKg, float extraScale = 1f)
     {
         if (_joint == null) return;
 
@@ -769,7 +673,7 @@ public class PlayerHold : NetworkBehaviour
 
         armScale = Mathf.Clamp(armScale, minJointStrengthScale, 1f);
 
-        float combinedScale = strengthScale * armScale;
+        float combinedScale = strengthScale * armScale * Mathf.Clamp01(extraScale);
 
         float mass = Mathf.Max(0.001f, massKg);
         float linearSpring = (linearSpringBase + linearSpringPerKg * mass) * combinedScale;
@@ -809,9 +713,7 @@ public class PlayerHold : NetworkBehaviour
     {
         if (_joint == null) return;
 
-        if (IsServer)
-            Destroy(_joint);
-
+        Destroy(_joint);
         _joint = null;
     }
 
@@ -833,7 +735,6 @@ public class PlayerHold : NetworkBehaviour
         var netObj = rb.GetComponent<NetworkObject>();
         if (netObj == null) return;
 
-        // Capture and apply layer on server
         _restore = new HeldRestore
         {
             UseGravity = rb.useGravity,
@@ -846,10 +747,16 @@ public class PlayerHold : NetworkBehaviour
         };
         _restoreCaptured = true;
 
-        // ADDED: Apply held layer on server (this is the authoritative change)
         rb.gameObject.layer = heldItemLayer;
 
         _heldBody = rb;
+        _heldNetObj = netObj;
+
+        // Give physics/movement authority to the picker BEFORE the held-ref change
+        // propagates, so OnHeldRefChanged sees the correct owner on all peers.
+        if (netObj.OwnerClientId != OwnerClientId)
+            netObj.ChangeOwnership(OwnerClientId);
+
         _heldRef.Value = new NetworkObjectReference(netObj);
 
         _anchorRampElapsed = 0f;
@@ -860,9 +767,6 @@ public class PlayerHold : NetworkBehaviour
         if (_holdingState == null) _holdingState = netObj.gameObject.AddComponent<HoldableHoldingState>();
         _holdingState.ServerAddHolder();
 
-        CreateOrConfigureJoint();
-
-        // Play pickup sound
         if (enableAudio && AudioManager.Instance != null)
         {
             AudioManager.Instance.PlaySFXByName("packagePickup", rb.position);
@@ -886,7 +790,6 @@ public class PlayerHold : NetworkBehaviour
         float anchorScale = Mathf.Lerp(1f, anchorVelMultiplierAtMaxMass, t);
         float forwardScale = Mathf.Lerp(1f, forwardBoostMultiplierAtMaxMass, t);
 
-        // Apply combined upgrade multipliers (simple)
         releaseVel += _anchorVel * ResolvedReleaseAnchorVelScale * anchorScale;
         releaseVel += forward * ResolvedReleaseForwardBoost * forwardScale;
 
@@ -903,17 +806,14 @@ public class PlayerHold : NetworkBehaviour
 
         if (_holdingState != null) _holdingState.ServerRemoveHolder();
 
-        DestroyJoint();
-
-        // Restore physics settings
+        // Restore physics settings (authoritative values captured at pickup time).
         _heldBody.isKinematic = _restore.IsKinematic;
         _heldBody.useGravity = alwaysEnableGravityOnDrop ? true : _restore.UseGravity;
         _heldBody.linearDamping = _restore.Drag;
         _heldBody.angularDamping = _restore.AngularDrag;
         _heldBody.interpolation = _restore.Interp;
         _heldBody.collisionDetectionMode = _restore.CollisionMode;
-        
-        // CHANGED: Restore layer on server (authoritative)
+
         if (_restoreCaptured)
         {
             if (restoreOriginalLayerOnDrop)
@@ -931,6 +831,10 @@ public class PlayerHold : NetworkBehaviour
 
         var droppedBody = _heldBody;
 
+        // Hand ownership back to the server now that nobody is holding it.
+        if (_heldNetObj != null && _heldNetObj.OwnerClientId != NetworkManager.ServerClientId)
+            _heldNetObj.ChangeOwnership(NetworkManager.ServerClientId);
+
         _weightManager?.SetHeldMass(null);
 
         if (_holdingState != null)
@@ -939,13 +843,13 @@ public class PlayerHold : NetworkBehaviour
         _holdingState = null;
 
         _heldBody = null;
+        _heldNetObj = null;
         _heldRef.Value = default;
         _restoreCaptured = false;
         _exceededSeparationTime = 0f;
         _sag01 = 0f;
 
-        // Play drop sound
-        if (enableAudio && AudioManager.Instance != null)  // ADD THIS
+        if (enableAudio && AudioManager.Instance != null)
         {
             AudioManager.Instance.PlaySFXByName("packageDrop", droppedBody.transform.position);
         }
@@ -1015,18 +919,11 @@ public class PlayerHold : NetworkBehaviour
         sagLerpSpeed = Mathf.Max(0.01f, sagLerpSpeed);
         extraDownForceAtZeroLift = Mathf.Max(0f, extraDownForceAtZeroLift);
 
-        anchorPoseSendRateHz = Mathf.Clamp(anchorPoseSendRateHz, 1f, 60f);
-        anchorPoseMinPosDelta = Mathf.Max(0f, anchorPoseMinPosDelta);
-        anchorPoseMinRotDeltaDeg = Mathf.Max(0f, anchorPoseMinRotDeltaDeg);
-        
-        // Validate layer indices
         heldItemLayer = Mathf.Clamp(heldItemLayer, 0, 31);
         dropRestoreLayer = Mathf.Clamp(dropRestoreLayer, 0, 31);
-
-        // ADDED: Validate client prediction settings
-        clientReconciliationSpeed = Mathf.Max(0.1f, clientReconciliationSpeed);
-        maxPredictionError = Mathf.Max(0.1f, maxPredictionError);
-        clientRotationSmoothSpeed = Mathf.Max(0.1f, clientRotationSmoothSpeed);
+        releaseFadeTime = Mathf.Clamp(releaseFadeTime, 0f, 0.5f);
     }
 #endif
+
+    
 }
