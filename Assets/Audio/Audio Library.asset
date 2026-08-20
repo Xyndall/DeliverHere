@@ -18,13 +18,15 @@ MonoBehaviour:
   panelClose: {fileID: 0}
   packagePickup: {fileID: 0}
   packageDrop: {fileID: 0}
-  packageDestroy: {fileID: 0}
+  packageCollision: {fileID: 0}
+  packageDamage: {fileID: 0}
+  packageEnterZone: {fileID: 0}
   deliverySuccess: {fileID: 0}
   deliveryFail: {fileID: 0}
-  footstep: {fileID: 11400000, guid: 684147cc82f8c47419b9217f1e044d3e, type: 2}
-  jump: {fileID: 11400000, guid: cda64c5f97708f8489be321182266af4, type: 2}
-  land: {fileID: 11400000, guid: 5a4e7cc55a9fa29429fba6fbebda4a0f, type: 2}
-  hurt: {fileID: 11400000, guid: b01b06c748486da41ad8ea74a2114bbe, type: 2}
+  footstep: {fileID: 0}
+  jump: {fileID: 0}
+  land: {fileID: 0}
+  hurt: {fileID: 0}
   conveyorBelt: {fileID: 0}
   meteoriteImpact: {fileID: 0}
   menuMusic: {fileID: 0}

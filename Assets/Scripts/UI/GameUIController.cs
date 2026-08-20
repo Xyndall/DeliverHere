@@ -1,5 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
+using Unity.Netcode;
 using TMPro;
 
 public class GameUIController : MonoBehaviour
@@ -32,6 +34,9 @@ public class GameUIController : MonoBehaviour
     [SerializeField] private TMP_Text quotaStatusText;
     [SerializeField] private Button nextDayButton;
     [SerializeField] private Button restartButton;
+
+    [Header("Client-Local Menu (settings/leave-game overlay - NOT synced across network")]
+    [SerializeField] private GameObject pauseMenuRoot; // assign the escape/settings menu panel
 
     public UIStateManager uiStateManager; // assign
 
@@ -234,9 +239,62 @@ public class GameUIController : MonoBehaviour
         Cursor.visible = isPaused;
         Cursor.lockState = isPaused ? CursorLockMode.None : CursorLockMode.Locked;
 
-        if (uiStateManager != null)
+        // Purely client-local: this menu is just a settings/leave-game overlay,
+        // it does not pause gameplay and is NOT synced across the network.
+        if (pauseMenuRoot != null)
         {
-            uiStateManager.SetPaused(isPaused);
+            pauseMenuRoot.SetActive(isPaused);
         }
+    }
+
+    // ---- Leave game / Quit application ----
+
+    public void LeaveGame()
+    {
+        var nm = NetworkManager.Singleton;
+
+        if (nm != null && nm.IsListening)
+        {
+            if (nm.IsHost || nm.IsServer)
+            {
+                Debug.Log("[GameUIController] LeaveGame: Local player is host/server - shutting down session for all clients.");
+            }
+            else
+            {
+                Debug.Log("[GameUIController] LeaveGame: Local player is a client - disconnecting locally only.");
+            }
+
+
+            nm.Shutdown();
+        }
+
+        if (DeliverHere.Steam.SteamInviteManager.Instance != null)
+        {
+            DeliverHere.Steam.SteamInviteManager.Instance.ClearSession();
+        }
+
+        // Resume normal cursor state before returning to the menu.
+        isPaused = false;
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+
+        if (pauseMenuRoot != null)
+            pauseMenuRoot.SetActive(false);
+
+        SceneManager.LoadScene(0); // NetworkScene
+    }
+
+    /// <summary>
+    /// Quits the application entirely. Stops Play Mode in the Editor, or exits the process in a build.
+    /// </summary>
+    public void QuitApplication()
+    {
+        Debug.Log("[GameUIController] QuitApplication called.");
+
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 }

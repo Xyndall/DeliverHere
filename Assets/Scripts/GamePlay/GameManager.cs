@@ -40,10 +40,14 @@ public class GameManager : NetworkBehaviour
 
     public IReadOnlyList<Transform> PlayerSpawnPoints => playerSpawnPoints;
 
+    #pragma warning disable CS0414 // Reserved for future use
     private int lastSpawnedDay = -1;
+    #pragma warning restore CS0414
     private int dailyPackagesDelivered = 0;
     private int currentDayTargetMoney = 0;
+    #pragma warning disable CS0414 // Reserved for future use
     private bool endOfDayPopupShown = false;
+    #pragma warning restore CS0414
 
     private NetworkGameState _netState;
     private bool IsServerOrStandalone =>
@@ -164,10 +168,10 @@ public class GameManager : NetworkBehaviour
                 // We are showing the end-of-day overlay; if it's a loss, we wait for host action
                 _pendingLossReturnToLobby = !metQuota;
 
-                // Put UI into a non-gameplay state so HUD/pause logic won't fight the panel
+                // Put UI into a non-gameplay state so HUD logic won't fight the panel
                 if (IsServerOrStandalone && _netState != null)
                 {
-                    _netState.ServerSetGameState(GameState.GameOver, paused: false);
+                    _netState.ServerSetGameState(GameState.GameOver);
                 }
 
                 // ADDED: Hide the HUD for both success and failure before showing summary

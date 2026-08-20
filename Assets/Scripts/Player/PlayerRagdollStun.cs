@@ -117,7 +117,9 @@ namespace DeliverHere.Player
         [SerializeField] private Vector3 cameraFollowOffset = new Vector3(0f, 0.15f, 0f);
 
         [Tooltip("If true, only move player root on owning client (prevents server physics interference).")]
+#pragma warning disable CS0414 // Reserved for future use
         [SerializeField] private bool onlyFollowCameraOnClient = true;
+#pragma warning restore CS0414
 
         [Header("Recovery")]
         [Tooltip("If true, player auto-recovers after stun duration. If false, requires input.")]

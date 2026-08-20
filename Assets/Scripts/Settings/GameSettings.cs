@@ -43,9 +43,9 @@ namespace DeliverHere.Settings
         public void ResetToDefaults()
         {
             screenMode = FullScreenMode.FullScreenWindow;
-            resolutionWidth = 1920;
-            resolutionHeight = 1080;
-            refreshRate = 0;
+            resolutionWidth = Screen.currentResolution.width;
+            resolutionHeight = Screen.currentResolution.height;
+            refreshRate = (int)Screen.currentResolution.refreshRateRatio.numerator;
             qualityLevel = 3;
             masterVolume = 1f;
             musicVolume = 0.7f;

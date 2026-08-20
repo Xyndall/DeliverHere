@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
@@ -18,11 +19,52 @@ public class NetworkManagerUI : MonoBehaviour
 
     public UIStateManager uiStateManager; // assign via inspector
 
+    private bool _subscribedToRelay = false;
+
     private void OnEnable()
     {
         if (hostButton != null) hostButton.onClick.AddListener(OnClickHost);
         if (joinButton != null) joinButton.onClick.AddListener(OnClickJoin);
         if (joinCodeInput != null) joinCodeInput.onValueChanged.AddListener(OnJoinCodeValueChanged);
+
+        // FIXED: Relay.Instance might not exist yet (Awake ordering / scene load timing).
+        // Try immediately, and if it's not ready, keep retrying via coroutine until it is.
+        TrySubscribeToRelay();
+        if (!_subscribedToRelay)
+        {
+            StartCoroutine(SubscribeToRelayWhenReady());
+        }
+    }
+
+    private void TrySubscribeToRelay()
+    {
+        if (_subscribedToRelay) return;
+
+        if (Relay.Instance != null)
+        {
+            Relay.Instance.OnClientJoined += HandleRelayJoined;
+            Relay.Instance.OnClientJoinFailed += HandleRelayJoinFailed;
+            _subscribedToRelay = true;
+            Debug.Log("[NetworkManagerUI] Subscribed to Relay events.");
+        }
+    }
+
+    private IEnumerator SubscribeToRelayWhenReady()
+    {
+        float timeout = 5f;
+        float elapsed = 0f;
+
+        while (!_subscribedToRelay && elapsed < timeout)
+        {
+            yield return new WaitForSeconds(0.1f);
+            elapsed += 0.1f;
+            TrySubscribeToRelay();
+        }
+
+        if (!_subscribedToRelay)
+        {
+            Debug.LogWarning("[NetworkManagerUI] Could not find Relay.Instance to subscribe to after timeout!");
+        }
     }
 
     private void OnDisable()
@@ -30,6 +72,33 @@ public class NetworkManagerUI : MonoBehaviour
         if (hostButton != null) hostButton.onClick.RemoveListener(OnClickHost);
         if (joinButton != null) joinButton.onClick.RemoveListener(OnClickJoin);
         if (joinCodeInput != null) joinCodeInput.onValueChanged.RemoveListener(OnJoinCodeValueChanged);
+
+        if (Relay.Instance != null && _subscribedToRelay)
+        {
+            Relay.Instance.OnClientJoined -= HandleRelayJoined;
+            Relay.Instance.OnClientJoinFailed -= HandleRelayJoinFailed;
+        }
+        _subscribedToRelay = false;
+    }
+
+    // Central handler that closes the main menu / moves to Lobby state,
+    // regardless of what triggered the join (manual, Steam invite, cold launch).
+    private void HandleRelayJoined()
+    {
+        Debug.Log("[NetworkManagerUI] HandleRelayJoined fired.");
+
+        // Do NOT touch UIStateManager here. NetworkGameState owns the
+        // forced/main UI state and will apply it via nvGameState replication
+        // (see NetworkGameState.ApplyUiStateToLocal). Setting it here races
+        // with that replicated state and can leave stale menus open/closed.
+        SetInteractable(true);
+    }
+
+    private void HandleRelayJoinFailed(string error)
+    {
+        Debug.LogError("Relay join/host failed: " + error);
+        SetJoinCodeText("Failed");
+        SetInteractable(true);
     }
 
     public async void OnClickHost()
@@ -39,6 +108,9 @@ public class NetworkManagerUI : MonoBehaviour
             Debug.LogError("Relay component not found in scene. Add the Relay script to a GameObject.");
             return;
         }
+
+        // FIXED: Ensure subscription exists before hosting, in case OnEnable's retry hadn't caught it yet.
+        TrySubscribeToRelay();
 
         SetInteractable(false);
         try
@@ -51,25 +123,18 @@ public class NetworkManagerUI : MonoBehaviour
                 // ADDED: Wait for NetworkUISync to spawn, then set join code on it
                 await WaitForNetworkUISyncAndSetCode(code);
 
-                // Move to Lobby or InGame, depending on your flow
-                if (uiStateManager != null)
-                {
-                    uiStateManager.SetGameState(GameState.Lobby);
-                }
             }
             else
             {
                 Debug.LogError("Host failed: Join code was null/empty.");
                 SetJoinCodeText("Host failed");
+                SetInteractable(true);
             }
         }
         catch (Exception ex)
         {
             Debug.LogError("Exception while hosting: " + ex);
             SetJoinCodeText("Host failed");
-        }
-        finally
-        {
             SetInteractable(true);
         }
     }
@@ -106,6 +171,8 @@ public class NetworkManagerUI : MonoBehaviour
             return;
         }
 
+        TrySubscribeToRelay();
+
         string code = (joinCodeInput != null ? joinCodeInput.text : string.Empty)?.Trim();
         if (string.IsNullOrWhiteSpace(code))
         {
@@ -121,10 +188,8 @@ public class NetworkManagerUI : MonoBehaviour
         {
             Relay.Instance.JoinRelay(code);
 
-            if (uiStateManager != null)
-            {
-                uiStateManager.SetGameState(GameState.Lobby);
-            }
+            // NOTE: UI state transition to Lobby happens via HandleRelayJoined(),
+            // triggered by Relay.OnClientJoined, once the join actually succeeds.
         }
         catch (Exception ex)
         {

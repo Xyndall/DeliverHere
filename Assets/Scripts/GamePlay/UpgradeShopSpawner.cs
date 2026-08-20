@@ -22,7 +22,9 @@ public sealed class UpgradeShopSpawner : NetworkBehaviour
     [SerializeField] private bool uniqueWithinDay = true;
 
     [Header("Lifecycle")]
+#pragma warning disable CS0414 // Reserved for future use / inspector toggle
     [SerializeField] private bool clearOnShopDisabled = true;
+#pragma warning restore CS0414
 
     [Header("Debug")]
     [SerializeField] private bool enableServerLogs = false;

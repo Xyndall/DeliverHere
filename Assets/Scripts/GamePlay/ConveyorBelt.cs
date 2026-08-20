@@ -651,7 +651,7 @@ namespace DeliverHere.GamePlay
             }
         }
 
-        private void OnDestroy()
+        public override void OnDestroy()
         {
             // Restore all objects on belt
             foreach (var rb in _objectsOnBelt)

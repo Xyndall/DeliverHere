@@ -101,9 +101,18 @@ namespace DeliverHere.Settings
             }
             else
             {
-                // First launch: use default settings and save them
+                // First launch: default to the player's native monitor resolution
+                // instead of the hardcoded values in the GameSettings asset.
+                // Applying a non-native resolution in Fullscreen/Borderless forces
+                // the GPU/monitor scaler to stretch the image, which darkens
+                // colors and crushes lighting detail. Windowed mode is unaffected
+                // because it never invokes that scaler.
+                currentSettings.resolutionWidth  = Screen.currentResolution.width;
+                currentSettings.resolutionHeight = Screen.currentResolution.height;
+                currentSettings.refreshRate      = (int)Screen.currentResolution.refreshRateRatio.numerator;
+
                 if (enableLogs)
-                    Debug.Log("[SettingsManager] No saved settings found. Using defaults.");
+                    Debug.Log("[SettingsManager] No saved settings found. Using native monitor resolution as default.");
 
                 SaveSettings();
             }
@@ -146,17 +155,27 @@ namespace DeliverHere.Settings
         /// </summary>
         public void ApplyDisplaySettings()
         {
+            // A stored refreshRate of 0 means "use system default" (see GameSettings tooltip).
+            // Passing 0 straight into RefreshRate.numerator asks the OS for an invalid 0Hz
+            // display mode, which can fail the mode switch and leave Screen.width/height
+            // momentarily invalid — causing NaN screen positions in EventSystem raycasting
+            // ("Screen position out of view frustum"). Resolve it to the monitor's actual
+            // current refresh rate instead.
+            uint refreshNumerator = currentSettings.refreshRate > 0
+                ? (uint)currentSettings.refreshRate
+                : Screen.currentResolution.refreshRateRatio.numerator;
+
             Screen.SetResolution(
                 currentSettings.resolutionWidth,
                 currentSettings.resolutionHeight,
                 currentSettings.screenMode,
-                new RefreshRate { numerator = (uint)currentSettings.refreshRate, denominator = 1 }
+                new RefreshRate { numerator = refreshNumerator, denominator = 1 }
             );
 
             if (enableLogs)
             {
                 Debug.Log($"[SettingsManager] Display settings applied: {currentSettings.resolutionWidth}x{currentSettings.resolutionHeight} " +
-                         $"{currentSettings.screenMode} @ {currentSettings.refreshRate}Hz");
+                         $"{currentSettings.screenMode} @ {refreshNumerator}Hz");
             }
         }
 

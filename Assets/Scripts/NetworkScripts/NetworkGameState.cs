@@ -12,7 +12,6 @@ public enum GameState
     Loading,
     ReadyToStart,  // NEW: Intermediate state showing start game UI after loading completes
     InGame,
-    Paused,
     GameOver
 }
 
@@ -50,10 +49,6 @@ public class NetworkGameState : NetworkBehaviour
     // Replicate high-level UI/game flow state to all clients
     private readonly NetworkVariable<GameState> nvGameState = new NetworkVariable<GameState>(
         GameState.MainMenu, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
-    // Replicate pause flag
-    private readonly NetworkVariable<bool> nvPaused = new NetworkVariable<bool>(
-        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     // Keep day + timer replicated here (money is replicated by MoneyTargetManager)
     private readonly NetworkVariable<int> nvCurrentDay = new NetworkVariable<int>(
@@ -133,14 +128,8 @@ public class NetworkGameState : NetworkBehaviour
         nvGameState.OnValueChanged += (oldState, newState) =>
         {
             DebugLog($"nvGameState changed: {oldState} -> {newState} (IsServer={IsServer})");
-            ApplyUiStateToLocal(newState, nvPaused.Value);
+            ApplyUiStateToLocal(newState);
             OnLocalGameStateChanged?.Invoke(newState);
-        };
-        
-        nvPaused.OnValueChanged += (oldVal, newVal) =>
-        {
-            DebugLog($"nvPaused changed: {oldVal} -> {newVal}");
-            ApplyUiStateToLocal(nvGameState.Value, newVal);
         };
 
         // Toggle HUD locally on clients when gameStarted changes
@@ -181,9 +170,9 @@ public class NetworkGameState : NetworkBehaviour
         
         EnsureReferences();
         ApplyAllToClientUI();
-        ApplyUiStateToLocal(nvGameState.Value, nvPaused.Value);
+        ApplyUiStateToLocal(nvGameState.Value);
         
-        DebugLog($"Client UI setup complete. State={nvGameState.Value}, Paused={nvPaused.Value}");
+        DebugLog($"Client UI setup complete. State={nvGameState.Value}");
     }
 
     private void EnsureReferences()
@@ -278,17 +267,16 @@ public class NetworkGameState : NetworkBehaviour
 
     // REMOVED: OnTargetChangedUi method - no longer needed
 
-    private void ApplyUiStateToLocal(GameState state, bool paused)
+    private void ApplyUiStateToLocal(GameState state)
     {
         if (uiState == null)
         {
-            Debug.LogWarning($"[NetworkGameState] UIStateManager is null! Cannot apply state {state}, paused={paused}");
+            Debug.LogWarning($"[NetworkGameState] UIStateManager is null! Cannot apply state {state}");
             return;
         }
 
-        DebugLog($"Applying UI state: {state}, paused={paused}");
+        DebugLog($"Applying UI state: {state}");
         uiState.SetGameState(state);
-        uiState.SetPaused(paused);
     }
 
     private void Update()
@@ -437,7 +425,6 @@ public class NetworkGameState : NetworkBehaviour
 
         DebugLog("RequestStartGameServerRpc called - transitioning to Loading state");
 
-        nvPaused.Value = false;
         nvGameState.Value = GameState.Loading;
 
         levelFlow.StartLoadNextLevel();
@@ -489,7 +476,6 @@ public class NetworkGameState : NetworkBehaviour
 
         gameStarted.Value = false;
 
-        nvPaused.Value = false;
         nvGameState.Value = GameState.Lobby;
 
         var players = FindObjectsByType<PlayerUpgradableStats>(FindObjectsSortMode.None);
@@ -583,11 +569,10 @@ public class NetworkGameState : NetworkBehaviour
         ApplyPlayerTeleportClientRpc(playerNetObj.NetworkObjectId, position, rotation, rpcParams);
     }
 
-    public void ServerSetGameState(GameState state, bool paused = false)
+    public void ServerSetGameState(GameState state)
     {
         if (!IsServer) return;
-        DebugLog($"ServerSetGameState called: {state}, paused={paused}");
-        nvPaused.Value = paused;
+        DebugLog($"ServerSetGameState called: {state}");
         nvGameState.Value = state;
     }
 }

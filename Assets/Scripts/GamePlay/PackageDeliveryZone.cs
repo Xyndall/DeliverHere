@@ -37,7 +37,9 @@ namespace DeliverHere.GamePlay
 
         [Header("World Text Display")]
         [Tooltip("Optional: World text prefab to spawn and display quota progress.")]
+#pragma warning disable CS0414 // Reserved for future use
         [SerializeField] private bool autoCreateWorldText = true;
+#pragma warning restore CS0414
         [SerializeField] private Vector3 worldTextOffset = new Vector3(0f, 5f, 0f);
 
         [Header("Audio")] // NEW: Audio section

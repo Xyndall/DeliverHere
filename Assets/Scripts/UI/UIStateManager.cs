@@ -12,43 +12,36 @@ public class UIStateManager : MonoBehaviour
         public GameObject[] objects;     // Canvases / panels / roots
     }
 
-    [Header("UI Groups bound to game states")]
+    [Header("Main UI Groups bound to game states (forced, server-authoritative)")]
     [SerializeField] private UIGroup[] uiGroups;
 
     [Header("Special Groups")]
-    [SerializeField] private GameObject[] pauseOnlyUI;   // E.g. pause menu
     [SerializeField] private GameObject[] gameplayHUD;   // E.g. health, timer
 
     private GameState _currentState;
-    private bool _isPaused;
 
     private void Awake()
     {
-        ApplyState(GameState.MainMenu, false);
+        ApplyState(GameState.MainMenu);
     }
 
+    /// <summary>
+    /// Called ONLY by NetworkGameState in response to replicated GameState changes.
+    /// Do not call this from anywhere else (e.g. join/connect handlers, menu buttons)
+    /// or you will race with the replicated state and desync the UI between host and clients.
+    /// Client-local menus (settings, upgrades, etc.) should NOT go through this class at all -
+    /// toggle their GameObjects directly from their own controller.
+    /// </summary>
     public void SetGameState(GameState newState)
     {
         _currentState = newState;
-        ApplyState(_currentState, _isPaused);
+        ApplyState(_currentState);
     }
 
-    public void SetPaused(bool paused)
+    private void ApplyState(GameState state)
     {
-        _isPaused = paused;
-        
-        // Only toggle pause menu visibility, don't change state
-        foreach (var go in pauseOnlyUI)
-        {
-            if (go != null)
-                go.SetActive(_isPaused);
-        }
-    }
+        Debug.Log($"[UIStateManager] Applying state: {state}");
 
-    private void ApplyState(GameState state, bool paused)
-    {
-        Debug.Log($"[UIStateManager] Applying state: {state}, paused: {paused}");
-        
         // Base visibility by state
         foreach (var group in uiGroups)
         {
@@ -60,8 +53,8 @@ public class UIStateManager : MonoBehaviour
             }
         }
 
-        // Keep gameplay HUD visible during InGame and ReadyToStart states (CHANGED: Added ReadyToStart)
-        bool showGameplayHUD = (state == GameState.InGame || state == GameState.Paused || state == GameState.ReadyToStart);
+        // Keep gameplay HUD visible during InGame and ReadyToStart states
+        bool showGameplayHUD = (state == GameState.InGame || state == GameState.ReadyToStart);
 
         foreach (var go in gameplayHUD)
         {
@@ -70,13 +63,6 @@ public class UIStateManager : MonoBehaviour
                 go.SetActive(showGameplayHUD);
                 Debug.Log($"[UIStateManager] Set gameplay HUD '{go.name}' active: {showGameplayHUD}");
             }
-        }
-
-        // Apply pause menu visibility based on current pause state
-        foreach (var go in pauseOnlyUI)
-        {
-            if (go != null)
-                go.SetActive(paused);
         }
     }
 }

@@ -316,7 +316,7 @@ namespace DeliverHere.UI
                 Debug.Log("[UIStartGameButton] Button hidden.");
         }
 
-        private void OnDestroy()
+        public override void OnDestroy()
         {
             if (startButton != null)
             {

@@ -110,7 +110,7 @@ namespace DeliverHere.GamePlay
             // Important: Set to Loading first to prevent button clicks during reset
             if (networkGameState != null)
             {
-                networkGameState.ServerSetGameState(GameState.Loading, paused: false);
+                networkGameState.ServerSetGameState(GameState.Loading);
             }
 
             yield return null;
@@ -260,7 +260,7 @@ namespace DeliverHere.GamePlay
 
             if (networkGameState != null)
             {
-                networkGameState.ServerSetGameState(GameState.Lobby, paused: false);
+                networkGameState.ServerSetGameState(GameState.Lobby);
             }
 
             // Step 12: Force re-enable player inputs
@@ -413,7 +413,6 @@ namespace DeliverHere.GamePlay
             if (uiStateManager != null)
             {
                 uiStateManager.SetGameState(GameState.Lobby);
-                uiStateManager.SetPaused(false);
             }
 
             if (enableLogs)
