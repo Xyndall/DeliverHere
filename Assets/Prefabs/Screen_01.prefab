@@ -67,15 +67,15 @@ MonoBehaviour:
       m_Calls: []
   m_text: 'Qouta '
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 044506df3bf5b3e48a24a27a394e2b1e, type: 2}
+  m_sharedMaterial: {fileID: -6494139565348821566, guid: 044506df3bf5b3e48a24a27a394e2b1e, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294967295
-  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
+    rgba: 4278190080
+  m_fontColor: {r: 0, g: 0, b: 0, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -384,15 +384,15 @@ MonoBehaviour:
       m_Calls: []
   m_text: Active
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 044506df3bf5b3e48a24a27a394e2b1e, type: 2}
+  m_sharedMaterial: {fileID: -6494139565348821566, guid: 044506df3bf5b3e48a24a27a394e2b1e, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294967295
-  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
+    rgba: 4278190080
+  m_fontColor: {r: 0, g: 0, b: 0, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -635,15 +635,15 @@ MonoBehaviour:
       m_Calls: []
   m_text: Delivery Name
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 1ee81050e2d72454d87ad051db2b9965, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 044506df3bf5b3e48a24a27a394e2b1e, type: 2}
+  m_sharedMaterial: {fileID: -6494139565348821566, guid: 044506df3bf5b3e48a24a27a394e2b1e, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294967295
-  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
+    rgba: 4278190080
+  m_fontColor: {r: 0, g: 0, b: 0, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -660,7 +660,7 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 0.85
+  m_fontSize: 0.7
   m_fontSizeBase: 1
   m_fontWeight: 400
   m_enableAutoSizing: 1

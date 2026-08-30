@@ -16,7 +16,7 @@ MonoBehaviour:
   description: Spawns bloackades at random set points around the map the quantity
     and set points choseen are random and more can be added or removed while event
     is ongiong.
-  baseChance: 1
+  baseChance: 0.1
   maxTriggersPerDay: 1
   cooldownSeconds: 30
   windowStart01: 0.1

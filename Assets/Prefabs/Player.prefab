@@ -98,8 +98,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: New Text
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 044506df3bf5b3e48a24a27a394e2b1e, type: 2}
+  m_sharedMaterial: {fileID: -6494139565348821566, guid: 044506df3bf5b3e48a24a27a394e2b1e, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -636,15 +636,9 @@ MonoBehaviour:
   maxSagMeters: 1.1
   sagLerpSpeed: 8
   extraDownForceAtZeroLift: 120
-  anchorPoseSendRateHz: 60
-  anchorPoseMinPosDelta: 0
-  anchorPoseMinRotDeltaDeg: 0
-  enableClientPrediction: 1
-  clientReconciliationSpeed: 12
-  maxPredictionError: 0.5
-  clientRotationSmoothSpeed: 15
   inputController: {fileID: 1314525665084999406}
   enableAudio: 1
+  releaseFadeTime: 0.08
   massForMaxSlowdown: 10
 --- !u!114 &276092387163634943
 MonoBehaviour:

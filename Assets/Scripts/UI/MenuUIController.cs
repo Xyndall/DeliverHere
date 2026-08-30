@@ -189,21 +189,20 @@ public class MenuUIController : MonoBehaviour
         bool hasNM = NetworkManager.Singleton != null;
         bool isConnected = hasNM && NetworkManager.Singleton.IsListening;
 
-        // Show buttons if connected (either as host or client)
+        // Show buttons if connected (host or client)
         if (startGameButton != null) startGameButton.gameObject.SetActive(isConnected);
         if (endGameButton != null) endGameButton.gameObject.SetActive(isConnected);
 
-        // Only host can actually interact with the buttons
-        bool isHost = hasNM && NetworkManager.Singleton.IsHost;
-        if (startGameButton != null) startGameButton.interactable = isHost;
-        if (endGameButton != null) endGameButton.interactable = isHost;
+        // Everyone in the lobby can interact with the buttons, not just the host
+        if (startGameButton != null) startGameButton.interactable = isConnected;
+        if (endGameButton != null) endGameButton.interactable = isConnected;
 
         if (logVisibilityDebug)
         {
             string reason = hasNM
                 ? $"IsServer={NetworkManager.Singleton.IsServer}, IsClient={NetworkManager.Singleton.IsClient}, IsHost={NetworkManager.Singleton.IsHost}, IsListening={NetworkManager.Singleton.IsListening}"
                 : "NetworkManager.Singleton == null";
-            Debug.Log($"[MenuUIController] EvaluateVisibility => visible={isConnected}, interactable={isHost}. Reason: {reason}");
+            Debug.Log($"[MenuUIController] EvaluateVisibility => visible={isConnected}, interactable={isConnected}. Reason: {reason}");
         }
     }
 
@@ -224,29 +223,25 @@ public class MenuUIController : MonoBehaviour
     {
         if (menuRoot == null) return;
 
-        // Hide main menu if:
-        // 1. Game has started (gameStarted = true)
-        // 2. OR we're in Lobby state (connected to a game session)
-        // 3. OR we're in Loading/ReadyToStart/InGame/GameOver states
-        
-        bool shouldHideMenu = false;
-        
+        // Show the lobby menu only while everyone is in GameState.Lobby.
+        // Hide it once the game has started or we've moved into Loading/ReadyToStart/InGame/GameOver.
+        bool shouldShowMenu = false;
+
         if (NetworkGameState.Instance != null)
         {
             GameState currentState = NetworkGameState.Instance.LocalGameState;
             bool gameStarted = NetworkGameState.Instance.GameStarted;
-            
-            // Show menu only in MainMenu state when game hasn't started
-            shouldHideMenu = gameStarted || currentState != GameState.MainMenu;
+
+            shouldShowMenu = !gameStarted && currentState == GameState.Lobby;
         }
-        
-        menuRoot.SetActive(!shouldHideMenu);
-        
+
+        menuRoot.SetActive(shouldShowMenu);
+
         if (logVisibilityDebug)
         {
             string state = NetworkGameState.Instance != null ? NetworkGameState.Instance.LocalGameState.ToString() : "Unknown";
             bool started = NetworkGameState.Instance != null ? NetworkGameState.Instance.GameStarted : false;
-            Debug.Log($"[MenuUIController] UpdateMenuVisibility: state={state}, started={started}, menuVisible={!shouldHideMenu}");
+            Debug.Log($"[MenuUIController] UpdateMenuVisibility: state={state}, started={started}, menuVisible={shouldShowMenu}");
         }
     }
 
