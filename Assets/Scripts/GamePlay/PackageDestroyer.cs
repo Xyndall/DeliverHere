@@ -115,10 +115,10 @@ namespace DeliverHere.GamePlay
 
 
 
-            // Destroy the object (despawn if networked, otherwise destroy)
-            if (netObj != null && netObj.IsSpawned)
+            // Destroy the object (return to pool if it's a networked package, otherwise destroy)
+            if (netObj != null)
             {
-                netObj.Despawn(destroy: true);
+                PackagePool.Release(netObj);
             }
             else
             {

@@ -91,6 +91,10 @@ namespace DeliverHere.Items
         // For online games this mirrors NetWeightKg; for offline it mirrors localWeightKg.
         private float originalWeightKg;
 
+        // True once this instance has completed its first Start()/OnNetworkSpawn() pass.
+        // Used to detect reuse from PackagePool so offline instances re-randomize on re-enable.
+        private bool _hasInitialized;
+
         private bool IsNetworked => NetworkManager != null;
         private bool UseNetValues => IsNetworked && (IsServer || IsClient);
 
@@ -118,6 +122,8 @@ namespace DeliverHere.Items
 
         private void Start()
         {
+            _hasInitialized = true;
+
             // Offline: randomize on Start so instances get unique values immediately.
             if (!IsNetworked && autoRandomizeOnSpawn)
             {
@@ -126,6 +132,16 @@ namespace DeliverHere.Items
             else
             {
                 ApplyAll(); // ensure visuals/physics reflect current values
+            }
+        }
+
+        private void OnEnable()
+        {
+            // Offline reuse from PackagePool: Start() only runs once per GameObject lifetime,
+            // so re-randomize here whenever a pooled (already-initialized) instance is re-enabled.
+            if (_hasInitialized && !IsNetworked && autoRandomizeOnSpawn)
+            {
+                ServerRandomize();
             }
         }
 
@@ -253,6 +269,49 @@ namespace DeliverHere.Items
             // Recompute physics using holder count (if any)
             ApplyAll(weight, value, fragility, size, Mathf.Max(0.01f, scaleMult));
             RecomputeSharedMass();
+        }
+
+        /// <summary>
+        /// Called by PackagePool right before this instance is deactivated and returned to the pool.
+        /// Clears transient physics/holder state so the package looks "fresh" the next time it's reused.
+        /// Actual value randomization happens automatically on the next spawn:
+        /// - Online: OnNetworkSpawn() re-runs ServerRandomize() every time NetworkObject.Spawn() is called.
+        /// - Offline: OnEnable() re-runs ServerRandomize() for any already-initialized instance.
+        /// </summary>
+        public void ResetForPool()
+        {
+            if (holdingState != null)
+            {
+                holdingState.ServerResetHolders();
+            }
+
+            if (body != null)
+            {
+                // Remove any leftover joints (e.g. a ConfigurableJoint from PlayerHold that wasn't
+                // cleaned up before this package was despawned/pooled while still held). A stray
+                // joint anchors the rigidbody in place, making it look "stuck" until something
+                // applies enough force to overpower its drive springs.
+                var joints = body.GetComponents<Joint>();
+                for (int i = 0; i < joints.Length; i++)
+                {
+                    if (joints[i] != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(joints[i]);
+                    }
+                }
+
+                // Force back to a normal, physically-simulated state in case the package was
+                // pooled while still held/kinematic (e.g. PlayerHold sets isKinematic/useGravity
+                // to false while carrying an object and only restores them on drop).
+                body.isKinematic = false;
+                body.useGravity = true;
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+                body.maxAngularVelocity = 7f; // Unity default, in case PlayerHold raised it
+                body.WakeUp();
+            }
+
+            transform.localScale = Vector3.one;
         }
 
         private float RandomWeightForSize(PackageSize size)

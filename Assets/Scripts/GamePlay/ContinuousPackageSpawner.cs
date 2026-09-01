@@ -228,8 +228,10 @@ namespace DeliverHere.GamePlay
 
             Quaternion spawnRotation = spawnPoint.rotation * Quaternion.Euler(rotationOffset);
 
-            // Instantiate package
-            NetworkObject instance = Instantiate(packagePrefab, spawnPosition, spawnRotation);
+            // Get package from pool (or instantiate a new one if the pool is empty)
+            NetworkObject instance = PackagePool.Get(packagePrefab, spawnPosition, spawnRotation);
+            if (instance == null)
+                return;
 
             // Spawn on network
             instance.Spawn(true);
@@ -255,26 +257,26 @@ namespace DeliverHere.GamePlay
                 }
             }
 
-            // Apply spawn force
-            Rigidbody rb = instance.GetComponent<Rigidbody>();
-            if (rb == null)
-            {
-                rb = instance.GetComponentInChildren<Rigidbody>();
-            }
+            //// Apply spawn force
+            //Rigidbody rb = instance.GetComponent<Rigidbody>();
+            //if (rb == null)
+            //{
+            //    rb = instance.GetComponentInChildren<Rigidbody>();
+            //}
 
-            if (rb != null)
-            {
-                float force = spawnForce + Random.Range(-spawnForceVariation, spawnForceVariation);
-                force = Mathf.Max(0f, force);
+            //if (rb != null)
+            //{
+            //    float force = spawnForce + Random.Range(-spawnForceVariation, spawnForceVariation);
+            //    force = Mathf.Max(0f, force);
 
-                Vector3 forceDirection = spawnPoint.forward;
-                rb.AddForce(forceDirection * force, ForceMode.Impulse);
+            //    Vector3 forceDirection = spawnPoint.forward;
+            //    rb.AddForce(forceDirection * force, ForceMode.Impulse);
 
-                if (logSpawns)
-                {
-                    Debug.Log($"[ContinuousPackageSpawner] Spawned package #{_spawnedCount + 1} with force {force:F2}N");
-                }
-            }
+            //    if (logSpawns)
+            //    {
+            //        Debug.Log($"[ContinuousPackageSpawner] Spawned package #{_spawnedCount + 1} with force {force:F2}N");
+            //    }
+            //}
 
             _spawnedCount++;
         }

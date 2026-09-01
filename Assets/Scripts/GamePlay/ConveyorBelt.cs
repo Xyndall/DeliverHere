@@ -280,6 +280,17 @@ namespace DeliverHere.GamePlay
                     continue;
                 }
 
+                // Object was despawned/pooled (SetActive(false)) rather than destroyed.
+                // OnTriggerExit never fires for deactivated objects, so without this check
+                // a pooled package would stay tracked forever, keep having its gravity
+                // disabled, and keep being forced toward belt velocity/height even after
+                // being reactivated elsewhere by the pool.
+                if (!rb.gameObject.activeInHierarchy)
+                {
+                    objectsToRemove.Add(rb);
+                    continue;
+                }
+
                 // Check if object's layer is still valid (handles runtime layer changes)
                 int currentLayer = rb.gameObject.layer;
                 bool layerStillValid = ((1 << currentLayer) & affectedLayers.value) != 0;

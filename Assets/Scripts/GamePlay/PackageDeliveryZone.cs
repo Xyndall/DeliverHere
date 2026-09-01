@@ -573,9 +573,9 @@ namespace DeliverHere.GamePlay
         private void DespawnOrDestroy(GameObject go)
         {
             var no = go.GetComponent<NetworkObject>();
-            if (no != null && no.IsSpawned)
+            if (no != null)
             {
-                no.Despawn(true);
+                PackagePool.Release(no);
             }
             else
             {

@@ -22,4 +22,12 @@ public class HoldableHoldingState : NetworkBehaviour
         if (!IsServer) return;
         HoldersCount.Value = Mathf.Max(0, HoldersCount.Value - 1);
     }
+
+    // Called when a package is returned to the pool, ensuring stale holder counts
+    // don't carry over into the next reuse of this instance.
+    public void ServerResetHolders()
+    {
+        if (!IsServer) return;
+        HoldersCount.Value = 0;
+    }
 }

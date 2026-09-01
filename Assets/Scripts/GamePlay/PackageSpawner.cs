@@ -198,7 +198,8 @@ namespace DeliverHere.GamePlay
         {
             if (packagePrefab == null || pipeExit == null) return;
 
-            var instance = Instantiate(packagePrefab, pipeExit.position, pipeExit.rotation);
+            var instance = PackagePool.Get(packagePrefab, pipeExit.position, pipeExit.rotation);
+            if (instance == null) return;
 
             if (NetworkManager.Singleton != null)
             {
