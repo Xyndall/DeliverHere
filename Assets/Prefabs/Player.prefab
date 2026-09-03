@@ -417,7 +417,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 209272834
+  GlobalObjectIdHash: 363287109
   InScenePlacedSourceGlobalObjectIdHash: 209272834
   DeferredDespawnTick: 0
   Ownership: 1
@@ -460,6 +460,8 @@ MonoBehaviour:
   speedMultiplierAtMaxPenalty: 0.55
   rotateLerpMultiplierAtMaxPenalty: 0.4
   weightManager: {fileID: 8983411890034586755}
+  platformStick: {fileID: 2705474573719322411}
+  airInertiaDamping: 0
   inputController: {fileID: 1314525665084999406}
   footstepInterval: 0.4
   minFootstepSpeed: 1
@@ -1065,10 +1067,8 @@ MonoBehaviour:
   platformLayers:
     serializedVersion: 2
     m_Bits: 16384
-  groundCheckDistance: 0.2
-  groundCheckRadius: 0.3
-  requirePlatformTag: 0
-  platformTag: MovingPlatform
+  groundCheckDistance: 0.86
+  groundCheckRadius: 0.29
   velocitySmoothing: 0.1
   velocityMultiplier: 1
   minPlatformVelocity: 0.01
@@ -1076,11 +1076,11 @@ MonoBehaviour:
   requireGrounded: 1
   unstickDelay: 0.1
   stickingForce: 2
-  compensateRotation: 1
+  compensateRotation: 0
   rotationSmoothing: 0.2
   characterController: {fileID: 6036543192460141483}
   playerMovement: {fileID: 8423766064830032752}
-  showDebugLogs: 0
+  showDebugLogs: 1
   showDebugGizmos: 1
 --- !u!114 &4592383631287030176
 MonoBehaviour:

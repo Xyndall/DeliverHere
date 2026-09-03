@@ -22,12 +22,6 @@ namespace DeliverHere.Player
         [Tooltip("Radius of sphere cast for ground detection.")]
         [SerializeField] private float groundCheckRadius = 0.3f;
 
-        [Tooltip("If true, only stick to objects tagged as 'MovingPlatform'.")]
-        [SerializeField] private bool requirePlatformTag = false;
-
-        [Tooltip("Tag required for platforms (if requirePlatformTag is true).")]
-        [SerializeField] private string platformTag = "MovingPlatform";
-
         [Header("Movement Compensation")]
         [Tooltip("Smoothing factor for velocity compensation (0-1, higher = smoother but less responsive).")]
         [Range(0f, 1f)]
@@ -45,7 +39,7 @@ namespace DeliverHere.Player
         [SerializeField] private float maxPlatformVelocity = 50f;
 
         [Tooltip("If true, only stick when grounded according to CharacterController.")]
-        [SerializeField] private bool requireGrounded = true;
+        [SerializeField] private bool requireGrounded = false;
 
         [Tooltip("Delay before unsticking from platform after leaving (prevents jitter).")]
         [SerializeField] private float unstickDelay = 0.1f;
@@ -73,6 +67,7 @@ namespace DeliverHere.Player
         private Transform _currentPlatform;
         private Rigidbody _currentPlatformRb;
         private GamePlay.SplineVehicleVelocityTracker _currentPlatformTracker;
+        private GamePlay.ConveyorBelt _currentConveyorBelt;
         private Vector3 _platformVelocity;
         private Vector3 _smoothedPlatformVelocity;
 
@@ -128,6 +123,7 @@ namespace DeliverHere.Player
 
         private void Update()
         {
+            
             if (!IsOwner) return;
             if (characterController == null) return;
 
@@ -191,10 +187,6 @@ namespace DeliverHere.Player
             if (!detected)
                 return null;
 
-            // Check tag requirement
-            if (requirePlatformTag && !hit.collider.CompareTag(platformTag))
-                return null;
-
             // Get the root transform (could be nested)
             Transform platformTransform = hit.collider.transform;
 
@@ -214,6 +206,7 @@ namespace DeliverHere.Player
             _currentPlatform = platform;
             _currentPlatformRb = platform.GetComponent<Rigidbody>();
             _currentPlatformTracker = platform.GetComponent<GamePlay.SplineVehicleVelocityTracker>();
+            _currentConveyorBelt = platform.GetComponentInParent<GamePlay.ConveyorBelt>();
 
             // Store initial platform state
             _lastPlatformPosition = platform.position;
@@ -239,6 +232,7 @@ namespace DeliverHere.Player
             _currentPlatform = null;
             _currentPlatformRb = null;
             _currentPlatformTracker = null;
+            _currentConveyorBelt = null;
             _platformVelocity = Vector3.zero;
             _smoothedPlatformVelocity = Vector3.zero;
         }
@@ -281,6 +275,17 @@ namespace DeliverHere.Player
                     if (showDebugLogs && velocity.magnitude > minPlatformVelocity)
                         Debug.Log($"[PlayerPlatformStick] Calculated velocity from position delta: {velocity.magnitude:F2} m/s");
                 }
+            }
+
+            // Conveyor belts add their own surface velocity on top of whatever the
+            // underlying platform (e.g. a moving vehicle bed) is already contributing.
+            if (_currentConveyorBelt != null)
+            {
+                Vector3 beltVelocity = _currentConveyorBelt.WorldBeltVelocity;
+                velocity += beltVelocity;
+
+                if (showDebugLogs && beltVelocity.magnitude > minPlatformVelocity)
+                    Debug.Log($"[PlayerPlatformStick] Adding conveyor belt velocity: {beltVelocity.magnitude:F2} m/s");
             }
 
             // Clamp velocity to reasonable limits
@@ -422,14 +427,21 @@ namespace DeliverHere.Player
 #if UNITY_EDITOR
         private void OnDrawGizmos()
         {
-            if (!showDebugGizmos || !Application.isPlaying)
+            if (!showDebugGizmos)
                 return;
 
-            // Draw ground check sphere
+            // Draw ground check sphere cast (start sphere, end sphere, and connecting lines
+            // to visualize the full swept capsule volume used in DetectPlatform()).
             Vector3 origin = transform.position + Vector3.up * groundCheckRadius;
+            Vector3 endPoint = origin + Vector3.down * groundCheckDistance;
             Gizmos.color = IsOnPlatform ? Color.green : Color.yellow;
             Gizmos.DrawWireSphere(origin, groundCheckRadius);
-            Gizmos.DrawLine(origin, origin + Vector3.down * (groundCheckDistance + groundCheckRadius));
+            Gizmos.DrawWireSphere(endPoint, groundCheckRadius);
+            Gizmos.DrawLine(origin, endPoint);
+            Gizmos.DrawLine(origin + Vector3.right * groundCheckRadius, endPoint + Vector3.right * groundCheckRadius);
+            Gizmos.DrawLine(origin - Vector3.right * groundCheckRadius, endPoint - Vector3.right * groundCheckRadius);
+            Gizmos.DrawLine(origin + Vector3.forward * groundCheckRadius, endPoint + Vector3.forward * groundCheckRadius);
+            Gizmos.DrawLine(origin - Vector3.forward * groundCheckRadius, endPoint - Vector3.forward * groundCheckRadius);
 
             // Draw platform velocity
             if (IsOnPlatform && _platformVelocity.magnitude > minPlatformVelocity)

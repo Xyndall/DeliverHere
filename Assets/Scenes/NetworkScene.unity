@@ -2773,7 +2773,7 @@ GameObject:
   - component: {fileID: 190273922}
   - component: {fileID: 190273921}
   - component: {fileID: 190273920}
-  m_Layer: 0
+  m_Layer: 14
   m_Name: Conveyor (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2818,7 +2818,7 @@ MonoBehaviour:
   freezeRotationOnBelt: 1
   affectedLayers:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 4294967295
   requiredTag: 
   beltSurfaceCollider: {fileID: 190273922}
   beltRenderer: {fileID: 0}
@@ -2870,8 +2870,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.040005375, y: 0.0074917544, z: 0.0087438645}
-  m_Center: {x: 0.01659669, y: -0.0000377751, z: -0.001133887}
+  m_Size: {x: 0.0369798, y: 0.006263893, z: 0.0090225}
+  m_Center: {x: 0.015083897, y: -0.00030118565, z: -0.0009945692}
 --- !u!1 &196464791
 GameObject:
   m_ObjectHideFlags: 0
@@ -5880,6 +5880,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Conveyor
       objectReference: {fileID: 0}
+    - target: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      propertyPath: m_Layer
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       propertyPath: m_Name
       value: map
@@ -5889,9 +5893,15 @@ PrefabInstance:
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       insertIndex: 2
-      addedObject: {fileID: 190273919}
+      addedObject: {fileID: 1841484811}
     - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       insertIndex: 3
+      addedObject: {fileID: 1861349989}
+    - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      insertIndex: 4
+      addedObject: {fileID: 190273919}
+    - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+      insertIndex: 5
       addedObject: {fileID: 1404314515}
     - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       insertIndex: -1
@@ -5902,13 +5912,7 @@ PrefabInstance:
       addedObject: {fileID: 550200952}
     - targetCorrespondingSourceObject: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 801219344}
-    - targetCorrespondingSourceObject: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 801219338}
-    - targetCorrespondingSourceObject: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 801219339}
+      addedObject: {fileID: 801219348}
     - targetCorrespondingSourceObject: {fileID: -516098083770646512, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
       insertIndex: -1
       addedObject: {fileID: 939155630}
@@ -9668,64 +9672,8 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: -8391222552659086748, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
   m_PrefabInstance: {fileID: 493942018}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &801219338
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 801219333}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1443157177
-  InScenePlacedSourceGlobalObjectIdHash: 0
-  DeferredDespawnTick: 0
-  Ownership: 1
-  AlwaysReplicateAsRoot: 0
-  SynchronizeTransform: 1
-  ActiveSceneSynchronization: 0
-  SceneMigrationSynchronization: 0
-  SpawnWithObservers: 1
-  DontDestroyWithOwner: 0
-  AutoObjectParentSync: 1
-  SyncOwnerTransformWhenParented: 1
-  AllowOwnerToParent: 0
---- !u!114 &801219339
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 801219333}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 86295d59cb50c654192c6a39f19631d6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ConveyorBelt
-  ShowTopMostFoldoutHeaderGroup: 1
-  beltSpeed: 3
-  beltDirection: {x: 1, y: 0, z: 0}
-  minUpwardContactDot: 0.5
-  useHeightBasedDetection: 1
-  topSurfaceTolerance: 0.15
-  applyPerpendicularFriction: 0
-  perpendicularDamping: 0.688
-  freezeRotationOnBelt: 1
-  affectedLayers:
-    serializedVersion: 2
-    m_Bits: 64
-  requiredTag: 
-  beltSurfaceCollider: {fileID: 801219344}
-  beltRenderer: {fileID: 0}
-  uvOffsetPropertyName: _MainTex
-  uvScrollSpeed: 1
-  showDebugGizmos: 1
-  logCollisionEvents: 0
---- !u!65 &801219344
-BoxCollider:
+--- !u!64 &801219348
+MeshCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -9742,9 +9690,10 @@ BoxCollider:
   m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 0.03141101, y: 0.00562185, z: 0.00834772}
-  m_Center: {x: 0.012299482, y: 0.00089718064, z: -0.0013319599}
+  serializedVersion: 5
+  m_Convex: 0
+  m_CookingOptions: 30
+  m_Mesh: {fileID: -5495902117074765545, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
 --- !u!1 &830140219 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: -9041267756353341082, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
@@ -14353,7 +14302,7 @@ GameObject:
   - component: {fileID: 1404314518}
   - component: {fileID: 1404314517}
   - component: {fileID: 1404314516}
-  m_Layer: 0
+  m_Layer: 14
   m_Name: Conveyor (2)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -14398,7 +14347,7 @@ MonoBehaviour:
   freezeRotationOnBelt: 1
   affectedLayers:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 4294967295
   requiredTag: 
   beltSurfaceCollider: {fileID: 1404314518}
   beltRenderer: {fileID: 0}
@@ -14450,8 +14399,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.035829127, y: 0.006198555, z: 0.010331071}
-  m_Center: {x: 0.014508558, y: 0.0006088208, z: -0.0003402849}
+  m_Size: {x: 0.03604897, y: 0.00609254, z: 0.010331071}
+  m_Center: {x: 0.01439869, y: -0.00020220206, z: -0.00034028487}
 --- !u!1 &1408856410 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1998131547146259539, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
@@ -17529,6 +17478,228 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 6163357941915963767, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
+--- !u!1 &1841484810
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1841484811}
+  - component: {fileID: 1841484814}
+  - component: {fileID: 1841484813}
+  - component: {fileID: 1841484812}
+  m_Layer: 14
+  m_Name: Conveyor (3)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1841484811
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1841484810}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.7071068, y: 0, z: -0, w: 0.7071067}
+  m_LocalPosition: {x: -7.5080304, y: 0.2965243, z: 5.776165}
+  m_LocalScale: {x: 310.13538, y: 587.6859, z: 110.26946}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1567255825}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1841484812
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1841484810}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86295d59cb50c654192c6a39f19631d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ConveyorBelt
+  ShowTopMostFoldoutHeaderGroup: 1
+  beltSpeed: 3
+  beltDirection: {x: 1, y: 0, z: 0}
+  minUpwardContactDot: 0.5
+  useHeightBasedDetection: 1
+  topSurfaceTolerance: 0.15
+  applyPerpendicularFriction: 0
+  perpendicularDamping: 0.688
+  freezeRotationOnBelt: 1
+  affectedLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  requiredTag: 
+  beltSurfaceCollider: {fileID: 1841484814}
+  beltRenderer: {fileID: 0}
+  uvOffsetPropertyName: _MainTex
+  uvScrollSpeed: 1
+  showDebugGizmos: 1
+  logCollisionEvents: 0
+--- !u!114 &1841484813
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1841484810}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 2877204984
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!65 &1841484814
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1841484810}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.024597136, y: 0.005003057, z: 0.00834772}
+  m_Center: {x: 0.015706487, y: 0.0012065815, z: -0.0013319711}
+--- !u!1 &1861349988
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1861349989}
+  - component: {fileID: 1861349992}
+  - component: {fileID: 1861349991}
+  - component: {fileID: 1861349990}
+  m_Layer: 14
+  m_Name: Conveyor (4)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1861349989
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1861349988}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.7071068, y: 0, z: -0, w: 0.7071067}
+  m_LocalPosition: {x: -7.5080304, y: 0.2965243, z: 5.776165}
+  m_LocalScale: {x: 310.13538, y: 587.6859, z: 110.26946}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1567255825}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1861349990
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1861349988}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86295d59cb50c654192c6a39f19631d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ConveyorBelt
+  ShowTopMostFoldoutHeaderGroup: 1
+  beltSpeed: 3
+  beltDirection: {x: 1, y: 0, z: 0}
+  minUpwardContactDot: 0.5
+  useHeightBasedDetection: 1
+  topSurfaceTolerance: 0.15
+  applyPerpendicularFriction: 0
+  perpendicularDamping: 0.688
+  freezeRotationOnBelt: 1
+  affectedLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  requiredTag: 
+  beltSurfaceCollider: {fileID: 1861349992}
+  beltRenderer: {fileID: 0}
+  uvOffsetPropertyName: _MainTex
+  uvScrollSpeed: 1
+  showDebugGizmos: 1
+  logCollisionEvents: 0
+--- !u!114 &1861349991
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1861349988}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 2890353475
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!65 &1861349992
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1861349988}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.0068673817, y: 0.0035233046, z: 0.00834772}
+  m_Center: {x: 0.000027637565, y: 0.0019464596, z: -0.0013319766}
 --- !u!1 &1872875857 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 4504409719310791647, guid: 4247f878d9f36924496e3ee9597d1fbf, type: 3}
@@ -18941,6 +19112,194 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1961599747}
   m_CullTransparentMesh: 1
+--- !u!1 &1965145758
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1965145762}
+  - component: {fileID: 1965145761}
+  - component: {fileID: 1965145760}
+  - component: {fileID: 1965145759}
+  - component: {fileID: 1965145765}
+  - component: {fileID: 1965145763}
+  - component: {fileID: 1965145764}
+  m_Layer: 14
+  m_Name: wowFantasticBaby
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!65 &1965145759
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1965145758}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!23 &1965145760
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1965145758}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &1965145761
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1965145758}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!4 &1965145762
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1965145758}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -2.05, y: 0.38, z: -7.73}
+  m_LocalScale: {x: 7.915405, y: 0.711179, z: 7.915405}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1965145763
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1965145758}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 927830702
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &1965145764
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1965145758}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 652308592c9f6d840baf43f331033a62, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.MovingPlatform
+  ShowTopMostFoldoutHeaderGroup: 1
+  waypoints:
+  - {x: 0, y: 2.1, z: -13.41}
+  - {x: 0, y: 0, z: 0}
+  moveSpeed: 2
+  waitTimeAtWaypoint: 0
+  loopMode: 0
+  smoothMotion: 1
+  showDebugGizmos: 1
+--- !u!54 &1965145765
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1965145758}
+  serializedVersion: 5
+  m_Mass: 1
+  m_LinearDamping: 0
+  m_AngularDamping: 0.05
+  m_CenterOfMass: {x: 0, y: 0, z: 0}
+  m_InertiaTensor: {x: 1, y: 1, z: 1}
+  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ImplicitCom: 1
+  m_ImplicitTensor: 1
+  m_UseGravity: 1
+  m_IsKinematic: 0
+  m_Interpolate: 0
+  m_Constraints: 0
+  m_CollisionDetection: 0
 --- !u!1 &1966758240
 GameObject:
   m_ObjectHideFlags: 0
@@ -21683,3 +22042,4 @@ SceneRoots:
   - {fileID: 902411858}
   - {fileID: 1966758242}
   - {fileID: 486683648}
+  - {fileID: 1965145762}

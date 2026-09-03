@@ -42,6 +42,12 @@ public class PlayerMovement : NetworkBehaviour
     [Tooltip("If not assigned, will try to GetComponent on the same GameObject.")]
     [SerializeField] private PlayerWeightManager weightManager;
 
+    [Header("Moving Platform Inertia")]
+    [Tooltip("If not assigned, will try to GetComponent on the same GameObject.")]
+    [SerializeField] private DeliverHere.Player.PlayerPlatformStick platformStick;
+    [Tooltip("How quickly inherited platform momentum bleeds off once airborne and no longer on a platform (m/s^2). 0 = never decays.")]
+    [SerializeField] private float airInertiaDamping = 0f;
+
     [Header("Input")]
     [Tooltip("Centralized input controller on this player.")]
     [SerializeField] private PlayerInputController inputController;
@@ -64,6 +70,9 @@ public class PlayerMovement : NetworkBehaviour
     private Vector3 _verticalVel;
     private float _regenCooldown;
 
+    // Moving platform inertia carried into the air (e.g. off a jump or a walked-off edge)
+    private Vector3 _inheritedPlatformVelocity;
+
     // Footstep tracking
     private float _nextFootstepTime;
     private bool _wasGroundedLastFrame;
@@ -75,6 +84,7 @@ public class PlayerMovement : NetworkBehaviour
         if (weightManager == null) weightManager = GetComponent<PlayerWeightManager>();
         if (inputController == null) inputController = GetComponent<PlayerInputController>();
         if (upgradableStats == null) upgradableStats = GetComponent<PlayerUpgradableStats>();
+        if (platformStick == null) platformStick = GetComponent<DeliverHere.Player.PlayerPlatformStick>();
     }
 
     public override void OnNetworkSpawn()
@@ -112,6 +122,7 @@ public class PlayerMovement : NetworkBehaviour
         _verticalVel = Vector3.zero;
         _regenCooldown = 0f;
         IsSprinting = false;
+        _inheritedPlatformVelocity = Vector3.zero;
     }
 
     private void Update()
@@ -216,6 +227,20 @@ public class PlayerMovement : NetworkBehaviour
         }
 
         bool canJumpByWeight = weightManager == null || weightManager.CanJump();
+        bool onPlatform = platformStick != null && platformStick.IsOnPlatform;
+
+        // While standing on a moving platform/conveyor, continuously latch its current
+        // velocity so that jumping (or walking off the edge) carries that momentum with us.
+        if (grounded && onPlatform)
+        {
+            _inheritedPlatformVelocity = platformStick.PlatformVelocity;
+        }
+        else if (grounded)
+        {
+            // Back on solid, non-moving ground: drop any carried momentum.
+            _inheritedPlatformVelocity = Vector3.zero;
+        }
+
         if (grounded && canJumpByWeight && inputController.JumpPressedThisFrame)
         {
             if (jumpCost <= 0f || Stamina.Value >= jumpCost)
@@ -236,6 +261,19 @@ public class PlayerMovement : NetworkBehaviour
         _verticalVel.y += gravity * dt;
 
         Vector3 motion = horizontal;
+
+        // While airborne (or otherwise no longer riding a platform), keep applying the
+        // momentum inherited from the platform/belt so it behaves like real-world inertia.
+        if (!onPlatform && _inheritedPlatformVelocity.sqrMagnitude > 0.0001f)
+        {
+            motion += _inheritedPlatformVelocity;
+
+            if (airInertiaDamping > 0f)
+            {
+                _inheritedPlatformVelocity = Vector3.MoveTowards(_inheritedPlatformVelocity, Vector3.zero, airInertiaDamping * dt);
+            }
+        }
+
         motion.y = _verticalVel.y;
 
         _controller.Move(motion * dt);
@@ -313,6 +351,8 @@ public class PlayerMovement : NetworkBehaviour
 
         footstepInterval = Mathf.Max(0.1f, footstepInterval);
         minFootstepSpeed = Mathf.Max(0f, minFootstepSpeed);
+
+        airInertiaDamping = Mathf.Max(0f, airInertiaDamping);
     }
 #endif
 }

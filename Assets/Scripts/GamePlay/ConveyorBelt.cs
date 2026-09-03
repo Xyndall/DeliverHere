@@ -65,6 +65,13 @@ namespace DeliverHere.GamePlay
         private Vector2 _uvOffset;
         private Material _beltMaterial;
 
+        /// <summary>
+        /// World-space velocity imparted to objects resting on the belt surface.
+        /// Used by non-physics movers (e.g. CharacterController-based players) that
+        /// never receive the Rigidbody push applied in ApplyConveyorMovement.
+        /// </summary>
+        public Vector3 WorldBeltVelocity => _worldBeltDirection * beltSpeed;
+
         // Tracks rigidbodies currently frozen by this belt, along with their original
         // constraints so they can be restored exactly when the object leaves the belt.
         private readonly Dictionary<Rigidbody, RigidbodyConstraints> _frozenRigidbodies = new Dictionary<Rigidbody, RigidbodyConstraints>();
