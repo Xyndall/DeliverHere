@@ -12,9 +12,20 @@ namespace DeliverHere.GamePlay
     [DisallowMultipleComponent]
     public class ContinuousPackageSpawner : NetworkBehaviour
     {
-        [Header("Package Prefab")]
-        [Tooltip("Package prefab to spawn (must have NetworkObject component).")]
-        [SerializeField] private NetworkObject packagePrefab;
+        [System.Serializable]
+        private struct PackageSpawnEntry
+        {
+            [Tooltip("Package prefab to spawn (must have NetworkObject component).")]
+            public NetworkObject prefab;
+
+            [Tooltip("Relative weight/chance of this package being chosen. Weights don't need to sum to 100 - they are relative to each other.")]
+            [Min(0f)]
+            public float weight;
+        }
+
+        [Header("Package Prefabs")]
+        [Tooltip("List of package prefabs and their relative spawn weights/chances.")]
+        [SerializeField] private PackageSpawnEntry[] packagePrefabs;
 
         [Header("Spawn Configuration")]
         [Tooltip("Spawn point transform (packages spawn at this location).")]
@@ -59,6 +70,9 @@ namespace DeliverHere.GamePlay
         private Coroutine _spawnCoroutine;
         private int _spawnedCount = 0;
         private bool _isSpawning = false;
+
+        // Cached total weight, recomputed when needed (e.g. after OnValidate or first use).
+        private float _cachedTotalWeight = -1f;
 
         // NetworkVariable to sync spawner state
         private readonly NetworkVariable<bool> _isActiveNetworked = new NetworkVariable<bool>(
@@ -124,9 +138,9 @@ namespace DeliverHere.GamePlay
                 return;
             }
 
-            if (packagePrefab == null)
+            if (packagePrefabs == null || packagePrefabs.Length == 0)
             {
-                Debug.LogError("[ContinuousPackageSpawner] Cannot start spawning: packagePrefab is null.");
+                Debug.LogError("[ContinuousPackageSpawner] Cannot start spawning: packagePrefabs list is empty.");
                 return;
             }
 
@@ -205,9 +219,55 @@ namespace DeliverHere.GamePlay
             }
         }
 
+        /// <summary>
+        /// Picks a package prefab from the weighted list using relative-weight random selection.
+        /// Returns null if there are no valid entries (missing prefab or zero total weight).
+        /// </summary>
+        private NetworkObject PickPackagePrefab()
+        {
+            if (packagePrefabs == null || packagePrefabs.Length == 0)
+                return null;
+
+            if (_cachedTotalWeight < 0f)
+            {
+                _cachedTotalWeight = 0f;
+                foreach (var entry in packagePrefabs)
+                {
+                    if (entry.prefab != null)
+                        _cachedTotalWeight += Mathf.Max(0f, entry.weight);
+                }
+            }
+
+            if (_cachedTotalWeight <= 0f)
+                return null;
+
+            float roll = Random.Range(0f, _cachedTotalWeight);
+            float cumulative = 0f;
+
+            foreach (var entry in packagePrefabs)
+            {
+                if (entry.prefab == null || entry.weight <= 0f)
+                    continue;
+
+                cumulative += entry.weight;
+                if (roll <= cumulative)
+                    return entry.prefab;
+            }
+
+            // Fallback in case of floating point rounding edge cases
+            for (int i = packagePrefabs.Length - 1; i >= 0; i--)
+            {
+                if (packagePrefabs[i].prefab != null)
+                    return packagePrefabs[i].prefab;
+            }
+
+            return null;
+        }
+
         private void SpawnPackage()
         {
-            if (packagePrefab == null || spawnPoint == null)
+            NetworkObject prefabToSpawn = PickPackagePrefab();
+            if (prefabToSpawn == null || spawnPoint == null)
                 return;
 
             // Calculate spawn position with variation
@@ -229,7 +289,7 @@ namespace DeliverHere.GamePlay
             Quaternion spawnRotation = spawnPoint.rotation * Quaternion.Euler(rotationOffset);
 
             // Get package from pool (or instantiate a new one if the pool is empty)
-            NetworkObject instance = PackagePool.Get(packagePrefab, spawnPosition, spawnRotation);
+            NetworkObject instance = PackagePool.Get(prefabToSpawn, spawnPosition, spawnRotation);
             if (instance == null)
                 return;
 
@@ -257,27 +317,6 @@ namespace DeliverHere.GamePlay
                 }
             }
 
-            //// Apply spawn force
-            //Rigidbody rb = instance.GetComponent<Rigidbody>();
-            //if (rb == null)
-            //{
-            //    rb = instance.GetComponentInChildren<Rigidbody>();
-            //}
-
-            //if (rb != null)
-            //{
-            //    float force = spawnForce + Random.Range(-spawnForceVariation, spawnForceVariation);
-            //    force = Mathf.Max(0f, force);
-
-            //    Vector3 forceDirection = spawnPoint.forward;
-            //    rb.AddForce(forceDirection * force, ForceMode.Impulse);
-
-            //    if (logSpawns)
-            //    {
-            //        Debug.Log($"[ContinuousPackageSpawner] Spawned package #{_spawnedCount + 1} with force {force:F2}N");
-            //    }
-            //}
-
             _spawnedCount++;
         }
 
@@ -289,6 +328,7 @@ namespace DeliverHere.GamePlay
             spawnForce = Mathf.Max(0f, spawnForce);
             spawnForceVariation = Mathf.Max(0f, spawnForceVariation);
             maxSpawnCount = Mathf.Max(0, maxSpawnCount);
+            _cachedTotalWeight = -1f;
 
             if (spawnPoint == null)
             {
