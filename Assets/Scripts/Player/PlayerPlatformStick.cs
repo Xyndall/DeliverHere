@@ -58,6 +58,7 @@ namespace DeliverHere.Player
         [Header("References")]
         [SerializeField] private CharacterController characterController;
         [SerializeField] private PlayerMovement playerMovement;
+        [SerializeField] private PlayerGroundCheck groundCheck;
 
         [Header("Debug")]
         [SerializeField] private bool showDebugLogs = false;
@@ -96,6 +97,9 @@ namespace DeliverHere.Player
 
             if (playerMovement == null)
                 playerMovement = GetComponent<PlayerMovement>();
+
+            if (groundCheck == null)
+                groundCheck = GetComponent<PlayerGroundCheck>();
 
             _lastPlayerPosition = transform.position;
         }
@@ -167,10 +171,16 @@ namespace DeliverHere.Player
         private Transform DetectPlatform()
         {
             // Optionally require grounded state
-            if (requireGrounded && characterController != null && !characterController.isGrounded)
-                return null;
+            if (requireGrounded)
+            {
+                bool isGrounded = groundCheck != null ? groundCheck.IsGrounded : (characterController != null && characterController.isGrounded);
+                if (!isGrounded)
+                    return null;
+            }
 
-            // Sphere cast down from player feet
+            // Sphere cast down from player feet (platform detection stays separate
+            // from the generic ground check since it needs its own layer mask/range
+            // and must also detect platforms while airborne just above them).
             Vector3 origin = transform.position + Vector3.up * groundCheckRadius;
             RaycastHit hit;
 

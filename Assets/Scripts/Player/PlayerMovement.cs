@@ -48,6 +48,10 @@ public class PlayerMovement : NetworkBehaviour
     [Tooltip("How quickly inherited platform momentum bleeds off once airborne and no longer on a platform (m/s^2). 0 = never decays.")]
     [SerializeField] private float airInertiaDamping = 0f;
 
+    [Header("Ground Check")]
+    [Tooltip("If not assigned, will try to GetComponent on the same GameObject.")]
+    [SerializeField] private DeliverHere.Player.PlayerGroundCheck groundCheck;
+
     [Header("Input")]
     [Tooltip("Centralized input controller on this player.")]
     [SerializeField] private PlayerInputController inputController;
@@ -85,6 +89,7 @@ public class PlayerMovement : NetworkBehaviour
         if (inputController == null) inputController = GetComponent<PlayerInputController>();
         if (upgradableStats == null) upgradableStats = GetComponent<PlayerUpgradableStats>();
         if (platformStick == null) platformStick = GetComponent<DeliverHere.Player.PlayerPlatformStick>();
+        if (groundCheck == null) groundCheck = GetComponent<DeliverHere.Player.PlayerGroundCheck>();
     }
 
     public override void OnNetworkSpawn()
@@ -138,8 +143,8 @@ public class PlayerMovement : NetworkBehaviour
             weightManager.SetHeldMass(playerHold != null ? playerHold.HeldMass : (float?)null);
         }
 
-        bool grounded = _controller.isGrounded;
-        
+        bool grounded = groundCheck != null ? groundCheck.IsGrounded : _controller.isGrounded;
+
         // Landing detection and sound
         if (grounded && !_wasGroundedLastFrame && _verticalVel.y < -2f)
         {
