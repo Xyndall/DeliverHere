@@ -64,6 +64,7 @@ namespace DeliverHere.GamePlay
         private Vector3 _worldBeltDirection;
         private Vector2 _uvOffset;
         private Material _beltMaterial;
+        private float _localTopHeight;
 
         /// <summary>
         /// World-space velocity imparted to objects resting on the belt surface.
@@ -89,10 +90,36 @@ namespace DeliverHere.GamePlay
                 beltSurfaceCollider.isTrigger = false;
             }
 
-            // Setup material for UV animation
-            if (beltRenderer != null)
+            // Precompute the top surface height in the belt's local space so tilted belts
+            // (rotated on X/Z) still correctly detect what's "resting on top" of them.
+            if (beltSurfaceCollider != null)
             {
-                _beltMaterial = beltRenderer.material; // Creates instance
+                if (beltSurfaceCollider is BoxCollider box)
+                {
+                    // Exact: use the box's own local center/size directly -- no world-bounds
+                    // approximation needed, since this is already in the belt's local space.
+                    _localTopHeight = box.center.y + (box.size.y * 0.5f);
+                }
+                else
+                {
+                    // Fallback for non-box colliders: approximate using the collider's world AABB
+                    // corners converted into local space. Less exact for rotated non-box shapes,
+                    // but reasonable for capsules/spheres which are rotationally symmetric around Y.
+                    Bounds worldBounds = beltSurfaceCollider.bounds;
+                    float maxLocalY = float.MinValue;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        Vector3 corner = worldBounds.center + new Vector3(
+                            ((i & 1) == 0 ? -1f : 1f) * worldBounds.extents.x,
+                            ((i & 2) == 0 ? -1f : 1f) * worldBounds.extents.y,
+                            ((i & 4) == 0 ? -1f : 1f) * worldBounds.extents.z);
+
+                        float localY = transform.InverseTransformPoint(corner).y;
+                        if (localY > maxLocalY)
+                            maxLocalY = localY;
+                    }
+                    _localTopHeight = maxLocalY;
+                }
             }
 
             // Normalize belt direction
@@ -224,14 +251,12 @@ namespace DeliverHere.GamePlay
 
             if (useHeightBasedDetection && beltSurfaceCollider != null)
             {
-                float topSurfaceY = beltSurfaceCollider.bounds.max.y;
-
                 foreach (ContactPoint contact in collision.contacts)
                 {
-                    // A contact point at (or just above) the belt's top surface height means the
-                    // object is resting on top, regardless of the object's own rotation/shape,
-                    // which makes this robust for tumbling or randomly-rotated packages.
-                    float heightDelta = contact.point.y - topSurfaceY;
+                    // Compare against the belt's local top height (rotation-independent),
+                    // so tilted belts (rotated on X/Z) still detect "resting on top" correctly.
+                    float localY = transform.InverseTransformPoint(contact.point).y;
+                    float heightDelta = localY - _localTopHeight;
                     if (heightDelta >= -topSurfaceTolerance && heightDelta <= topSurfaceTolerance)
                     {
                         isOnTop = true;
@@ -241,7 +266,7 @@ namespace DeliverHere.GamePlay
 
                 if (logCollisionEvents && !isOnTop && collision.contacts.Length > 0)
                 {
-                    float sampleDelta = collision.contacts[0].point.y - topSurfaceY;
+                    float sampleDelta = collision.contacts[0].point.y - beltSurfaceCollider.bounds.max.y;
                     Debug.Log($"[ConveyorBelt] {other.name} contact height delta from top surface: {sampleDelta:F3}m (tolerance: {topSurfaceTolerance:F3}m)");
                 }
             }
@@ -291,29 +316,26 @@ namespace DeliverHere.GamePlay
         {
             Vector3 velocity = rb.linearVelocity;
 
-            Vector3 horizontalVelocity = new Vector3(velocity.x, 0f, velocity.z);
-            float velocityAlongBelt = Vector3.Dot(horizontalVelocity, _worldBeltDirection);
-            Vector3 perpendicularVelocity = horizontalVelocity - (_worldBeltDirection * velocityAlongBelt);
+            // Decompose velocity relative to the belt's own (possibly tilted) direction,
+            // instead of assuming the belt travel direction is purely horizontal.
+            float velocityAlongBelt = Vector3.Dot(velocity, _worldBeltDirection);
+            Vector3 perpendicularVelocity = velocity - (_worldBeltDirection * velocityAlongBelt);
 
             // Push directly toward belt speed along the belt direction.
-            Vector3 newHorizontalVelocity = _worldBeltDirection * beltSpeed;
+            Vector3 newVelocity = _worldBeltDirection * beltSpeed;
 
-            // Retain a damped amount of perpendicular velocity instead of wiping it out,
-            // so side-on collisions/pushes still feel natural.
+            // Retain a damped amount of the perpendicular velocity (this still includes
+            // gravity's influence normal to the belt surface, so support/hovering feels natural).
             if (applyPerpendicularFriction)
             {
-                newHorizontalVelocity += perpendicularVelocity * (1f - perpendicularDamping);
+                newVelocity += perpendicularVelocity * (1f - perpendicularDamping);
             }
             else
             {
-                newHorizontalVelocity += perpendicularVelocity;
+                newVelocity += perpendicularVelocity;
             }
 
-            velocity.x = newHorizontalVelocity.x;
-            velocity.z = newHorizontalVelocity.z;
-            // velocity.y is left untouched -- gravity keeps working normally.
-
-            rb.linearVelocity = velocity;
+            rb.linearVelocity = newVelocity;
 
             if (freezeRotationOnBelt)
             {
@@ -396,34 +418,68 @@ namespace DeliverHere.GamePlay
 
             UpdateWorldDirection();
 
-            // Draw belt direction
+            // Draw belt direction (already rotation-aware since _worldBeltDirection
+            // is derived via TransformDirection).
             Gizmos.color = Color.green;
             Vector3 center = beltSurfaceCollider != null ? beltSurfaceCollider.bounds.center : transform.position;
             Vector3 endPoint = center + _worldBeltDirection * 2f;
 
             Gizmos.DrawLine(center, endPoint);
 
-            // Draw arrowhead
-            Vector3 right = Vector3.Cross(_worldBeltDirection, Vector3.up).normalized * 0.2f;
+            // Draw arrowhead, oriented relative to the belt's own up so it looks correct when tilted.
+            Vector3 right = Vector3.Cross(_worldBeltDirection, transform.up).normalized * 0.2f;
             Vector3 arrowTip = endPoint;
             Gizmos.DrawLine(arrowTip, arrowTip - _worldBeltDirection * 0.3f + right);
             Gizmos.DrawLine(arrowTip, arrowTip - _worldBeltDirection * 0.3f - right);
 
-            // Draw surface collider bounds
+            // Draw surface collider bounds and top-surface tolerance band using the belt's
+            // own rotation, so tilting the belt on X/Z is reflected in the gizmos instead of
+            // always drawing an axis-aligned (world-space) box.
             if (beltSurfaceCollider != null)
             {
-                Gizmos.color = new Color(0.2f, 0.2f, 1f, 0.3f);
-                Gizmos.DrawCube(beltSurfaceCollider.bounds.center, beltSurfaceCollider.bounds.size);
-            }
+                // Local-space size/center of the collider (works for Box/Capsule/Sphere via bounds
+                // approximation; BoxCollider gives an exact fit).
+                Vector3 localCenter;
+                Vector3 localSize;
 
-            // Draw top-surface detection tolerance band
-            if (useHeightBasedDetection && beltSurfaceCollider != null)
-            {
-                Gizmos.color = new Color(1f, 1f, 0f, 0.4f);
-                float topY = beltSurfaceCollider.bounds.max.y;
-                Vector3 size = beltSurfaceCollider.bounds.size;
-                size.y = topSurfaceTolerance * 2f;
-                Gizmos.DrawCube(new Vector3(center.x, topY, center.z), size);
+                if (beltSurfaceCollider is BoxCollider box)
+                {
+                    // Use the collider's raw local size/center -- do NOT multiply by lossyScale here,
+                    // since Gizmos.matrix (set below) already applies the transform's scale. Doing both
+                    // double-scales the box, which was shifting the "top" band to the side instead of
+                    // sitting flush on top of the collider.
+                    localCenter = box.center;
+                    localSize = box.size;
+                }
+                else
+                {
+                    // Fallback: approximate using world bounds extents converted to local scale.
+                    Vector3 worldSize = beltSurfaceCollider.bounds.size;
+                    localCenter = transform.InverseTransformPoint(beltSurfaceCollider.bounds.center);
+                    localSize = new Vector3(
+                        worldSize.x / Mathf.Max(transform.lossyScale.x, 0.0001f),
+                        worldSize.y / Mathf.Max(transform.lossyScale.y, 0.0001f),
+                        worldSize.z / Mathf.Max(transform.lossyScale.z, 0.0001f));
+                }
+
+                Matrix4x4 oldMatrix = Gizmos.matrix;
+                Gizmos.matrix = Matrix4x4.TRS(transform.position, transform.rotation, transform.lossyScale);
+
+                Gizmos.color = new Color(0.2f, 0.2f, 1f, 0.3f);
+                Gizmos.DrawCube(localCenter, localSize);
+
+                // Draw top-surface detection tolerance band, aligned to the belt's local "up".
+                if (useHeightBasedDetection)
+                {
+                    Gizmos.color = new Color(1f, 1f, 0f, 0.4f);
+                    float topLocalY = localCenter.y + (localSize.y * 0.5f);
+                    Vector3 bandSize = localSize;
+                    bandSize.y = topSurfaceTolerance * 2f;
+                    Vector3 bandCenter = new Vector3(localCenter.x, topLocalY, localCenter.z);
+                    Gizmos.DrawCube(bandCenter, bandSize);
+                }
+
+                Gizmos.matrix = oldMatrix;
             }
         }
 #endif
