@@ -54,6 +54,9 @@ namespace DeliverHere.GamePlay
         [Tooltip("Material property name for UV offset (usually '_MainTex' or '_BaseMap').")]
         [SerializeField] private string uvOffsetPropertyName = "_MainTex";
 
+        [Tooltip("How quickly objects accelerate toward belt speed (higher = snappier, lower = more gradual momentum build-up).")]
+        [SerializeField, Min(0.01f)] private float accelerationRate = 20f;
+
         [Tooltip("UV scroll speed multiplier.")]
         [SerializeField, Min(0f)] private float uvScrollSpeed = 1f;
 
@@ -72,6 +75,16 @@ namespace DeliverHere.GamePlay
         /// never receive the Rigidbody push applied in ApplyConveyorMovement.
         /// </summary>
         public Vector3 WorldBeltVelocity => _worldBeltDirection * beltSpeed;
+
+        private static readonly Dictionary<Rigidbody, ConveyorClaim> _claims = new Dictionary<Rigidbody, ConveyorClaim>();
+        private static int _currentPhysicsFrame = -1;
+
+        private struct ConveyorClaim
+        {
+            public int frame;
+            public ConveyorBelt belt;
+            public float score; // lower = more centered/confident
+        }
 
         // Tracks rigidbodies currently frozen by this belt, along with their original
         // constraints so they can be restored exactly when the object leaves the belt.
@@ -248,6 +261,11 @@ namespace DeliverHere.GamePlay
 
             // Only push objects that are actually resting on top of the belt (not hitting its side/underside).
             bool isOnTop = false;
+            // Lower = more centered/confident that this belt is the one the object is really
+            // resting on. Used to resolve conflicts when a package is simultaneously touching
+            // two overlapping/adjacent belts (e.g. at a turn) so only one belt applies velocity
+            // per physics step instead of both belts fighting over it every frame.
+            float bestScore = float.MaxValue;
 
             if (useHeightBasedDetection && beltSurfaceCollider != null)
             {
@@ -260,7 +278,10 @@ namespace DeliverHere.GamePlay
                     if (heightDelta >= -topSurfaceTolerance && heightDelta <= topSurfaceTolerance)
                     {
                         isOnTop = true;
-                        break;
+
+                        float score = Mathf.Abs(heightDelta);
+                        if (score < bestScore)
+                            bestScore = score;
                     }
                 }
 
@@ -282,7 +303,10 @@ namespace DeliverHere.GamePlay
                     if (dot >= minUpwardContactDot)
                     {
                         isOnTop = true;
-                        break;
+
+                        float score = 1f - dot;
+                        if (score < bestScore)
+                            bestScore = score;
                     }
                 }
 
@@ -303,15 +327,57 @@ namespace DeliverHere.GamePlay
                 return;
             }
 
+            if (!TryClaim(rb, bestScore))
+            {
+                // Another belt touching this same rigidbody this physics step has a stronger
+                // claim (more centered/confident contact). Yield so the two belts don't fight
+                // over the object's velocity every step during a belt-to-belt handoff -- this
+                // was the cause of packages getting "stuck"/jittering at belt transitions.
+                if (logCollisionEvents)
+                    Debug.Log($"[ConveyorBelt] {other.name} contested by another belt this step, yielding.");
+                return;
+            }
+
             ApplyConveyorMovement(rb);
         }
 
         /// <summary>
-        /// Adds belt velocity along the belt direction, leaving vertical velocity (gravity)
-        /// and any other physics interactions completely untouched. Rotation is frozen while
-        /// resting on the belt so objects slide flat instead of rolling/tumbling, matching how
-        /// a box behaves on a real conveyor belt.
+        /// Attempts to claim exclusive rights to move this rigidbody for the current physics
+        /// step. Returns true if this belt currently holds the best (lowest) score for the
+        /// rigidbody this step, meaning it should be the one to apply velocity. Used to resolve
+        /// conflicts when a package simultaneously touches two overlapping/adjacent conveyor
+        /// belts (e.g. at a turn), so only the belt it's most clearly resting on wins each step.
         /// </summary>
+        private bool TryClaim(Rigidbody rb, float score)
+        {
+            int frame = Time.frameCount;
+
+            // New physics step globally: clear out stale claims from the previous step.
+            if (frame != _currentPhysicsFrame)
+            {
+                _claims.Clear();
+                _currentPhysicsFrame = frame;
+            }
+
+            if (_claims.TryGetValue(rb, out var existing) && existing.frame == frame)
+            {
+                if (existing.belt == this)
+                    return true; // we already hold the claim this step (e.g. OnCollisionEnter + OnCollisionStay both firing)
+
+                if (score < existing.score)
+                {
+                    // We have a stronger claim than whoever currently holds it -- take over.
+                    _claims[rb] = new ConveyorClaim { frame = frame, belt = this, score = score };
+                    return true;
+                }
+
+                return false;
+            }
+
+            _claims[rb] = new ConveyorClaim { frame = frame, belt = this, score = score };
+            return true;
+        }
+
         private void ApplyConveyorMovement(Rigidbody rb)
         {
             Vector3 velocity = rb.linearVelocity;
@@ -321,8 +387,13 @@ namespace DeliverHere.GamePlay
             float velocityAlongBelt = Vector3.Dot(velocity, _worldBeltDirection);
             Vector3 perpendicularVelocity = velocity - (_worldBeltDirection * velocityAlongBelt);
 
-            // Push directly toward belt speed along the belt direction.
-            Vector3 newVelocity = _worldBeltDirection * beltSpeed;
+            // Only push the object UP to belt speed --never clamp it back down if it's already
+            // moving faster along the belt direction (e.g. gravity-accelerated on an incline, or
+            // launched by a ramp). This preserves momentum instead of resetting it every tick.
+            float newSpeedAlongBelt = velocityAlongBelt < beltSpeed
+                ? Mathf.MoveTowards(velocityAlongBelt, beltSpeed, accelerationRate * Time.fixedDeltaTime)
+                : velocityAlongBelt; // already faster than belt speed -- leave it, don't clamp down
+            Vector3 newVelocity = _worldBeltDirection * newSpeedAlongBelt;
 
             // Retain a damped amount of the perpendicular velocity (this still includes
             // gravity's influence normal to the belt surface, so support/hovering feels natural).

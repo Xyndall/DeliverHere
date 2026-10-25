@@ -245,6 +245,14 @@ public class PlayerMovement : NetworkBehaviour
             // Back on solid, non-moving ground: drop any carried momentum.
             _inheritedPlatformVelocity = Vector3.zero;
         }
+        // NOTE: if we're airborne (!grounded), we intentionally leave _inheritedPlatformVelocity
+        // untouched here -- it was already latched to the last known platform velocity the
+        // instant we left the ground, and the "momentum carry" block below (which checks
+        // !grounded, not !onPlatform) picks it up immediately. Don't gate that on onPlatform:
+        // PlayerPlatformStick keeps IsOnPlatform true for a short unstickDelay after losing
+        // contact (to avoid attach/detach jitter), which previously caused the carried momentum
+        // to be silently dropped for that whole window -- the visible "pause" after leaving a
+        // conveyor/ramp
 
         if (grounded && canJumpByWeight && inputController.JumpPressedThisFrame)
         {
@@ -267,11 +275,17 @@ public class PlayerMovement : NetworkBehaviour
 
         Vector3 motion = horizontal;
 
-        // While airborne (or otherwise no longer riding a platform), keep applying the
-        // momentum inherited from the platform/belt so it behaves like real-world inertia.
-        if (!onPlatform && _inheritedPlatformVelocity.sqrMagnitude > 0.0001f)
+        // While airborne, keep applying the momentum inherited from the platform/belt so it
+        // behaves like real-world inertia. Gate this on !grounded (actual airborne state)
+        // rather than !onPlatform: PlayerPlatformStick intentionally keeps IsOnPlatform true
+        // for a short unstickDelay after losing contact (to avoid attach/detach jitter), which
+        // was causing inherited momentum to not be applied for that whole window -- visible as
+        // a brief "pause" right after launching off a conveyor/ramp before motion resumed.
+        float inheritedVerticalVel = 0f;
+        if (!grounded && _inheritedPlatformVelocity.sqrMagnitude > 0.0001f)
         {
             motion += _inheritedPlatformVelocity;
+            inheritedVerticalVel = _inheritedPlatformVelocity.y;
 
             if (airInertiaDamping > 0f)
             {
@@ -279,7 +293,11 @@ public class PlayerMovement : NetworkBehaviour
             }
         }
 
-        motion.y = _verticalVel.y;
+        // Combine gravity-driven vertical velocity with any vertical boost inherited from a
+        // tilted conveyor/ramp, instead of overwriting it -- otherwise a belt tilted upward
+        // (acting like a launch ramp) would have its vertical "kick" silently discarded here,
+        // which was why boosts only ever felt horizontal.
+        motion.y = _verticalVel.y + inheritedVerticalVel;
 
         _controller.Move(motion * dt);
 

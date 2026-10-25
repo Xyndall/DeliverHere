@@ -1066,15 +1066,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Player.PlayerPlatformStick
   ShowTopMostFoldoutHeaderGroup: 1
-  platformLayers:
-    serializedVersion: 2
-    m_Bits: 16512
-  groundCheckDistance: 1
-  groundCheckRadius: 0.4
   velocitySmoothing: 0.1
   velocityMultiplier: 1
+  skipSmoothingOnConveyor: 1
+  platformLayers:
+    serializedVersion: 2
+    m_Bits: 82048
+  groundCheckDistance: 1
+  groundCheckRadius: 0.4
   minPlatformVelocity: 0.01
-  maxPlatformVelocity: 50
+  maxPlatformVelocity: 200
   requireGrounded: 1
   unstickDelay: 0.1
   stickingForce: 2
@@ -1082,7 +1083,7 @@ MonoBehaviour:
   rotationSmoothing: 0.2
   characterController: {fileID: 6036543192460141483}
   playerMovement: {fileID: 8423766064830032752}
-  groundCheck: {fileID: 0}
+  groundCheck: {fileID: 5672987229279488491}
   showDebugLogs: 1
   showDebugGizmos: 1
 --- !u!114 &4592383631287030176
@@ -1119,7 +1120,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Player.PlayerGroundCheck
   groundLayers:
     serializedVersion: 2
-    m_Bits: 19137
+    m_Bits: 117441
   checkRadius: 0.36
   checkDistance: 0.2
   maxGroundAngle: 60

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Unity.Netcode;
 
 namespace DeliverHere.GamePlay
@@ -13,25 +14,28 @@ namespace DeliverHere.GamePlay
     public static class PackagePool
     {
         private const int MaxPoolSize = 200;
+        private const string PoolSceneName = "PackagePool_Pool";
 
-        private static Transform _poolRoot;
+        private static Scene _poolScene;
+        private static bool _poolSceneCreated;
+
         private static readonly Dictionary<NetworkObject, Stack<NetworkObject>> _pools = new();
 
         // Tracks which prefab an instance came from, so callers can Release() without
         // needing to keep their own prefab reference around.
         private static readonly Dictionary<NetworkObject, NetworkObject> _instanceToPrefab = new();
 
-        private static Transform PoolRoot
+        private static Scene PoolScene
         {
             get
             {
-                if (_poolRoot == null)
+                if (!_poolSceneCreated || !_poolScene.IsValid())
                 {
-                    var go = new GameObject("PackagePool_Pool");
-                    Object.DontDestroyOnLoad(go);
-                    _poolRoot = go.transform;
+                    _poolScene = SceneManager.CreateScene(PoolSceneName,
+                        new CreateSceneParameters(LocalPhysicsMode.None));
+                    _poolSceneCreated = true;
                 }
-                return _poolRoot;
+                return _poolScene;
             }
         }
 
@@ -68,7 +72,8 @@ namespace DeliverHere.GamePlay
             }
             else
             {
-                instance.transform.SetParent(null, false);
+                // Move back into the active scene before reuse/spawn.
+                SceneManager.MoveGameObjectToScene(instance.gameObject, SceneManager.GetActiveScene());
                 instance.transform.SetPositionAndRotation(position, rotation);
                 instance.gameObject.SetActive(true);
             }
@@ -124,14 +129,25 @@ namespace DeliverHere.GamePlay
                          ?? instance.GetComponentInChildren<DeliverHere.Items.PackageProperties>(true);
             props?.ResetForPool();
 
+            // Detach to scene root while still spawned (NetworkObject only allows reparenting
+            // while spawned, and only to null or another spawned NetworkObject's transform).
+            if (instance.transform.parent != null)
+            {
+                instance.transform.SetParent(null, false);
+            }
+
             if (instance.IsSpawned)
             {
                 // Keep the GameObject alive (destroy: false) so it can be reused.
                 instance.Despawn(false);
             }
 
-            instance.transform.SetParent(PoolRoot, false);
             instance.gameObject.SetActive(false);
+
+            // Group pooled instances into their own scene for Hierarchy organization. This does
+            // NOT count as Transform reparenting as far as NetworkObject is concerned.
+            SceneManager.MoveGameObjectToScene(instance.gameObject, PoolScene);
+
             pool.Push(instance);
         }
 

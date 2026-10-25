@@ -12,6 +12,20 @@ namespace DeliverHere.Player
     [RequireComponent(typeof(CharacterController))]
     public class PlayerPlatformStick : NetworkBehaviour
     {
+        [Header("Movement Compensation")]
+        [Tooltip("Smoothing factor for velocity compensation (0-1, higher = smoother but less responsive).")]
+        [Range(0f, 1f)]
+        [SerializeField] private float velocitySmoothing = 0.15f;
+
+        [Tooltip("Multiplier for platform velocity application (1.0 = exact match).")]
+        [Range(0.5f, 1.5f)]
+        [SerializeField] private float velocityMultiplier = 1.0f;
+
+        [Tooltip("Skip velocity smoothing entirely while riding a conveyor belt, so the belt's" +
+            " speed/direction (especially on a tilted ramp) is reflected instantly instead of" +
+            " ramping up/lagging, which was making launches feel weaker than the belt speed.")]
+        [SerializeField] private bool skipSmoothingOnConveyor = true;
+
         [Header("Platform Detection")]
         [Tooltip("Layers considered as platforms (e.g., MovingPlatform layer).")]
         [SerializeField] private LayerMask platformLayers = ~0;
@@ -21,15 +35,6 @@ namespace DeliverHere.Player
 
         [Tooltip("Radius of sphere cast for ground detection.")]
         [SerializeField] private float groundCheckRadius = 0.3f;
-
-        [Header("Movement Compensation")]
-        [Tooltip("Smoothing factor for velocity compensation (0-1, higher = smoother but less responsive).")]
-        [Range(0f, 1f)]
-        [SerializeField] private float velocitySmoothing = 0.15f;
-
-        [Tooltip("Multiplier for platform velocity application (1.0 = exact match).")]
-        [Range(0.5f, 1.5f)]
-        [SerializeField] private float velocityMultiplier = 1.0f;
 
         [Header("Advanced Settings")]
         [Tooltip("Minimum platform velocity (m/s) to trigger sticking behavior.")]
@@ -309,8 +314,13 @@ namespace DeliverHere.Player
 
             _platformVelocity = velocity;
 
-            // Smooth velocity for compensation
-            if (velocitySmoothing > 0f)
+            // Smooth velocity for compensation. Skipped for conveyor belts (by default) since
+            // belts have an instant, constant target speed -- smoothing just adds artificial
+            // lag/ramp-up, making the player feel like they're not keeping the belt's full
+            // momentum, especially noticeable on fast/tilted ramps.
+            bool skipSmoothing = skipSmoothingOnConveyor && _currentConveyorBelt != null;
+
+            if (velocitySmoothing > 0f && !skipSmoothing)
             {
                 _smoothedPlatformVelocity = Vector3.Lerp(_smoothedPlatformVelocity, _platformVelocity, 1f - velocitySmoothing);
             }
@@ -334,8 +344,14 @@ namespace DeliverHere.Player
             {
                 Vector3 compensation = _smoothedPlatformVelocity * velocityMultiplier * Time.deltaTime;
 
-                // Add extra downward force to stick better
-                if (stickingForce > 0f)
+                // Add extra downward force to stick better, but NOT while on an inclined conveyor
+                // belt -- on a tilted belt the surface itself already has a vertical velocity
+                // component carrying the player upward, and bleeding that off here was eating
+                // into the momentum they should be launched with at the top/end of the ramp.
+                bool onInclinedConveyor = _currentConveyorBelt != null
+                    && Mathf.Abs(_currentConveyorBelt.transform.up.y) < 0.98f; // not roughly flat
+
+                if (stickingForce > 0f && !onInclinedConveyor)
                 {
                     compensation.y -= stickingForce * Time.deltaTime;
                 }
