@@ -8296,7 +8296,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ConveyorBelt
   ShowTopMostFoldoutHeaderGroup: 1
-  beltSpeed: 100
+  beltSpeed: 15
   beltDirection: {x: 0, y: 1, z: 0}
   minUpwardContactDot: 0.5
   useHeightBasedDetection: 1
@@ -8311,7 +8311,7 @@ MonoBehaviour:
   beltSurfaceCollider: {fileID: 662746565}
   beltRenderer: {fileID: 0}
   uvOffsetPropertyName: _MainTex
-  accelerationRate: 100
+  accelerationRate: 15
   uvScrollSpeed: 1
   showDebugGizmos: 1
   logCollisionEvents: 0
@@ -13593,7 +13593,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ConveyorBelt
   ShowTopMostFoldoutHeaderGroup: 1
-  beltSpeed: 100
+  beltSpeed: 35
   beltDirection: {x: 1, y: 0, z: 0}
   minUpwardContactDot: 0.5
   useHeightBasedDetection: 1
@@ -14228,7 +14228,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.ConveyorBelt
   ShowTopMostFoldoutHeaderGroup: 1
-  beltSpeed: 100
+  beltSpeed: 35
   beltDirection: {x: 1, y: 0, z: 0}
   minUpwardContactDot: 0.5
   useHeightBasedDetection: 1

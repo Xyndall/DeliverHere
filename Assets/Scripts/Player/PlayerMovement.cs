@@ -152,6 +152,10 @@ public class PlayerMovement : NetworkBehaviour
         }
         _wasGroundedLastFrame = grounded;
 
+        // NOTE: grounded vertical velocity clamping moved further down (after onPlatform is
+        // known), so riding an upward-tilted conveyor can set _verticalVel.y to the belt's
+        // vertical speed instead of always resetting to -2.
+
         if (grounded && _verticalVel.y < 0f)
             _verticalVel.y = -2f;
 
@@ -273,6 +277,23 @@ public class PlayerMovement : NetworkBehaviour
 
         _verticalVel.y += gravity * dt;
 
+        // While grounded and riding an inclined/vertical conveyor belt, feed its vertical push
+        // directly into the single vertical velocity integrator instead of letting
+        // PlayerPlatformStick apply it as a separate, same-frame position teleport. Previously
+        // both systems moved the player vertically independently with undefined per-frame
+        // ordering, which caused wildly inconsistent launch heights and a "snap to height, then
+        // gravity" feel instead of a smooth, consistent accelerating boost.
+        if (grounded && onPlatform && platformStick.PlatformVerticalSpeed > 0f)
+        {
+            // Use the belt's vertical speed directly as a velocity target rather than adding it
+            // every frame (which would compound indefinitely the longer you stand on the belt).
+            _verticalVel.y = Mathf.Max(_verticalVel.y, platformStick.PlatformVerticalSpeed);
+        }
+        else if (grounded && _verticalVel.y < 0f)
+        {
+            _verticalVel.y = -2f;
+        }
+
         Vector3 motion = horizontal;
 
         // While airborne, keep applying the momentum inherited from the platform/belt so it
@@ -281,11 +302,13 @@ public class PlayerMovement : NetworkBehaviour
         // for a short unstickDelay after losing contact (to avoid attach/detach jitter), which
         // was causing inherited momentum to not be applied for that whole window -- visible as
         // a brief "pause" right after launching off a conveyor/ramp before motion resumed.
-        float inheritedVerticalVel = 0f;
         if (!grounded && _inheritedPlatformVelocity.sqrMagnitude > 0.0001f)
         {
-            motion += _inheritedPlatformVelocity;
-            inheritedVerticalVel = _inheritedPlatformVelocity.y;
+            // Only carry the horizontal component here -- vertical momentum is already fully
+            // represented in _verticalVel.y (latched above while grounded), so adding it again
+            // would double it.
+            motion.x += _inheritedPlatformVelocity.x;
+            motion.z += _inheritedPlatformVelocity.z;
 
             if (airInertiaDamping > 0f)
             {
@@ -293,11 +316,7 @@ public class PlayerMovement : NetworkBehaviour
             }
         }
 
-        // Combine gravity-driven vertical velocity with any vertical boost inherited from a
-        // tilted conveyor/ramp, instead of overwriting it -- otherwise a belt tilted upward
-        // (acting like a launch ramp) would have its vertical "kick" silently discarded here,
-        // which was why boosts only ever felt horizontal.
-        motion.y = _verticalVel.y + inheritedVerticalVel;
+        motion.y = _verticalVel.y;
 
         _controller.Move(motion * dt);
 

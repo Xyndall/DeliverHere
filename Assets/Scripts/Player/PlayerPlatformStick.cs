@@ -95,6 +95,14 @@ namespace DeliverHere.Player
         public Vector3 PlatformVelocity => _platformVelocity;
         public Transform CurrentPlatform => _currentPlatform;
 
+        /// <summary>
+        /// Vertical (Y) component of the current platform/belt velocity. Used by PlayerMovement
+        /// to feed a tilted conveyor's upward push into its own vertical velocity integrator
+        /// (_verticalVel), so it combines smoothly with gravity instead of being applied as a
+        /// separate, undeterministically-ordered position teleport.
+        /// </summary>
+        public float PlatformVerticalSpeed => _platformVelocity.y;
+
         private void Awake()
         {
             if (characterController == null)
@@ -344,10 +352,17 @@ namespace DeliverHere.Player
             {
                 Vector3 compensation = _smoothedPlatformVelocity * velocityMultiplier * Time.deltaTime;
 
-                // Add extra downward force to stick better, but NOT while on an inclined conveyor
-                // belt -- on a tilted belt the surface itself already has a vertical velocity
-                // component carrying the player upward, and bleeding that off here was eating
-                // into the momentum they should be launched with at the top/end of the ramp.
+                // Never apply vertical motion here as a direct position teleport. Doing so
+                // stacks on top of PlayerMovement's separate gravity/velocity integration with
+                // undefined per-frame ordering, which was causing wildly inconsistent launch
+                // heights off inclined/vertical conveyors (sometimes much higher than others)
+                // and a "snap to height, then gravity takes over" feel instead of a smooth
+                // accelerating boost. All vertical motion is instead handled by PlayerMovement
+                // via _verticalVel, fed by PlatformVerticalSpeed below.
+                compensation.y = 0f;
+
+                // Add extra downward force to stick better, but NOT while on an inclined
+                // conveyor belt -- that's handled by PlayerMovement's vertical integration now.
                 bool onInclinedConveyor = _currentConveyorBelt != null
                     && Mathf.Abs(_currentConveyorBelt.transform.up.y) < 0.98f; // not roughly flat
 
