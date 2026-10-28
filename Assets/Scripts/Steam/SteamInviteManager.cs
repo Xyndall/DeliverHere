@@ -17,6 +17,7 @@ namespace DeliverHere.Steam
         private string _currentJoinCode;
         private CSteamID _currentLobbyId;
         private bool _isHost = false;
+        private bool _isQuitting;
 
         private void Awake()
         {
@@ -171,7 +172,7 @@ namespace DeliverHere.Steam
         /// </summary>
         public void ClearSession()
         {
-            if (!SteamManager.Initialized) return;
+            if (!SteamManager.Exists || !SteamManager.Initialized) return;
 
             // Leave the Steam lobby if we're in one (host only)
             if (_currentLobbyId.IsValid() && _isHost)
@@ -248,8 +249,14 @@ namespace DeliverHere.Steam
             joinLobbyCallback.Set(joinLobbyCall);
         }
 
-        private void OnDestroy()
+        private void OnApplicationQuit()
         {
+            _isQuitting = true;
+        }
+
+        private void OnDisable()
+        {
+            if (_isQuitting) return; // Avoid touching Steamworks APIs during app shutdown teardown ordering issues
             ClearSession();
         }
     }

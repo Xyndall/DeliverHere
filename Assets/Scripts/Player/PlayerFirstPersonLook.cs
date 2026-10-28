@@ -142,10 +142,16 @@ public class PlayerFirstPersonLook : NetworkBehaviour
     {
         try
         {
-            _input?.Dispose();
+            DisableInput();
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e);
         }
         finally
         {
+            _input?.Dispose();
+            _input = null;
             base.OnDestroy();
         }
     }

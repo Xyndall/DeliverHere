@@ -496,7 +496,10 @@ public class PlayerHold : NetworkBehaviour
         if (_heldBody != null)
         {
             if (_holdingState != null)
+            {
                 _holdingState.HoldersCount.OnValueChanged += OnHoldersCountChanged;
+                _holdingState.OnBeforeDespawn += OnHeldObjectDespawning;
+            }
 
             UpdateHeldMassForPlayer();
             PickedUp?.Invoke(_heldBody);
@@ -560,7 +563,17 @@ public class PlayerHold : NetworkBehaviour
         if (_isLocalHoldAuthority && _heldBody != null && _joint != null)
             ApplyJointStrengthForMass(_heldBody.mass);
     }
+    private void OnHeldObjectDespawning()
+    {
+        // Server also clears the authoritative held reference so the drop is
+        // properly replicated and a new pickup can happen immediately.
+        if (IsServer)
+        {
+            _heldRef.Value = default;
+        }
 
+        ClearHeldLocalState();
+    }
     private void UpdateHeldMassForPlayer()
     {
         if (_weightManager == null) return;
@@ -577,7 +590,10 @@ public class PlayerHold : NetworkBehaviour
     private void ClearHeldLocalState()
     {
         if (_holdingState != null)
+        {
             _holdingState.HoldersCount.OnValueChanged -= OnHoldersCountChanged;
+            _holdingState.OnBeforeDespawn -= OnHeldObjectDespawning;
+        }
 
         _holdingState = null;
 
@@ -838,7 +854,10 @@ public class PlayerHold : NetworkBehaviour
         _weightManager?.SetHeldMass(null);
 
         if (_holdingState != null)
+        {
             _holdingState.HoldersCount.OnValueChanged -= OnHoldersCountChanged;
+            _holdingState.OnBeforeDespawn -= OnHeldObjectDespawning;
+        }
 
         _holdingState = null;
 

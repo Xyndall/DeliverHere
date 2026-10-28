@@ -14,30 +14,9 @@ namespace DeliverHere.GamePlay
     public static class PackagePool
     {
         private const int MaxPoolSize = 200;
-        private const string PoolSceneName = "PackagePool_Pool";
-
-        private static Scene _poolScene;
-        private static bool _poolSceneCreated;
 
         private static readonly Dictionary<NetworkObject, Stack<NetworkObject>> _pools = new();
-
-        // Tracks which prefab an instance came from, so callers can Release() without
-        // needing to keep their own prefab reference around.
         private static readonly Dictionary<NetworkObject, NetworkObject> _instanceToPrefab = new();
-
-        private static Scene PoolScene
-        {
-            get
-            {
-                if (!_poolSceneCreated || !_poolScene.IsValid())
-                {
-                    _poolScene = SceneManager.CreateScene(PoolSceneName,
-                        new CreateSceneParameters(LocalPhysicsMode.None));
-                    _poolSceneCreated = true;
-                }
-                return _poolScene;
-            }
-        }
 
         private static Stack<NetworkObject> GetPoolFor(NetworkObject prefab)
         {
@@ -72,7 +51,8 @@ namespace DeliverHere.GamePlay
             }
             else
             {
-                // Move back into the active scene before reuse/spawn.
+                // Move back into the active scene (scene move, not a Transform re-parent,
+                // so this is safe regardless of spawn state).
                 SceneManager.MoveGameObjectToScene(instance.gameObject, SceneManager.GetActiveScene());
                 instance.transform.SetPositionAndRotation(position, rotation);
                 instance.gameObject.SetActive(true);
@@ -144,9 +124,10 @@ namespace DeliverHere.GamePlay
 
             instance.gameObject.SetActive(false);
 
-            // Group pooled instances into their own scene for Hierarchy organization. This does
-            // NOT count as Transform reparenting as far as NetworkObject is concerned.
-            SceneManager.MoveGameObjectToScene(instance.gameObject, PoolScene);
+            // Move into Unity's built-in persistent scene (a scene move, NOT a Transform
+            // re-parent), so NGO's OnTransformParentChanged guard is never triggered, and
+            // NGO's scene sync never has to deal with a custom, non-build-list scene.
+            Object.DontDestroyOnLoad(instance.gameObject);
 
             pool.Push(instance);
         }

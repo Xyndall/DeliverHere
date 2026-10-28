@@ -287,16 +287,13 @@ namespace DeliverHere.Items
 
             if (body != null)
             {
-                // Remove any leftover joints (e.g. a ConfigurableJoint from PlayerHold that wasn't
-                // cleaned up before this package was despawned/pooled while still held). A stray
-                // joint anchors the rigidbody in place, making it look "stuck" until something
-                // applies enough force to overpower its drive springs.
+                // Remove any leftover joints 
                 var joints = body.GetComponents<Joint>();
                 for (int i = 0; i < joints.Length; i++)
                 {
                     if (joints[i] != null)
                     {
-                        UnityEngine.Object.DestroyImmediate(joints[i]);
+                        UnityEngine.Object.Destroy(joints[i]);
                     }
                 }
 

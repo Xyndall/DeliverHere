@@ -4259,87 +4259,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 322990625}
   m_CullTransparentMesh: 1
---- !u!1 &325799801
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 325799804}
-  - component: {fileID: 325799802}
-  - component: {fileID: 325799803}
-  m_Layer: 0
-  m_Name: PackageSpawner
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &325799802
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 325799801}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3350240885
-  InScenePlacedSourceGlobalObjectIdHash: 0
-  DeferredDespawnTick: 0
-  Ownership: 1
-  AlwaysReplicateAsRoot: 0
-  SynchronizeTransform: 1
-  ActiveSceneSynchronization: 0
-  SceneMigrationSynchronization: 0
-  SpawnWithObservers: 1
-  DontDestroyWithOwner: 0
-  AutoObjectParentSync: 1
-  SyncOwnerTransformWhenParented: 1
-  AllowOwnerToParent: 0
---- !u!114 &325799803
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 325799801}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 08e4ea71f85c8f846b9f9d34213052b7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.GamePlay.PackageSpawner
-  ShowTopMostFoldoutHeaderGroup: 1
-  packagePrefab: {fileID: -122704528989098008, guid: 41173a9fe6a77ce46acc137dfe4daa63, type: 3}
-  pipeExit: {fileID: 0}
-  autoFindPipe: 1
-  pipeNameKeyword: pipeSpawnPackages
-  spawnParent: {fileID: 325799804}
-  useNetworkParenting: 1
-  initialSpawnCount: 10
-  defaultSpawnForce: 10
-  defaultSpawnInterval: 0.1
-  autoSpawnOnNetworkSpawn: 0
---- !u!4 &325799804
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 325799801}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 19.83226, y: -5, z: 43.50259}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &326739949
 GameObject:
   m_ObjectHideFlags: 0
@@ -17346,7 +17265,7 @@ MonoBehaviour:
   uiStateManager: {fileID: 314850537}
   gameTimer: {fileID: 1657870876}
   deliveryZoneManager: {fileID: 1657870879}
-  packageSpawner: {fileID: 325799803}
+  packageSpawner: {fileID: 0}
   levelFlowController: {fileID: 2074574623}
   levelLoader: {fileID: 2074574621}
   autoFindReferences: 0
@@ -20321,7 +20240,7 @@ Transform:
   m_GameObject: {fileID: 1965145758}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -2.05, y: 0.38, z: -7.73}
+  m_LocalPosition: {x: -2.05, y: 0.38, z: -18.84}
   m_LocalScale: {x: 7.915405, y: 0.711179, z: 7.915405}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -23180,7 +23099,6 @@ SceneRoots:
   - {fileID: 2074574622}
   - {fileID: 236239648}
   - {fileID: 24441902}
-  - {fileID: 325799804}
   - {fileID: 449018633}
   - {fileID: 1297959526}
   - {fileID: 1196347995}

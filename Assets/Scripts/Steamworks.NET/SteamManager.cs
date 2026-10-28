@@ -23,8 +23,8 @@ using Steamworks;
 public class SteamManager : MonoBehaviour {
 #if !DISABLESTEAMWORKS
 	protected static bool s_EverInitialized = false;
-
-	protected static SteamManager s_instance;
+    public static bool Exists => s_instance != null;
+    protected static SteamManager s_instance;
 	protected static SteamManager Instance {
 		get {
 			if (s_instance == null) {
@@ -179,4 +179,6 @@ public class SteamManager : MonoBehaviour {
 		}
 	}
 #endif // !DISABLESTEAMWORKS
+
+
 }

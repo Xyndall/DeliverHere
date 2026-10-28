@@ -90,15 +90,18 @@ public class PlayerInputController : NetworkBehaviour
         try
         {
             UnbindFromNetworkGameState();
-
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e);
+        }
+        finally
+        {
             if (_actions != null)
             {
                 _actions.Dispose();
                 _actions = null;
             }
-        }
-        finally
-        {
             base.OnDestroy();
         }
     }

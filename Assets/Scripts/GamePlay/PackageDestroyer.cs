@@ -53,6 +53,12 @@ namespace DeliverHere.GamePlay
             if (!IsServer && NetworkManager.Singleton != null)
                 return;
 
+            StartCoroutine(DeferredTryDestroyObject(other));
+        }
+
+        private System.Collections.IEnumerator DeferredTryDestroyObject(Collider other)
+        {
+            yield return null; // wait one frame, out of the physics callback
             TryDestroyObject(other);
         }
 
