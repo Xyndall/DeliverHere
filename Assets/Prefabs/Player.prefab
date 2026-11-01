@@ -357,6 +357,8 @@ GameObject:
   - component: {fileID: 2705474573719322411}
   - component: {fileID: 4592383631287030176}
   - component: {fileID: 5672987229279488491}
+  - component: {fileID: 6003368986311850986}
+  - component: {fileID: 752398187195437491}
   m_Layer: 9
   m_Name: Player
   m_TagString: Untagged
@@ -1084,8 +1086,8 @@ MonoBehaviour:
   characterController: {fileID: 6036543192460141483}
   playerMovement: {fileID: 8423766064830032752}
   groundCheck: {fileID: 5672987229279488491}
-  showDebugLogs: 1
-  showDebugGizmos: 1
+  showDebugLogs: 0
+  showDebugGizmos: 0
 --- !u!114 &4592383631287030176
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1125,6 +1127,52 @@ MonoBehaviour:
   checkDistance: 0.2
   maxGroundAngle: 60
   showDebugGizmos: 1
+--- !u!114 &6003368986311850986
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4b5e6427ec98c75488d11c281cc1826c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EquipmentManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  handBone: {fileID: 816211855209388711}
+  inputController: {fileID: 1314525665084999406}
+  dropForwardOffset: 0.5
+  dropForwardImpulse: 1.5
+  enableDebugLogs: 1
+--- !u!114 &752398187195437491
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ae6fddb97e94c8c429e5525fde08494f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ItemPickupHandler
+  ShowTopMostFoldoutHeaderGroup: 1
+  cameraTransform: {fileID: 0}
+  equipmentManager: {fileID: 6003368986311850986}
+  inputController: {fileID: 1314525665084999406}
+  playerHold: {fileID: 1258810096796857199}
+  lookRange: 3
+  lookCastRadius: 0.15
+  pickupMask:
+    serializedVersion: 2
+    m_Bits: 131072
+  showUiPrompt: 1
+  controlsConfig: {fileID: 11400000, guid: c51852afef09727499aaa28c53cce0a2, type: 2}
+  drawGizmos: 1
+  gizmoColor: {r: 1, g: 0, b: 1, a: 1}
+  gizmoHitColor: {r: 0, g: 1, b: 0, a: 1}
+  enableDebugLogs: 1
 --- !u!1001 &7683418336053488273
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1288,6 +1336,11 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 1203313810759555996}
   m_SourcePrefab: {fileID: 100100000, guid: 65ec4ae308ab2e34baf71756d2b45f87, type: 3}
+--- !u!4 &816211855209388711 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 7058046747855499318, guid: 65ec4ae308ab2e34baf71756d2b45f87, type: 3}
+  m_PrefabInstance: {fileID: 7683418336053488273}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1167995783605310055 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 8833091307997116662, guid: 65ec4ae308ab2e34baf71756d2b45f87, type: 3}

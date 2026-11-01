@@ -16,6 +16,8 @@ public class PlayerInputController : NetworkBehaviour
     public bool SprintHeld { get; private set; }
     public bool JumpPressedThisFrame { get; private set; }
     public bool InteractPressedThisFrame { get; private set; }
+    public bool AttackPressedThisFrame { get; private set; }
+    public bool DropPressedThisFrame { get; private set; }
     public float ExtendInput { get; private set; }
 
     // Pause input (one-frame)
@@ -160,6 +162,8 @@ public class PlayerInputController : NetworkBehaviour
 
         JumpPressedThisFrame = false;
         InteractPressedThisFrame = false;
+        AttackPressedThisFrame = false;
+        DropPressedThisFrame = false;
         PausePressedThisFrame = false;
     }
 
@@ -179,6 +183,8 @@ public class PlayerInputController : NetworkBehaviour
         // One-frame button inputs (polled directly)
         JumpPressedThisFrame = _actions.Player.Jump.WasPressedThisFrame();
         InteractPressedThisFrame = _actions.Player.Interact.WasPressedThisFrame();
+        AttackPressedThisFrame = _actions.Player.Attack.WasPressedThisFrame();
+        DropPressedThisFrame = _actions.Player.Drop.WasPressedThisFrame();
 
         // Pause input (one-frame)
         PausePressedThisFrame = _actions.Player.Pause.WasPressedThisFrame();

@@ -31,6 +31,7 @@ public class PlayerInteractions : NetworkBehaviour
 
     // Cached results of the continuous raycast
     private WorldSpawnButton _lookedAtSpawnButton;
+    private EquippableItem _lookedAtItem;
     private float _lastLookDistance;
 
     // UI controller
@@ -39,6 +40,11 @@ public class PlayerInteractions : NetworkBehaviour
     // Prompt texts
     private const string SpawnPromptText = "Press {0} to Spawn Packages";
     private const string DefaultInteractPromptText = "Press {0} to Interact";
+    private const string PickupItemPromptText = "Press {0} to Pick Up {1}";
+
+    // Tracks the last prompt we set, so ClearLookedAt can clear exactly that one
+    // (regardless of which branch set it), avoiding stale "ClearIfEquals" calls per-prompt-type.
+    private string _lastPromptText;
 
     // Cached control entry for the Interact action
     private ControlEntry _interactControlEntry;
@@ -98,8 +104,7 @@ public class PlayerInteractions : NetworkBehaviour
 
             if (_ui != null)
             {
-                _ui.ClearUpgradePromptIfEquals(GetFormattedPrompt(SpawnPromptText));
-                _ui.ClearUpgradePromptIfEquals(GetFormattedPrompt(DefaultInteractPromptText));
+                _ui.ClearUpgradePromptIfEquals(_lastPromptText);
             }
         }
     }
@@ -177,6 +182,12 @@ public class PlayerInteractions : NetworkBehaviour
 
         // Cache the interactable components if present on the hit object or its parents
         _lookedAtSpawnButton = hit.collider.GetComponentInParent<WorldSpawnButton>();
+        _lookedAtItem = hit.collider.GetComponentInParent<EquippableItem>();
+
+        // Ignore items that are already held by someone (nothing to pick up there).
+        if (_lookedAtItem != null && _lookedAtItem.IsHeld)
+            _lookedAtItem = null;
+
         _lastLookDistance = hit.distance;
 
         // Show appropriate prompt based on what we're looking at
@@ -186,11 +197,11 @@ public class PlayerInteractions : NetworkBehaviour
     private void ClearLookedAt()
     {
         _lookedAtSpawnButton = null;
-        
+        _lookedAtItem = null;
+
         if (showUiPrompt && _ui != null)
         {
-            _ui.ClearUpgradePromptIfEquals(GetFormattedPrompt(SpawnPromptText));
-            _ui.ClearUpgradePromptIfEquals(GetFormattedPrompt(DefaultInteractPromptText));
+            _ui.ClearUpgradePromptIfEquals(_lastPromptText);
         }
     }
 
@@ -199,16 +210,24 @@ public class PlayerInteractions : NetworkBehaviour
         if (!showUiPrompt || _ui == null)
             return;
 
-        // Priority: Start button takes precedence over spawn button
+        // Priority: spawn button > item pickup > default interact prompt
+        string prompt;
         if (_lookedAtSpawnButton != null)
         {
-            _ui.SetUpgradePrompt(GetFormattedPrompt(SpawnPromptText));
+            prompt = GetFormattedPrompt(SpawnPromptText);
+        }
+        else if (_lookedAtItem != null)
+        {
+            prompt = string.Format(PickupItemPromptText, GetInteractBindingDisplay(), _lookedAtItem.DisplayName);
         }
         else
         {
             // Show default interact prompt when looking at any interactable layer
-            _ui.SetUpgradePrompt(GetFormattedPrompt(DefaultInteractPromptText));
+            prompt = GetFormattedPrompt(DefaultInteractPromptText);
         }
+
+        _lastPromptText = prompt;
+        _ui.SetUpgradePrompt(prompt);
     }
 
     /// <summary>

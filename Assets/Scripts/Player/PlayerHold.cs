@@ -10,6 +10,9 @@ public class PlayerHold : NetworkBehaviour
     [SerializeField] private Transform cameraTransform;
     [SerializeField] private bool useCameraForPickupRay = true;
 
+    /// <summary>Exposes the resolved camera transform so other player scripts (e.g. ItemPickupHandler) can reuse it.</summary>
+    public Transform CameraTransform => cameraTransform;
+
     [Header("Hold Relative To Body")]
     [SerializeField] private Transform handsRoot;
     [SerializeField] private bool useCameraYawForHold = true;

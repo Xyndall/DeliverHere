@@ -37,3 +37,15 @@ MonoBehaviour:
     controllerIcon: {fileID: 0}
     keyboardGroup: 
     gamepadGroup: 
+  - displayName: Attack
+    actionReference: {fileID: 1120369429361536294, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    keyboardMouseIcon: {fileID: 0}
+    controllerIcon: {fileID: 0}
+    keyboardGroup: 
+    gamepadGroup: 
+  - displayName: Drop
+    actionReference: {fileID: 2568259788569770711, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    keyboardMouseIcon: {fileID: 0}
+    controllerIcon: {fileID: 0}
+    keyboardGroup: 
+    gamepadGroup: 
