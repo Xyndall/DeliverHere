@@ -94,6 +94,7 @@ namespace DeliverHere.Player
         [SerializeField] private Animator animator;
         [SerializeField] private PlayerFirstPersonLook firstPersonLook;
         [SerializeField] private PlayerCameraAssigner cameraAssigner;
+        [SerializeField] private EquipmentManager equipmentManager;
 
         [Header("Ragdoll Body Parts")]
         [Tooltip("Assign all rigidbody body parts of the ragdoll (limbs, torso, head, etc.).")]
@@ -822,6 +823,11 @@ namespace DeliverHere.Player
         private void TriggerRagdollStun(Vector3 force, Vector3 impactPoint)
         {
             if (!IsServer) return;
+
+            if (equipmentManager != null)
+            {
+                equipmentManager.ForceDropEquippedItem();
+            }
 
             _lastStunTime = Time.time;
             _stunEndTime = Time.time + StunDuration;

@@ -240,4 +240,31 @@ public class EquipmentManager : NetworkBehaviour
         Log($"AttachLocally: '{item.DisplayName}' equipped locally (IsOwner={IsOwner}, IsServer={IsServer}).");
         item.HandleEquipped(this, handBone);
     }
+
+    /// <summary>
+    /// Server-only, forces the currently equipped item to be dropped immediately.
+    /// Call this BEFORE enabling ragdoll physics so the item isn't left parented
+    /// to a hand bone that's about to be unparented/driven by physics.
+    /// </summary>
+    public void ForceDropEquippedItem()
+    {
+        if (!IsServer)
+        {
+            LogWarning("ForceDropEquippedItem called on a non-server instance; ignored.");
+            return;
+        }
+
+        if (!_equippedItemRef.Value.TryGet(out var currentObj))
+            return; // nothing equipped
+
+        var item = currentObj.GetComponent<EquippableItem>();
+        if (item == null)
+        {
+            LogWarning($"ForceDropEquippedItem: equipped object '{currentObj.name}' has no EquippableItem component.");
+            return;
+        }
+
+        Log($"ForceDropEquippedItem: force-dropping '{item.DisplayName}' before ragdoll.");
+        UnequipServer(item);
+    }
 }
