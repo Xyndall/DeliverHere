@@ -81,6 +81,10 @@ public class PlayerMovement : NetworkBehaviour
     private float _nextFootstepTime;
     private bool _wasGroundedLastFrame;
 
+    // --- Grapple support ---
+    public bool IsGrappling { get; private set; }
+    private Vector3 _grappleVelocity;
+
     private void Awake()
     {
         _controller = GetComponent<CharacterController>();
@@ -128,6 +132,31 @@ public class PlayerMovement : NetworkBehaviour
         _regenCooldown = 0f;
         IsSprinting = false;
         _inheritedPlatformVelocity = Vector3.zero;
+    }
+
+    /// <summary>Starts grapple-driven movement. PlayerMovement will stop doing normal
+    /// input-based movement and instead move the CharacterController using whatever
+    /// velocity is set via SetGrappleVelocity, until EndGrapple is called.</summary>
+    public void BeginGrapple(Vector3 initialVelocity)
+    {
+        IsGrappling = true;
+        _grappleVelocity = initialVelocity;
+    }
+
+    /// <summary>Called every frame by the grapple while active to update the pull velocity.</summary>
+    public void SetGrappleVelocity(Vector3 velocity)
+    {
+        _grappleVelocity = velocity;
+    }
+
+    /// <summary>Ends grapple-driven movement and hands the exit velocity back to normal
+    /// physics so the player keeps momentum (horizontal carried like platform inertia,
+    /// vertical fed straight into the gravity integrator).</summary>
+    public void EndGrapple(Vector3 exitVelocity)
+    {
+        IsGrappling = false;
+        _inheritedPlatformVelocity = new Vector3(exitVelocity.x, 0f, exitVelocity.z);
+        _verticalVel.y = exitVelocity.y;
     }
 
     private void Update()
@@ -316,7 +345,16 @@ public class PlayerMovement : NetworkBehaviour
             }
         }
 
-        motion.y = _verticalVel.y;
+        // If grappling, use the grapple velocity instead of the calculated motion
+        if (IsGrappling)
+        {
+            _controller.Move(_grappleVelocity * Time.deltaTime);
+            return;
+        }
+        else
+        {
+            motion.y = _verticalVel.y;
+        }
 
         _controller.Move(motion * dt);
 

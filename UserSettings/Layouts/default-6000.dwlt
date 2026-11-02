@@ -304,8 +304,8 @@ MonoBehaviour:
     y: 0
     width: 544
     height: 924
-  m_MinSize: {x: 275, y: 50}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 276, y: 76}
+  m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 28}
   m_Panes:
   - {fileID: 28}
@@ -372,8 +372,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "UnityEditor.MainToolbarWindow\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1
-    y: 51
+    x: 0
+    y: 0
     width: 1918
     height: 36
   m_SerializedDataModeController:
@@ -800,7 +800,7 @@ MonoBehaviour:
     m_DynamicPanelBehavior: 0
   m_LockTracker:
     m_IsLocked: 0
-  m_LastSelectedObjectID: -24994
+  m_LastSelectedObjectID: 0
 --- !u!114 &19
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -874,13 +874,11 @@ MonoBehaviour:
       m_Data: 64656
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 64420
-    - m_Data: 64422
-    - m_Data: 64424
-    - m_Data: 64426
-    - m_Data: 64428
-    - m_Data: 1000000000
-    - m_Data: 2147483647
+    - m_Data: 64482
+    - m_Data: 64484
+    - m_Data: 64486
+    - m_Data: 64488
+    - m_Data: 64490
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -913,11 +911,11 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 64420
-    - m_Data: 64422
-    - m_Data: 64424
-    - m_Data: 64426
-    - m_Data: 64428
+    - m_Data: 64482
+    - m_Data: 64484
+    - m_Data: 64486
+    - m_Data: 64488
+    - m_Data: 64490
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1041,7 +1039,7 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 382
-    y: 87
+    y: 24
     width: 991
     height: 559
   m_SerializedDataModeController:
@@ -1145,8 +1143,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Hierarchy\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1
-    y: 87
+    x: 0
+    y: 24
     width: 380
     height: 559
   m_SerializedDataModeController:
@@ -1165,10 +1163,9 @@ MonoBehaviour:
   m_SceneHierarchy:
     m_TreeViewState:
       scrollPos: {x: 0, y: 406}
-      m_SelectedIDs:
-      - m_Data: -24994
+      m_SelectedIDs: []
       m_LastClickedID:
-        m_Data: -24994
+        m_Data: 0
       m_ExpandedIDs:
       - m_Data: -53532
       - m_Data: -53522
@@ -1193,8 +1190,8 @@ MonoBehaviour:
       - m_Data: 61458
       m_RenameOverlay:
         m_UserAcceptedRename: 0
-        m_Name: QuitGamebtn
-        m_OriginalName: QuitGamebtn
+        m_Name: 
+        m_OriginalName: 
         m_EditFieldRect:
           serializedVersion: 2
           x: 0
@@ -1202,10 +1199,10 @@ MonoBehaviour:
           width: 0
           height: 0
         m_UserData:
-          m_Data: 60388
+          m_Data: 0
         m_IsWaitingForDelay: 0
         m_IsRenaming: 0
-        m_OriginalEventType: 0
+        m_OriginalEventType: 11
         m_IsRenamingFilename: 0
         m_TrimLeadingAndTrailingWhitespace: 0
         m_ClientGUIView: {fileID: 9}
@@ -1917,7 +1914,7 @@ MonoBehaviour:
   m_Rotation:
     m_Target: {x: 0.09031584, y: 0.20524105, z: -0.019063735, w: 0.9747732}
     speed: 2
-    m_Value: {x: 0.09027852, y: 0.20515624, z: -0.019055858, w: 0.9743704}
+    m_Value: {x: -0.09031584, y: -0.20524104, z: 0.019063735, w: -0.9747732}
   m_Size:
     m_Target: 3.7419016
     speed: 2
@@ -2139,8 +2136,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Project\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1
-    y: 672
+    x: 0
+    y: 609
     width: 1373
     height: 313
   m_SerializedDataModeController:
@@ -2191,13 +2188,11 @@ MonoBehaviour:
       m_Data: 64636
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 64420
-    - m_Data: 64422
-    - m_Data: 64424
-    - m_Data: 64426
-    - m_Data: 64428
-    - m_Data: 1000000000
-    - m_Data: 2147483647
+    - m_Data: 64482
+    - m_Data: 64484
+    - m_Data: 64486
+    - m_Data: 64488
+    - m_Data: 64490
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -2230,11 +2225,11 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 64420
-    - m_Data: 64422
-    - m_Data: 64424
-    - m_Data: 64426
-    - m_Data: 64428
+    - m_Data: 64482
+    - m_Data: 64484
+    - m_Data: 64486
+    - m_Data: 64488
+    - m_Data: 64490
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -2524,7 +2519,7 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 1375
-    y: 87
+    y: 24
     width: 543
     height: 898
   m_SerializedDataModeController:

@@ -359,6 +359,7 @@ GameObject:
   - component: {fileID: 5672987229279488491}
   - component: {fileID: 6003368986311850986}
   - component: {fileID: 752398187195437491}
+  - component: {fileID: 5456458527293914942}
   m_Layer: 9
   m_Name: Player
   m_TagString: Untagged
@@ -1173,6 +1174,23 @@ MonoBehaviour:
   gizmoColor: {r: 1, g: 0, b: 1, a: 1}
   gizmoHitColor: {r: 0, g: 1, b: 0, a: 1}
   enableDebugLogs: 1
+--- !u!114 &5456458527293914942
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 30ff1ffe003bc2e4c94d6f3a4ebc75e8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Player.PlayerGrapple
+  ShowTopMostFoldoutHeaderGroup: 1
+  cameraTransform: {fileID: 0}
+  playerMovement: {fileID: 8423766064830032752}
+  inputController: {fileID: 1314525665084999406}
+  equipmentManager: {fileID: 6003368986311850986}
 --- !u!1001 &7683418336053488273
 PrefabInstance:
   m_ObjectHideFlags: 0
