@@ -64,6 +64,7 @@ namespace DeliverHere.Player
         [SerializeField] private CharacterController characterController;
         [SerializeField] private PlayerMovement playerMovement;
         [SerializeField] private PlayerGroundCheck groundCheck;
+        [SerializeField] private PlayerRagdollStun ragdollStun;
 
         [Header("Debug")]
         [SerializeField] private bool showDebugLogs = false;
@@ -114,6 +115,9 @@ namespace DeliverHere.Player
             if (groundCheck == null)
                 groundCheck = GetComponent<PlayerGroundCheck>();
 
+            if (ragdollStun == null)
+                ragdollStun = GetComponent<PlayerRagdollStun>();
+
             _lastPlayerPosition = transform.position;
         }
 
@@ -140,9 +144,9 @@ namespace DeliverHere.Player
 
         private void Update()
         {
-            
             if (!IsOwner) return;
             if (characterController == null) return;
+            if (ragdollStun != null && ragdollStun.IsInRagdoll) return;
 
             // Check if we should be on a platform
             Transform detectedPlatform = DetectPlatform();
