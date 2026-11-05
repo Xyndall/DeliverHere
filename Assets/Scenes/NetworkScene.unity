@@ -6556,8 +6556,8 @@ Transform:
   m_GameObject: {fileID: 494659961}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: -1.225}
-  m_LocalScale: {x: 0.17642, y: 0.05, z: 2.0324}
+  m_LocalPosition: {x: 0.205, y: 0.001, z: -0.196}
+  m_LocalScale: {x: 0.31916144, y: 0.05, z: 0.24390832}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1334959973}
@@ -15532,12 +15532,12 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   itemId: 2
   displayName: Grapple Gun
-  handPositionOffset: {x: 0, y: 0, z: 0}
-  handRotationOffset: {x: 0, y: 0, z: 0}
+  handPositionOffset: {x: 0, y: 0, z: 0.04}
+  handRotationOffset: {x: -7.2, y: 86.9, z: 80.97}
   rb: {fileID: 1334959970}
   collidersToDisableWhileHeld: []
   networkTransform: {fileID: 1334959969}
-  muzzle: {fileID: 907107143}
+  muzzle: {fileID: 494659962}
   ropeLine: {fileID: 1334959974}
   maxRange: 30
   shootSpeed: 80

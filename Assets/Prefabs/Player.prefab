@@ -421,7 +421,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 209272834
+  GlobalObjectIdHash: 363287109
   InScenePlacedSourceGlobalObjectIdHash: 209272834
   DeferredDespawnTick: 0
   Ownership: 1
@@ -984,7 +984,7 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   config: {fileID: 11400000, guid: 538445aa960caa744845517f40703c61, type: 2}
   minImpactSpeed: 50
-  stunDuration: 5
+  stunDuration: 3
   impactForceMultiplier: 2
   maxImpactForce: 25
   upwardForceBoost: 50
@@ -1009,12 +1009,6 @@ MonoBehaviour:
     lowerLeg: 0.05
     upperArm: 0.04
     lowerArm: 0.02
-  requireGroundContactForRecovery: 1
-  groundLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  minGroundedTimeForRecovery: 0.3
-  settledVelocityThreshold: 0.5
   characterController: {fileID: 6036543192460141483}
   ragdollRigidbody: {fileID: 5082883330226292188}
   playerMovement: {fileID: 8423766064830032752}
