@@ -26,6 +26,9 @@ public class EquippableItem : NetworkBehaviour
     [Tooltip("Optional. If present, disabled while held so it doesn't fight the local hand-bone attachment, and re-enabled on drop so the server can resync position.")]
     [SerializeField] private NetworkTransform networkTransform;
 
+    private Vector3 _originalLocalScale;
+    private bool _hasCachedOriginalScale;
+
     public string ItemId => itemId;
     public string DisplayName => displayName;
     public Vector3 HandPositionOffset => handPositionOffset;
@@ -42,6 +45,12 @@ public class EquippableItem : NetworkBehaviour
         if (networkTransform == null) networkTransform = GetComponent<NetworkTransform>();
     }
 
+    private void Awake()
+    {
+        _originalLocalScale = transform.localScale;
+        _hasCachedOriginalScale = true;
+    }
+
     /// <summary>
     /// Called on all clients (via EquipmentManager) once this item has been locally
     /// parented to a hand bone. Override OnEquipped/OnUnequipped in a derived class
@@ -51,15 +60,18 @@ public class EquippableItem : NetworkBehaviour
     {
         CurrentHolder = holder;
 
+        if (!_hasCachedOriginalScale)
+        {
+            _originalLocalScale = transform.localScale;
+            _hasCachedOriginalScale = true;
+        }
+
         if (rb != null)
         {
             rb.isKinematic = true;
             rb.detectCollisions = false;
         }
 
-        // NetworkTransform can't be network-parented to a bone with no NetworkObject,
-        // so we disable it while held and drive the visual attachment purely locally
-        // (identical on every client, since every client has the same rig).
         if (networkTransform != null)
         {
             networkTransform.enabled = false;
@@ -79,6 +91,7 @@ public class EquippableItem : NetworkBehaviour
 
             transform.localPosition = handPositionOffset;
             transform.localRotation = Quaternion.Euler(handRotationOffset);
+            transform.localScale = _originalLocalScale; // keep visual scale stable while held
         }
 
         SetHeldColliders(false);
@@ -92,8 +105,13 @@ public class EquippableItem : NetworkBehaviour
 
         bool previousAutoSync = NetworkObject.AutoObjectParentSync;
         NetworkObject.AutoObjectParentSync = false;
-        transform.SetParent(null, worldPositionStays: true);
+        // Use worldPositionStays: false and restore the cached scale ourselves,
+        // instead of letting Unity recompute localScale from the parent's lossyScale
+        // (which compounds shrinkage/growth every equip/drop cycle).
+        transform.SetParent(null, worldPositionStays: false);
         NetworkObject.AutoObjectParentSync = previousAutoSync;
+
+        transform.localScale = _originalLocalScale;
 
         if (networkTransform != null)
         {
