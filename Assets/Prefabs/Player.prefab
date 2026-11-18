@@ -360,6 +360,8 @@ GameObject:
   - component: {fileID: 6003368986311850986}
   - component: {fileID: 752398187195437491}
   - component: {fileID: 5456458527293914942}
+  - component: {fileID: 8572550125418689573}
+  - component: {fileID: -1177165326451588274}
   m_Layer: 9
   m_Name: Player
   m_TagString: Untagged
@@ -421,7 +423,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 363287109
+  GlobalObjectIdHash: 209272834
   InScenePlacedSourceGlobalObjectIdHash: 209272834
   DeferredDespawnTick: 0
   Ownership: 1
@@ -470,6 +472,9 @@ MonoBehaviour:
   inputController: {fileID: 1314525665084999406}
   footstepInterval: 0.4
   minFootstepSpeed: 1
+  ladderClimbSpeed: 3
+  ladderLookThreshold: 0.15
+  ladderJumpPushSpeed: 2
 --- !u!54 &5082883330226292188
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -1049,8 +1054,6 @@ MonoBehaviour:
   autoRecover: 1
   recoveryBlendTime: 0.3
   impactVFX: {fileID: 0}
-  logImpacts: 0
-  logGroundContact: 0
 --- !u!114 &2705474573719322411
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1082,6 +1085,7 @@ MonoBehaviour:
   characterController: {fileID: 6036543192460141483}
   playerMovement: {fileID: 8423766064830032752}
   groundCheck: {fileID: 5672987229279488491}
+  ragdollStun: {fileID: 0}
   showDebugLogs: 0
   showDebugGizmos: 0
 --- !u!114 &4592383631287030176
@@ -1186,6 +1190,41 @@ MonoBehaviour:
   playerMovement: {fileID: 8423766064830032752}
   inputController: {fileID: 1314525665084999406}
   equipmentManager: {fileID: 6003368986311850986}
+--- !u!114 &8572550125418689573
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5a13e4769640244458d8e3815ff6969a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliverHere.Player.PlayerLadderClimb
+--- !u!136 &-1177165326451588274
+CapsuleCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6903841455120555681}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Radius: 0.5
+  m_Height: 1
+  m_Direction: 1
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1001 &7683418336053488273
 PrefabInstance:
   m_ObjectHideFlags: 0

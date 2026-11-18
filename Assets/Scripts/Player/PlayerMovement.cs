@@ -62,6 +62,12 @@ public class PlayerMovement : NetworkBehaviour
     [Tooltip("Minimum speed required to play footstep sounds (m/s).")]
     [SerializeField] private float minFootstepSpeed = 1f;
 
+    [Header("Ladder Climbing")]
+    [Tooltip("Vertical climb speed while on a ladder (m/s).")]
+    [SerializeField] private float ladderClimbSpeed = 3f;
+    [Tooltip("Camera pitch (dot of camera forward with world up) that must be exceeded, while pressing forward, to climb. 0 = looking level.")]
+    [SerializeField] private float ladderJumpPushSpeed = 2f;
+
     public NetworkVariable<float> Stamina { get; private set; }
         = new NetworkVariable<float>(100f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
@@ -84,6 +90,9 @@ public class PlayerMovement : NetworkBehaviour
     // --- Grapple support ---
     public bool IsGrappling { get; private set; }
     private Vector3 _grappleVelocity;
+
+    // Ladder support
+    private DeliverHere.Player.Ladder _currentLadder;
 
     private void Awake()
     {
@@ -159,6 +168,66 @@ public class PlayerMovement : NetworkBehaviour
         _verticalVel.y = exitVelocity.y;
     }
 
+    /// <summary>Called by PlayerLadderClimb when the player enters a ladder's trigger volume.</summary>
+    public void EnterLadder(DeliverHere.Player.Ladder ladder)
+    {
+        if (ladder == null || IsGrappling) return;
+        _currentLadder = ladder;
+        _verticalVel = Vector3.zero;
+        _inheritedPlatformVelocity = Vector3.zero;
+    }
+
+    /// <summary>Called by PlayerLadderClimb when the player exits a ladder's trigger volume.</summary>
+    public void ExitLadder(DeliverHere.Player.Ladder ladder)
+    {
+        if (_currentLadder == ladder)
+            _currentLadder = null;
+    }
+
+    private void HandleLadderMovement(Vector2 move, float dt)
+    {
+        // Jump off the ladder: hand off to normal jump arc + a push away from the rungs.
+        if (inputController.JumpPressedThisFrame)
+        {
+            float resolvedJumpHeight = upgradableStats != null ? upgradableStats.JumpHeight : jumpHeight;
+            Vector3 pushDir = _currentLadder.Forward;
+            _currentLadder = null;
+            _verticalVel.y = Mathf.Sqrt(resolvedJumpHeight * -2f * gravity);
+            _inheritedPlatformVelocity = pushDir * ladderJumpPushSpeed;
+            PlayJumpSound();
+            return;
+        }
+
+        float resolvedWalkSpeed = upgradableStats != null ? upgradableStats.WalkSpeed : walkSpeed;
+
+        Vector3 forward = cameraTransform != null ? cameraTransform.forward : transform.forward;
+        forward.y = 0f;
+        forward.Normalize();
+        Vector3 right = Vector3.Cross(Vector3.up, forward);
+
+        float forwardInput = move.y;
+        bool wantsClimb = Mathf.Abs(forwardInput) > 0.1f;
+
+        Vector3 motion;
+        if (wantsClimb)
+        {
+            // Forward (W) climbs up, backward (S) climbs down.
+            float climbDir = Mathf.Sign(forwardInput);
+            motion = _currentLadder.Up * climbDir * ladderClimbSpeed;
+            // Allow a little strafing while climbing without letting go of the ladder.
+            motion += right * move.x * resolvedWalkSpeed * 0.5f;
+        }
+        else
+        {
+            // No forward/back input: move normally so the player can freely
+            // step sideways off the ladder.
+            motion = right * move.x * resolvedWalkSpeed;
+        }
+
+        _controller.Move(motion * dt);
+        _verticalVel = Vector3.zero;
+    }
+
     private void Update()
     {
         if (!IsOwner) return;
@@ -190,6 +259,12 @@ public class PlayerMovement : NetworkBehaviour
 
         Vector2 move = inputController.Move;
         bool hasMove = move.sqrMagnitude > 0.0001f;
+
+        if (_currentLadder != null)
+        {
+            HandleLadderMovement(move, dt);
+            return;
+        }
 
         float resolvedWalkSpeed = upgradableStats != null ? upgradableStats.WalkSpeed : walkSpeed;
         float resolvedRunSpeed = upgradableStats != null ? upgradableStats.RunSpeed : runSpeed;
