@@ -47,6 +47,8 @@ public class PlayerMovement : NetworkBehaviour
     [SerializeField] private DeliverHere.Player.PlayerPlatformStick platformStick;
     [Tooltip("How quickly inherited platform momentum bleeds off once airborne and no longer on a platform (m/s^2). 0 = never decays.")]
     [SerializeField] private float airInertiaDamping = 0f;
+    [Tooltip("How strongly the player's own input can redirect/override inherited momentum (e.g. after a grapple or platform launch) while airborne (m/s^2). Higher = more air control.")]
+    [SerializeField] private float airControlAcceleration = 15f;
 
     [Header("Ground Check")]
     [Tooltip("If not assigned, will try to GetComponent on the same GameObject.")]
@@ -379,7 +381,10 @@ public class PlayerMovement : NetworkBehaviour
             }
         }
 
-        _verticalVel.y += gravity * dt;
+        if (!IsGrappling)
+        {
+            _verticalVel.y += gravity * dt;
+        }
 
         // While grounded and riding an inclined/vertical conveyor belt, feed its vertical push
         // directly into the single vertical velocity integrator instead of letting
@@ -393,43 +398,54 @@ public class PlayerMovement : NetworkBehaviour
             // every frame (which would compound indefinitely the longer you stand on the belt).
             _verticalVel.y = Mathf.Max(_verticalVel.y, platformStick.PlatformVerticalSpeed);
         }
-        else if (grounded && _verticalVel.y < 0f)
+        else if (grounded && _verticalVel.y < 0f && !IsGrappling)
         {
             _verticalVel.y = -2f;
         }
 
         Vector3 motion = horizontal;
 
-        // While airborne, keep applying the momentum inherited from the platform/belt so it
-        // behaves like real-world inertia. Gate this on !grounded (actual airborne state)
+        // While airborne, blend inherited momentum (grapple exit, platform launch, etc.)
+        // with the player's own input instead of just adding it unconditionally -- this
+        // lets the player actively steer out of a big momentum carry rather than being
+        // along for the ride until landing. Gate this on !grounded (actual airborne state)
         // rather than !onPlatform: PlayerPlatformStick intentionally keeps IsOnPlatform true
         // for a short unstickDelay after losing contact (to avoid attach/detach jitter), which
         // was causing inherited momentum to not be applied for that whole window -- visible as
         // a brief "pause" right after launching off a conveyor/ramp before motion resumed.
         if (!grounded && _inheritedPlatformVelocity.sqrMagnitude > 0.0001f)
         {
-            // Only carry the horizontal component here -- vertical momentum is already fully
-            // represented in _verticalVel.y (latched above while grounded), so adding it again
-            // would double it.
-            motion.x += _inheritedPlatformVelocity.x;
-            motion.z += _inheritedPlatformVelocity.z;
+            // Steer the carried horizontal momentum toward the player's desired input
+            // direction over time, rather than just stacking input on top of it -- this
+            // gives real air control instead of input being drowned out by a big carry.
+            Vector3 carriedHorizontal = new Vector3(_inheritedPlatformVelocity.x, 0f, _inheritedPlatformVelocity.z);
+            Vector3 desiredHorizontal = hasMove ? horizontal : Vector3.zero;
+
+            carriedHorizontal = Vector3.MoveTowards(carriedHorizontal, desiredHorizontal, airControlAcceleration * dt);
+
+            _inheritedPlatformVelocity = new Vector3(carriedHorizontal.x, _inheritedPlatformVelocity.y, carriedHorizontal.z);
 
             if (airInertiaDamping > 0f)
             {
                 _inheritedPlatformVelocity = Vector3.MoveTowards(_inheritedPlatformVelocity, Vector3.zero, airInertiaDamping * dt);
             }
+
+            motion = carriedHorizontal;
         }
 
-        // If grappling, use the grapple velocity instead of the calculated motion
+        // While grappling, add the pull's horizontal velocity on top of the player's own
+        // input, and drive vertical velocity directly from the pull (no gravity fighting it,
+        // see the gravity-gate above). This keeps _verticalVel.y always consistent with
+        // _grappleVelocity, so EndGrapple -> _verticalVel.y = exitVelocity.y is a seamless
+        // continuation instead of a sudden boost/snap.
         if (IsGrappling)
         {
-            _controller.Move(_grappleVelocity * Time.deltaTime);
-            return;
+            motion.x += _grappleVelocity.x;
+            motion.z += _grappleVelocity.z;
+            _verticalVel.y = _grappleVelocity.y;
         }
-        else
-        {
-            motion.y = _verticalVel.y;
-        }
+
+        motion.y = _verticalVel.y;
 
         _controller.Move(motion * dt);
 
@@ -508,6 +524,7 @@ public class PlayerMovement : NetworkBehaviour
         minFootstepSpeed = Mathf.Max(0f, minFootstepSpeed);
 
         airInertiaDamping = Mathf.Max(0f, airInertiaDamping);
+        airControlAcceleration = Mathf.Max(0f, airControlAcceleration);
     }
 #endif
 }
