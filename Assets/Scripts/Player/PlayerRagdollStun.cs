@@ -826,6 +826,7 @@ namespace DeliverHere.Player
             // Re-enable camera look AFTER camera is reassigned
             if (firstPersonLook != null)
             {
+                firstPersonLook.ResyncYawFromTransform();
                 firstPersonLook.enabled = true;
 
                 // Reset all camera effect states to prevent jitter

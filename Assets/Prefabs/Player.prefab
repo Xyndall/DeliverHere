@@ -453,7 +453,7 @@ MonoBehaviour:
   runSpeed: 7.5
   gravity: -20
   jumpHeight: 1.4
-  rotateToMove: 1
+  rotateToMove: 0
   rotateLerp: 15
   maxStamina: 100
   sprintCostPerSecond: 22
@@ -468,12 +468,12 @@ MonoBehaviour:
   weightManager: {fileID: 8983411890034586755}
   platformStick: {fileID: 2705474573719322411}
   airInertiaDamping: 0
+  airControlAcceleration: 15
   groundCheck: {fileID: 0}
   inputController: {fileID: 1314525665084999406}
   footstepInterval: 0.4
   minFootstepSpeed: 1
   ladderClimbSpeed: 3
-  ladderLookThreshold: 0.15
   ladderJumpPushSpeed: 2
 --- !u!54 &5082883330226292188
 Rigidbody:
@@ -1281,6 +1281,10 @@ PrefabInstance:
       propertyPath: m_Controller
       value: 
       objectReference: {fileID: 9100000, guid: d3f0208e679bb664fae457d305d2203e, type: 2}
+    - target: {fileID: 5866666021909216657, guid: 65ec4ae308ab2e34baf71756d2b45f87, type: 3}
+      propertyPath: m_ApplyRootMotion
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

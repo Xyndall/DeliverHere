@@ -394,6 +394,17 @@ public class PlayerFirstPersonLook : NetworkBehaviour
         }
     }
 
+    /// <summary>
+    /// Resyncs the internal yaw to the player's current transform rotation.
+    /// Must be called after anything external (e.g. ragdoll recovery) sets
+    /// transform.rotation directly, otherwise the next Update() will snap
+    /// the body back to the stale cached yaw.
+    /// </summary>
+    public void ResyncYawFromTransform()
+    {
+        _yaw = transform.eulerAngles.y;
+    }
+
 #if UNITY_EDITOR
     private void OnValidate()
     {
