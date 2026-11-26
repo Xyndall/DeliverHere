@@ -85,6 +85,10 @@ public partial class LevelFlowController : MonoBehaviour
         if (!serverLoaded)
             Debug.LogWarning("[LevelFlowController] Server scene load timed out or didn't match expected name.");
 
+        // NEW: wait for the server's own LevelGenerator to finish building rooms
+        // before we start handshaking with clients / positioning players.
+        yield return WaitForLevelGeneration_Coroutine();
+
         // Optional small wait to allow a frame for spawned objects / NetworkObjects to settle
         yield return null;
 
@@ -96,7 +100,7 @@ public partial class LevelFlowController : MonoBehaviour
             {
                 netState.BeginClientReadyHandshake(() =>
                 {
-                    Debug.Log("[LevelFlowController] All clients ready (or timeout) – positioning players...");
+                    Debug.Log("[LevelFlowController] All clients ready (or timeout) — positioning players...");
 
                     // Ensure timer doesn't tick while we teleport/settle.
                     GameManager.Instance?.SetGameplayActive(false);
@@ -116,6 +120,36 @@ public partial class LevelFlowController : MonoBehaviour
                 StartCoroutine(FinishLoadingAndStartGame_Coroutine());
             }
         }
+    }
+
+    /// <summary>
+    /// Waits (with timeout) for the LevelGenerator present in the currently loaded level
+    /// to finish its local generation pass. Safe to call on both server and client.
+    /// </summary>
+    private IEnumerator WaitForLevelGeneration_Coroutine()
+    {
+        float deadline = Time.time + loadTimeoutSeconds;
+
+        LevelGenerator generator = LevelGenerator.Instance ?? FindFirstObjectByType<LevelGenerator>();
+        while (generator == null && Time.time < deadline)
+        {
+            yield return null;
+            generator = LevelGenerator.Instance ?? FindFirstObjectByType<LevelGenerator>();
+        }
+
+        if (generator == null)
+        {
+            Debug.LogWarning("[LevelFlowController] No LevelGenerator found in loaded level; skipping generation wait.");
+            yield break;
+        }
+
+        while (!generator.IsGenerationComplete && Time.time < deadline)
+            yield return null;
+
+        if (!generator.IsGenerationComplete)
+            Debug.LogWarning("[LevelFlowController] Timed out waiting for LevelGenerator to finish generating the level.");
+        else
+            Debug.Log("[LevelFlowController] LevelGenerator finished generating the level.");
     }
 
     private IEnumerator FinishLoadingAndStartGame_Coroutine()
@@ -244,6 +278,10 @@ public partial class LevelFlowController : MonoBehaviour
                 var state = NetworkGameState.Instance ?? FindFirstObjectByType<NetworkGameState>();
                 if (state != null && state.IsSpawned)
                 {
+                    // NEW: don't report "ready" until this client's own LevelGenerator
+                    // has finished building rooms from the replicated seed.
+                    yield return WaitForLevelGeneration_Coroutine();
+
                     state.ClientSceneLoadedServerRpc();
                     yield break;
                 }

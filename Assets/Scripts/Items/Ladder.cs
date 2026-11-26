@@ -16,6 +16,14 @@ namespace DeliverHere.Player
         /// <summary>Direction pointing away from the rungs (used to push the player off when jumping).</summary>
         public Vector3 Forward => transform.forward;
 
+        public void ForceExitAnyClimbers()
+        {
+            foreach (var movement in FindObjectsByType<PlayerMovement>(FindObjectsSortMode.None))
+            {
+                movement.ExitLadder(this);
+            }
+        }
+
 #if UNITY_EDITOR
         private void OnDrawGizmosSelected()
         {

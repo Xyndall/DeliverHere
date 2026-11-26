@@ -22,10 +22,14 @@ public class LadderItem : EquippableItem
     [Header("Physics")]
     [Tooltip("Rigidbody used for the fall (optional, falls back to GetComponent).")]
     [SerializeField] private Rigidbody placedRigidbody;
+    [Tooltip("Local-space position of the ladder's base (the pivot point it tips around). If the model's pivot is already at the base, leave this at (0,0,0). If the pivot is at the center, set this to roughly (0, -halfLength, 0).")]
+    [SerializeField] private Vector3 baseLocalOffset = Vector3.zero;
 
     private bool _waitingForLanding;
     private bool _hasTipped;
     private Vector3 _tipForward;
+    private DeliverHere.Player.Ladder _ladder;
+    private HingeJoint _hinge;
 
     private void Reset()
     {
@@ -35,12 +39,34 @@ public class LadderItem : EquippableItem
     private void Awake()
     {
         if (placedRigidbody == null) placedRigidbody = GetComponent<Rigidbody>();
+        if (_ladder == null) _ladder = GetComponent<DeliverHere.Player.Ladder>();
     }
 
     public override void OnUse(EquipmentManager holder)
     {
         if (!IsServer || holder == null) return;
-        holder.RequestUnequipServerRpc();
+        holder.UnequipCurrentServer();
+    }
+
+    protected override void OnEquipped(EquipmentManager holder)
+    {
+        base.OnEquipped(holder);
+
+        // Being picked up mid-climb: kick any player currently climbing this ladder
+        // back to normal movement immediately, instead of leaving them stuck
+        // referencing a ladder that's now in someone's hand.
+        if (_ladder != null)
+            _ladder.ForceExitAnyClimbers();
+
+        // Picked back up before it finished falling/tipping: clean up the hinge
+        // and any in-progress fall state so re-dropping starts fresh.
+        if (_hinge != null)
+        {
+            Destroy(_hinge);
+            _hinge = null;
+        }
+        _waitingForLanding = false;
+        _hasTipped = false;
     }
 
     protected override void OnUnequipped(EquipmentManager previousHolder)
@@ -110,6 +136,8 @@ public class LadderItem : EquippableItem
     private void BeginTip()
     {
         if (placedRigidbody == null) return;
+
+        placedRigidbody.centerOfMass = baseLocalOffset;
 
         // Release the lock and nudge it off-balance - after this, it's plain
         // physics: leans on whatever's there, or falls flat.

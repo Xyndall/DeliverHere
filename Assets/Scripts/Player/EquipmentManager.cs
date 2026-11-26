@@ -129,20 +129,27 @@ public class EquipmentManager : NetworkBehaviour
     [ServerRpc]
     public void RequestUnequipServerRpc()
     {
+        UnequipCurrentServer();
+    }
+
+    public void UnequipCurrentServer()
+    {
+        if (!IsServer) return;
+
         if (!_equippedItemRef.Value.TryGet(out var currentObj))
         {
-            LogWarning("RequestUnequipServerRpc: nothing is currently equipped (NetworkVariable had no resolvable value).");
+            LogWarning("UnequipCurrentServer: nothing is currently equipped (NetworkVariable had no resolvable value).");
             return;
         }
 
         var item = currentObj.GetComponent<EquippableItem>();
         if (item == null)
         {
-            LogWarning($"RequestUnequipServerRpc: equipped object '{currentObj.name}' has no EquippableItem component.");
+            LogWarning($"UnequipCurrentServer: equipped object '{currentObj.name}' has no EquippableItem component.");
             return;
         }
 
-        Log($"RequestUnequipServerRpc: dropping '{item.DisplayName}'.");
+        Log($"UnequipCurrentServer: dropping '{item.DisplayName}'.");
         UnequipServer(item);
     }
 
